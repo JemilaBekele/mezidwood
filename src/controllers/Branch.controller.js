@@ -67,7 +67,7 @@ const getAllProducts = catchAsync(async (req, res) => {
 });
 const getEstimatedCurtainDeliveryTime = catchAsync(async (req, res) => {
   const { startDate, endDate } = req.query;
-
+console.log("Received query parameters:", { startDate, endDate }); // Debugging log
   const result = await branchService.getEstimatedCurtainDeliveryTime(
     startDate,
     endDate,
