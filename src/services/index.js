@@ -27,6 +27,11 @@ module.exports.cartService = require('./Cart.service');
 
 module.exports.yearEndResetService = require('./yearEndReset.service');
 module.exports.factoryResetService = require('./factoryReset.service');
-module.exports.stockLedgerReconciliationService = require('./MissingStockLedger.service');
-module.exports.brandService = require('./Brand.service');
-module.exports.proformaService = require('./Proforma.service');
+
+module.exports.curtainTypeService = require('./CurtainType.service');
+module.exports.curtainService = require('./CurtainOrder.service');
+module.exports.curtainWorkerLogService = require('./CurtainWorkerLog.service');
+
+module.exports.workerCommissionService = require('./WorkerCommission.service');
+module.exports.dashboardService = require('./GeneralDashboard.service');
+module.exports.expenseService = require('./expenses.service');

@@ -46,12 +46,6 @@ router.put(
   transferController.updateTransfer,
 );
 // Get batches by transfer ID
-router.get(
-  '/api/transfers/batches/:transferId',
-  auth,
-  // checkPermission('VIEW_TRANSFER_BATCHES'), // optional permission check
-  transferController.getTransferBatches,
-);
 
 // Bulk update additional prices
 router.put(

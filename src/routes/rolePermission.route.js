@@ -30,15 +30,5 @@ router.delete(
   auth,
   rolePermissionController.deleteRolePermission,
 );
-// router.delete(
-//   '/api/role-permissions/:roleId/:permissionId',
-//   auth,
-//   rolePermissionController.deleteRolePermissionByRelation,
-// );
-// router.get(
-//   '/api/role-permissions/:id',
-//   auth,
-//   rolePermissionController.getRolePermissionById,
-// );
 
 module.exports = router;

@@ -112,51 +112,6 @@ const getProductInfoByBatchIdController = catchAsync(async (req, res) => {
     product: productInfo,
   });
 });
-const addOrUpdateShopStockController = catchAsync(async (req, res) => {
-  const { shopId, batchId } = req.params; // ✅ from URL
-  const { quantity, unitOfMeasureId } = req.body; // ✅ from body
-
-  // Validate required fields
-  if (!shopId || !batchId || quantity === undefined) {
-    throw new ApiError(
-      httpStatus.BAD_REQUEST,
-      'shopId, batchId, and quantity are required',
-    );
-  }
-
-  // Validate quantity is a number
-  if (Number.isNaN(Number(quantity))) {
-    throw new ApiError(
-      httpStatus.BAD_REQUEST,
-      'Quantity must be a valid number',
-    );
-  }
-
-  // Convert quantity to number if it's a string
-  const numericQuantity = Number(quantity);
-
-  const result = await productBatchService.addOrUpdateShopStock(
-    shopId,
-    batchId,
-    numericQuantity,
-    unitOfMeasureId,
-  );
-
-  const action = numericQuantity >= 0 ? 'added to' : 'removed from';
-  const message = `Stock ${action} shop successfully`;
-
-  res.status(httpStatus.OK).send({
-    success: true,
-    message,
-    data: {
-      shopStock: result,
-      previousQuantity: result.quantity - numericQuantity,
-      newQuantity: result.quantity,
-      changeAmount: Math.abs(numericQuantity),
-      action: numericQuantity >= 0 ? 'addition' : 'removal',
-    },
-  });
-});
 module.exports = {
   createProductBatch,
   getProductBatch,
@@ -166,5 +121,4 @@ module.exports = {
   getProductByStoreStock,
   getProductByShopStock,
   getProductInfoByBatchIdController,
-  addOrUpdateShopStockController,
 };

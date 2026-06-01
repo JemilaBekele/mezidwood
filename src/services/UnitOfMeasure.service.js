@@ -20,24 +20,16 @@ const getUnitOfMeasureByName = async (name) => {
 
 // Get all UnitsOfMeasure
 const getAllUnitsOfMeasure = async () => {
-  try {
-    console.log("hiiii")
+  const units = await prisma.unitOfMeasure.findMany({
+    orderBy: {
+      name: 'asc',
+    },
+  });
 
-    const units = await prisma.unitOfMeasure.findMany({
-      orderBy: {
-        name: 'asc',
-      },
-    });
-
-    return {
-      units,
-      count: units.length,
-    };
-
-  } catch (error) {
-    console.error("Prisma Error:", error);
-    throw error;
-  }
+  return {
+    units,
+    count: units.length,
+  };
 };
 /**
  * Get all product units with their related data
@@ -54,45 +46,45 @@ const getAllUnitsOfMeasure = async () => {
 // Create UnitOfMeasure
 const STATIC_UNITS = [
   // Weight Units
-  { name: 'Kilogram', symbol: 'kg' },
-  { name: 'Gram', symbol: 'g' },
-  { name: 'Milligram', symbol: 'mg' },
-  { name: 'Pound', symbol: 'lb' },
-  { name: 'Ounce', symbol: 'oz' },
+  { name: 'Kilogram', symbol: 'kg', base: true },
+  { name: 'Gram', symbol: 'g', base: false },
+  { name: 'Milligram', symbol: 'mg', base: false },
+  { name: 'Pound', symbol: 'lb', base: false },
+  { name: 'Ounce', symbol: 'oz', base: false },
 
   // Volume Units
-  { name: 'Liter', symbol: 'L' },
-  { name: 'Milliliter', symbol: 'ml' },
-  { name: 'Cubic Meter', symbol: 'm³' },
-  { name: 'Gallon', symbol: 'gal' },
-  { name: 'Quart', symbol: 'qt' },
-  { name: 'Pint', symbol: 'pt' },
+  { name: 'Liter', symbol: 'L', base: true },
+  { name: 'Milliliter', symbol: 'ml', base: false },
+  { name: 'Cubic Meter', symbol: 'm³', base: false },
+  { name: 'Gallon', symbol: 'gal', base: false },
+  { name: 'Quart', symbol: 'qt', base: false },
+  { name: 'Pint', symbol: 'pt', base: false },
 
   // Count Units
-  { name: 'Piece', symbol: 'pc' },
-  { name: 'Dozen', symbol: 'dz' },
-  { name: 'Pack', symbol: 'pack' },
-  { name: 'Box', symbol: 'box' },
-  { name: 'Case', symbol: 'case' },
-  { name: 'Pallet', symbol: 'pallet' },
+  { name: 'Piece', symbol: 'pc', base: true },
+  { name: 'Dozen', symbol: 'dz', base: false },
+  { name: 'Pack', symbol: 'pack', base: false },
+  { name: 'Box', symbol: 'box', base: false },
+  { name: 'Case', symbol: 'case', base: false },
+  { name: 'Pallet', symbol: 'pallet', base: false },
 
   // Length Units
-  { name: 'Meter', symbol: 'm' },
-  { name: 'Centimeter', symbol: 'cm' },
-  { name: 'Millimeter', symbol: 'mm' },
-  { name: 'Kilometer', symbol: 'km' },
-  { name: 'Inch', symbol: 'in' },
-  { name: 'Foot', symbol: 'ft' },
-  { name: 'Yard', symbol: 'yd' },
-  { name: 'Mile', symbol: 'mi' },
+  { name: 'Meter', symbol: 'm', base: true },
+  { name: 'Centimeter', symbol: 'cm', base: false },
+  { name: 'Millimeter', symbol: 'mm', base: false },
+  { name: 'Kilometer', symbol: 'km', base: false },
+  { name: 'Inch', symbol: 'in', base: false },
+  { name: 'Foot', symbol: 'ft', base: false },
+  { name: 'Yard', symbol: 'yd', base: false },
+  { name: 'Mile', symbol: 'mi', base: false },
 
   // Area Units
-  { name: 'Square Meter', symbol: 'm²' },
-  { name: 'Square Centimeter', symbol: 'cm²' },
-  { name: 'Square Foot', symbol: 'ft²' },
-  { name: 'Square Inch', symbol: 'in²' },
-  { name: 'Acre', symbol: 'acre' },
-  { name: 'Hectare', symbol: 'ha' },
+  { name: 'Square Meter', symbol: 'm²', base: true },
+  { name: 'Square Centimeter', symbol: 'cm²', base: false },
+  { name: 'Square Foot', symbol: 'ft²', base: false },
+  { name: 'Square Inch', symbol: 'in²', base: false },
+  { name: 'Acre', symbol: 'acre', base: false },
+  { name: 'Hectare', symbol: 'ha', base: false },
 ];
 
 const createUnitOfMeasure = async (unitBody) => {

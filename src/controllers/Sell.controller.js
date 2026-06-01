@@ -63,7 +63,7 @@ const getSells = catchAsync(async (req, res) => {
   });
 });
 const getAllSellsuser = catchAsync(async (req, res) => {
-  const userId = req.user.id; // ✅ User ID from auth middleware getAllSellsuserweb
+  const userId = req.user.id; // ✅ User ID from auth middleware
   const { startDate, endDate, customerName, status } = req.query;
   const result = await sellService.getAllSellsuser({
     startDate,
@@ -72,56 +72,6 @@ const getAllSellsuser = catchAsync(async (req, res) => {
     customerName,
     status,
   });
-  res.status(httpStatus.OK).send({
-    success: true,
-    ...result,
-  });
-});
-const getAllSellsuserweb = catchAsync(async (req, res) => {
-  const userId = req.user.id; // ✅ User ID from auth middleware getAllSellsuserweb
-  const { startDate, endDate, customerName, status } = req.query;
-  const result = await sellService.getAllSellsuserweb({
-    startDate,
-    endDate,
-    userId,
-    customerName,
-    status,
-  });
-  res.status(httpStatus.OK).send({
-    success: true,
-    ...result,
-  });
-});
-const getAllSellsForStoreweb = catchAsync(async (req, res) => {
-  const userId = req.user.id;
-  const { startDate, endDate, customerName, salesPersonName } = req.query;
-
-  // Handle status parameter which can be single value or array
-  let statusFilter;
-  if (req.query.status) {
-    if (Array.isArray(req.query.status)) {
-      // If multiple status parameters are provided (e.g., ?status=APPROVED&status=PENDING)
-      statusFilter = req.query.status;
-    } else if (req.query.status === 'all') {
-      statusFilter = 'all';
-    } else if (req.query.status.includes(',')) {
-      // If comma-separated values
-      statusFilter = req.query.status.split(',').map((s) => s.trim());
-    } else {
-      // Single value
-      statusFilter = req.query.status;
-    }
-  }
-
-  const result = await sellService.getAllSellsForStoreweb({
-    startDate,
-    endDate,
-    userId,
-    customerName: customerName?.trim(),
-    salesPersonName: salesPersonName?.trim(),
-    status: statusFilter,
-  });
-
   res.status(httpStatus.OK).send({
     success: true,
     ...result,
@@ -187,6 +137,7 @@ const deliverAllSaleItems = catchAsync(async (req, res) => {
   const userId = req.user.id;
   const { id } = req.params; // saleId
   const { deliveryData } = req.body; // batch delivery data
+
   if (
     !deliveryData ||
     !deliveryData.items ||
@@ -341,116 +292,6 @@ const cancelSale = catchAsync(async (req, res) => {
     sale,
   });
 });
-
-const addSellFiles = catchAsync(async (req, res) => {
-  // Log body fields
-
-  // Structure files by field name with detailed logging
-  const structuredFiles = {};
-
-  if (req.files) {
-    for (const [fieldname, files] of Object.entries(req.files)) {
-      structuredFiles[fieldname] = files;
-
-      files.forEach((file, index) => {
-        console.log(`     [${index}] File details:`, {
-          fieldname: file.fieldname,
-          originalname: file.originalname,
-          mimetype: file.mimetype,
-          size: file.size,
-          path: file.path,
-          destination: file.destination,
-          filename: file.filename,
-        });
-      });
-    }
-  } else {
-    console.log('   - No files found in request');
-  }
-
-  // Validate sell ID
-  const sellId = req.params.id;
-  if (!sellId) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Sell ID is required');
-  }
-
-  // Validate user is authenticated
-  if (!req.user || !req.user.id) {
-    throw new ApiError(httpStatus.UNAUTHORIZED, 'User not authenticated');
-  }
-
-  // Validate at least one file is provided
-  if (Object.keys(structuredFiles).length === 0) {
-    throw new ApiError(
-      httpStatus.BAD_REQUEST,
-      'At least one file (image or document) is required',
-    );
-  }
-
-  try {
-    const result = await sellService.addSellFiles(
-      sellId,
-      req.user.id,
-      structuredFiles,
-    );
-
-    res.status(httpStatus.OK).send({
-      success: true,
-      message: result.message,
-      data: {
-        id: result.data.id,
-        invoiceNo: result.data.invoiceNo,
-        imageUrl: result.data.imageUrl,
-        documentUrl: result.data.documentUrl,
-      },
-    });
-  } catch (error) {
-    // Check if it's already an ApiError
-    if (error instanceof ApiError) {
-      throw error;
-    }
-
-    // Convert to ApiError if not
-    throw new ApiError(
-      httpStatus.INTERNAL_SERVER_ERROR,
-      `Failed to add files to sell: ${error.message}`,
-    );
-  }
-});
-const addSellPayment = catchAsync(async (req, res) => {
-  const userId = req.user?.id;
-  const { sellId } = req.params;
-
-  // Validate sellId
-  if (!sellId) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Sell ID is required');
-  }
-
-  // Call service
-  const result = await sellService.addSellPayment(sellId, req.body, userId);
-
-  // Response
-  res.status(httpStatus.CREATED).send({
-    success: true,
-    message: 'Payment added successfully',
-    data: result,
-  });
-});
-const getSellPaymentHistory = catchAsync(async (req, res) => {
-  const { sellId } = req.params;
-
-  if (!sellId) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Sell ID is required');
-  }
-
-  const result = await sellService.getSellPaymentHistory(sellId);
-
-  res.status(httpStatus.OK).send({
-    success: true,
-    message: 'Payment history fetched successfully',
-    data: result,
-  });
-});
 module.exports = {
   createSell,
   getSell,
@@ -464,12 +305,7 @@ module.exports = {
   deliverAllSaleItems,
   partialSaleDelivery,
   getAllSellsuser,
-  getAllSellsuserweb,
   getAllSellsForStore,
-  getAllSellsForStoreweb,
   getSellByIdByuser,
   unlockSell,
-  addSellFiles,
-  addSellPayment,
-  getSellPaymentHistory,
 };

@@ -89,6 +89,7 @@ const getUserByEmail = catchAsync(async (req, res) => {
 });
 const login = catchAsync(async (req, res) => {
   const { email, password } = req.body;
+  console.log('Login attempt:', req.body);
   const user = await authService.login(
     email,
     password,

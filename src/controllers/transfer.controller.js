@@ -99,19 +99,6 @@ const deleteTransfer = catchAsync(async (req, res) => {
   });
 });
 
-// Controller to get batches by transfer ID
-const getTransferBatches = catchAsync(async (req, res) => {
-  const { transferId } = req.params; // correct param name
-
-  const batches = await transferService.getTransferBatchesById(transferId);
-
-  res.status(httpStatus.OK).send({
-    success: true,
-    message: 'Batches retrieved successfully',
-    batches,
-  });
-});
-
 // Controller to bulk update additional prices
 const bulkUpdatePrices = catchAsync(async (req, res) => {
   const batchUpdates = req.body; // expect [{ batchId, additionalPrices: [{label, price}] }] format
@@ -135,6 +122,5 @@ module.exports = {
   completeTransfer,
   cancelTransfer,
   deleteTransfer,
-  getTransferBatches,
   bulkUpdatePrices,
 };

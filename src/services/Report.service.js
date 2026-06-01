@@ -178,6 +178,12 @@ const getAllSells = async ({
     include: {
       product: true,
       shop: true,
+      unitOfMeasure: true,
+      batches: {
+        include: {
+          batch: true,
+        },
+      },
     },
   };
 
@@ -238,7 +244,6 @@ const generateSalesReports = async ({
   limit = 10,
   slowMoveThreshold = 10,
 } = {}) => {
-  
   // Default date range: last 12 months
   const twelveMonthsAgo = subMonths(new Date(), 12);
 
@@ -269,7 +274,7 @@ const generateSalesReports = async ({
   }
 
   try {
-    // Get ALL products with their sales data from SellItem (no batch table anymore)
+    // Get ALL products with their sales data first
     const allProductsSales = await prisma.sellItem.groupBy({
       by: ['productId'],
       where: {
@@ -287,7 +292,6 @@ const generateSalesReports = async ({
         },
       },
     });
-
 
     if (allProductsSales.length === 0) {
       return {
@@ -334,10 +338,10 @@ const generateSalesReports = async ({
     );
 
     const slowMovingItems = allProductsSales
-      .filter((item) => (item._sum.quantity || 0) > 0)
-      .filter((item) => (item._sum.quantity || 0) <= slowMoveThreshold)
-      .filter((item) => !topProductIds.has(item.productId))
-      .sort((a, b) => (a._sum.quantity || 0) - (b._sum.quantity || 0))
+      .filter((item) => (item._sum.quantity || 0) > 0) // Exclude zero quantities
+      .filter((item) => (item._sum.quantity || 0) <= slowMoveThreshold) // Below threshold
+      .filter((item) => !topProductIds.has(item.productId)) // Exclude top items
+      .sort((a, b) => (a._sum.quantity || 0) - (b._sum.quantity || 0)) // Sort by lowest quantity first
       .slice(0, limit);
 
     // 4. Top Sellers (Users with most sales)
@@ -359,6 +363,21 @@ const generateSalesReports = async ({
       take: limit,
     });
 
+    // Get batch-level data for detailed reporting
+    const batchSalesData = await prisma.sellItemBatch.groupBy({
+      by: ['batchId'],
+      where: {
+        sellItem: {
+          sell: sellWhereClause,
+          ...(shopId && { shopId }),
+          itemSaleStatus: 'DELIVERED',
+        },
+      },
+      _sum: {
+        quantity: true,
+      },
+    });
+
     // Enrich product data
     const enrichProductData = async (productGroups) => {
       const productIds = productGroups
@@ -373,27 +392,29 @@ const generateSalesReports = async ({
         },
         include: {
           category: true,
-          brand: true,
+          subCategory: true,
+          unitOfMeasure: true,
+          batches: {
+            include: {
+              product: true,
+            },
+            orderBy: {
+              createdAt: 'desc',
+            },
+            take: 1, // Get only the most recent batch for display
+          },
         },
       });
 
-
       return productGroups.map((item) => {
         const product = products.find((p) => p.id === item.productId);
-        
+        const latestBatch = product?.batches?.[0] || null;
+
         // Calculate average price per unit
         const avgPrice =
           item._sum.quantity > 0
             ? (item._sum.totalPrice || 0) / item._sum.quantity
             : 0;
-
-        // Calculate box quantity if product supports boxes
-        let boxQuantity = 0;
-        let remainingPieces = item._sum.quantity || 0;
-        if (product?.hasBox && product?.boxSize && product.boxSize > 0) {
-          boxQuantity = Math.floor((item._sum.quantity || 0) / product.boxSize);
-          remainingPieces = (item._sum.quantity || 0) % product.boxSize;
-        }
 
         return {
           productId: item.productId,
@@ -401,13 +422,9 @@ const generateSalesReports = async ({
           quantity: item._sum.quantity || 0,
           revenue: item._sum.totalPrice || 0,
           avgPrice: parseFloat(avgPrice.toFixed(2)),
-          hasBox: product?.hasBox || false,
-          boxSize: product?.boxSize || null,
-          boxQuantity,
-          remainingPieces,
-          UnitOfMeasure: product?.UnitOfMeasure || 'unit',
+          batchNumber: latestBatch?.batchNumber || 'N/A',
+          expiryDate: latestBatch?.expiryDate || null,
           category: product?.category?.name || 'N/A',
-          brand: product?.brand?.name || 'N/A',
           valueScore:
             (item._sum.quantity || 0) * parseFloat(avgPrice.toFixed(2)),
         };
@@ -463,7 +480,6 @@ const generateSalesReports = async ({
       .sort((a, b) => b.valueScore - a.valueScore)
       .slice(0, limit);
 
-
     return {
       reportPeriod: {
         startDate: startDateObj,
@@ -491,8 +507,6 @@ const generateSalesReports = async ({
       },
     };
   } catch (error) {
-    console.error('=== generateSalesReports ERROR ===');
-    console.error('Error:', error);
     throw new Error(`Failed to generate sales reports: ${error.message}`);
   }
 };
@@ -1120,6 +1134,7 @@ const getSalesCreatorDashboardSummary = async (userId) => {
       recentApprovedSales: formattedRecentSales,
     };
 
+    console.log('Sales Creator Dashboard Summary:', result);
     return result;
   } catch (error) {
     console.error('Sales creator dashboard error:', error);

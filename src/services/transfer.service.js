@@ -15,85 +15,17 @@ const getTransferById = async (id) => {
       destShop: true,
       createdBy: true,
       updatedBy: true,
-         items: {
-          include: {
-            product: {
-              include: {
-                unitOfMeasure: true, 
-              },
-            },
-          },
+      items: {
+        include: {
+          product: true,
+          unitOfMeasure: true, // ✅ Added unit of measure
         },
+      },
     },
   });
   return transfer;
 };
 // Get product batch info by transfer ID
-
-const getTransferBatchesById = async (transferId) => {
-  try {
-    // Fetch transfer with batch and their additional prices
-    const transfer = await prisma.transfer.findUnique({
-      where: { id: transferId },
-      include: {
-        items: {
-          select: {
-            batch: {
-              include: {
-                AdditionalPrice: {
-                  include: {
-                    shop: {
-                      select: {
-                        id: true,
-                        name: true,
-                      },
-                    },
-                  },
-                },
-                product: {
-                  select: {
-                    name: true,
-                    productCode: true,
-                  },
-                },
-                store: {
-                  select: { name: true },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!transfer) {
-      throw new Error('Transfer not found');
-    }
-
-    // Map batches with additional price info
-    const batches = transfer.items.map((item) => {
-      const { batch } = item;
-      return {
-        id: batch.id,
-        batchNumber: batch.batchNumber,
-        product: batch.product,
-        store: batch.store,
-        additionalPrices: batch.AdditionalPrice.map((p) => ({
-          label: p.label,
-          price: p.price,
-          shop: {
-            id: p.shop.id,
-            name: p.shop.name,
-          },
-        })),
-      };
-    });
-
-    return batches;
-  } catch (error) {
-    throw new Error(`Failed to get batches: ${error.message}`);
-  }
-};
 
 // Get Transfer by reference
 const getTransferByReference = async (reference) => {
@@ -192,6 +124,7 @@ const generateShortCode = async () => {
   return `${prefix}${year}${month}${sequenceStr}`;
 };
 
+// Create Transfer
 const createTransfer = async (transferBody, userId) => {
   // Generate short code first
   const shortCode = await generateShortCode();
@@ -225,7 +158,7 @@ const createTransfer = async (transferBody, userId) => {
     if (!item.productId) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        `Item ${index + 1} is missing required fields (productId)`,
+        `Item ${index + 1} is missing required field (productId)`,
       );
     }
     if (item.quantity <= 0) {
@@ -234,20 +167,70 @@ const createTransfer = async (transferBody, userId) => {
         `Item ${index + 1} has invalid quantity`,
       );
     }
-    // Validate isBox if provided (should be boolean)
-    if (item.isBox !== undefined && typeof item.isBox !== 'boolean') {
+
+    // Validate dimensions - both must be provided together or neither
+    const hasHeight = item.height !== undefined && item.height !== null;
+    const hasWidth = item.width !== undefined && item.width !== null;
+
+    if (hasHeight !== hasWidth) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        `Item ${index + 1} has invalid isBox value (must be boolean)`,
+        `Item ${
+          index + 1
+        }: Both height and width must be provided together for dimension-based items`,
       );
+    }
+
+    // If dimensions are provided, validate they are positive
+    if (hasHeight && hasWidth) {
+      if (item.height <= 0) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Item ${
+            index + 1
+          } has invalid height. Height must be greater than 0.`,
+        );
+      }
+      if (item.width <= 0) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Item ${index + 1} has invalid width. Width must be greater than 0.`,
+        );
+      }
     }
   });
 
-  // Process items with isBox and calculate piece quantities for validation
-  const validatedItems = items.map((item) => ({
-    ...item,
-    isBox: item.isBox || false, // Default to false if not provided
-  }));
+  // Get all product IDs to fetch their unit of measures
+  const productIds = items.map((item) => item.productId);
+  const products = await prisma.product.findMany({
+    where: {
+      id: {
+        in: productIds,
+      },
+    },
+    select: {
+      id: true,
+      unitOfMeasureId: true,
+    },
+  });
+
+  // Create a map of productId to unitOfMeasureId
+  const productUnitMap = {};
+  products.forEach((product) => {
+    productUnitMap[product.id] = product.unitOfMeasureId;
+  });
+
+  // Check if all products were found
+  items.forEach((item, index) => {
+    if (!productUnitMap[item.productId]) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Item ${
+          index + 1
+        }: Product not found or has no unit of measure defined`,
+      );
+    }
+  });
 
   // Clean up empty string values
   const cleanedTransferBody = {
@@ -323,24 +306,23 @@ const createTransfer = async (transferBody, userId) => {
       ...cleanedTransferBody,
       createdById: userId,
       items: {
-        create: validatedItems.map((item) => ({
+        create: items.map((item) => ({
           productId: item.productId,
-          isBox: item.isBox, // Add isBox field
+          unitOfMeasureId: productUnitMap[item.productId],
           quantity: item.quantity,
+          // Add height and width if they exist
+          ...(item.height !== undefined && { height: item.height }),
+          ...(item.width !== undefined && { width: item.width }),
         })),
       },
     },
     include: {
       items: {
         include: {
+          unitOfMeasure: true,
           product: true,
         },
       },
-      sourceStore: true,
-      sourceShop: true,
-      destStore: true,
-      destShop: true,
-      createdBy: true,
     },
   });
 
@@ -399,7 +381,7 @@ const updateTransfer = async (transferId, transferBody, userId) => {
     if (!item.productId) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        `Item ${index + 1} is missing required fields (productId)`,
+        `Item ${index + 1} is missing required field (productId)`,
       );
     }
     if (item.quantity <= 0) {
@@ -408,20 +390,70 @@ const updateTransfer = async (transferId, transferBody, userId) => {
         `Item ${index + 1} has invalid quantity`,
       );
     }
-    // Validate isBox if provided (should be boolean)
-    if (item.isBox !== undefined && typeof item.isBox !== 'boolean') {
+
+    // Validate dimensions - both must be provided together or neither
+    const hasHeight = item.height !== undefined && item.height !== null;
+    const hasWidth = item.width !== undefined && item.width !== null;
+
+    if (hasHeight !== hasWidth) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        `Item ${index + 1} has invalid isBox value (must be boolean)`,
+        `Item ${
+          index + 1
+        }: Both height and width must be provided together for dimension-based items`,
       );
+    }
+
+    // If dimensions are provided, validate they are positive
+    if (hasHeight && hasWidth) {
+      if (item.height <= 0) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Item ${
+            index + 1
+          } has invalid height. Height must be greater than 0.`,
+        );
+      }
+      if (item.width <= 0) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Item ${index + 1} has invalid width. Width must be greater than 0.`,
+        );
+      }
     }
   });
 
-  // Process items with isBox
-  const validatedItems = items.map((item) => ({
-    ...item,
-    isBox: item.isBox || false, // Default to false if not provided
-  }));
+  // Get all product IDs to fetch their unit of measures
+  const productIds = items.map((item) => item.productId);
+  const products = await prisma.product.findMany({
+    where: {
+      id: {
+        in: productIds,
+      },
+    },
+    select: {
+      id: true,
+      unitOfMeasureId: true,
+    },
+  });
+
+  // Create a map of productId to unitOfMeasureId
+  const productUnitMap = {};
+  products.forEach((product) => {
+    productUnitMap[product.id] = product.unitOfMeasureId;
+  });
+
+  // Check if all products were found
+  items.forEach((item, index) => {
+    if (!productUnitMap[item.productId]) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Item ${
+          index + 1
+        }: Product not found or has no unit of measure defined`,
+      );
+    }
+  });
 
   // Clean up empty string values
   const cleanedTransferBody = {
@@ -503,24 +535,23 @@ const updateTransfer = async (transferId, transferBody, userId) => {
       data: {
         ...cleanedTransferBody,
         items: {
-          create: validatedItems.map((item) => ({
+          create: items.map((item) => ({
             productId: item.productId,
-            isBox: item.isBox, // Add isBox field
+            unitOfMeasureId: productUnitMap[item.productId],
             quantity: item.quantity,
+            // Add height and width if they exist
+            ...(item.height !== undefined && { height: item.height }),
+            ...(item.width !== undefined && { width: item.width }),
           })),
         },
       },
       include: {
         items: {
           include: {
+            unitOfMeasure: true,
             product: true,
           },
         },
-        sourceStore: true,
-        sourceShop: true,
-        destStore: true,
-        destShop: true,
-        createdBy: true,
       },
     });
 
@@ -530,7 +561,6 @@ const updateTransfer = async (transferId, transferBody, userId) => {
   return result;
 };
 
-// Delete Transfer
 const deleteTransfer = async (id, userId) => {
   const existingTransfer = await getTransferById(id);
   if (!existingTransfer) {
@@ -563,9 +593,9 @@ const deleteTransfer = async (id, userId) => {
             operations.push(
               tx.storeStock.update({
                 where: {
-                  storeId_batchId: {
+                  storeId_productId: {
                     storeId: existingTransfer.sourceStoreId,
-                    batchId: item.batchId,
+                    productId: item.productId,
                   },
                 },
                 data: {
@@ -574,11 +604,12 @@ const deleteTransfer = async (id, userId) => {
               }),
               tx.stockLedger.create({
                 data: {
+                  productId: item.productId,
                   storeId: existingTransfer.sourceStoreId,
                   invoiceNo: `REV-${sourceInvoiceNo}`,
                   movementType: 'IN',
                   quantity: item.quantity,
-
+                  unitOfMeasureId: item.unitOfMeasureId,
                   reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
                   userId,
                   notes: `Transfer reversal - stock returned from ${existingTransfer.destinationType.toLowerCase()}`,
@@ -593,9 +624,9 @@ const deleteTransfer = async (id, userId) => {
             operations.push(
               tx.shopStock.update({
                 where: {
-                  shopId_batchId: {
+                  shopId_productId: {
                     shopId: existingTransfer.sourceShopId,
-                    batchId: item.batchId,
+                    productId: item.productId,
                   },
                 },
                 data: {
@@ -604,10 +635,12 @@ const deleteTransfer = async (id, userId) => {
               }),
               tx.stockLedger.create({
                 data: {
+                  productId: item.productId,
                   invoiceNo: `REV-${sourceInvoiceNo}`,
                   shopId: existingTransfer.sourceShopId,
                   movementType: 'IN',
                   quantity: item.quantity,
+                  unitOfMeasureId: item.unitOfMeasureId,
                   reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
                   userId,
                   notes: `Transfer reversal - stock returned from ${existingTransfer.destinationType.toLowerCase()}`,
@@ -624,9 +657,9 @@ const deleteTransfer = async (id, userId) => {
           ) {
             const existingStoreStock = await tx.storeStock.findUnique({
               where: {
-                storeId_batchId: {
+                storeId_productId: {
                   storeId: existingTransfer.destStoreId,
-                  batchId: item.batchId,
+                  productId: item.productId,
                 },
               },
             });
@@ -639,9 +672,9 @@ const deleteTransfer = async (id, userId) => {
                 operations.push(
                   tx.storeStock.delete({
                     where: {
-                      storeId_batchId: {
+                      storeId_productId: {
                         storeId: existingTransfer.destStoreId,
-                        batchId: item.batchId,
+                        productId: item.productId,
                       },
                     },
                   }),
@@ -651,9 +684,9 @@ const deleteTransfer = async (id, userId) => {
                 operations.push(
                   tx.storeStock.update({
                     where: {
-                      storeId_batchId: {
+                      storeId_productId: {
                         storeId: existingTransfer.destStoreId,
-                        batchId: item.batchId,
+                        productId: item.productId,
                       },
                     },
                     data: {
@@ -667,10 +700,12 @@ const deleteTransfer = async (id, userId) => {
             operations.push(
               tx.stockLedger.create({
                 data: {
+                  productId: item.productId,
                   invoiceNo: `REV-${destinationInvoiceNo}`,
                   storeId: existingTransfer.destStoreId,
                   movementType: 'OUT',
                   quantity: item.quantity,
+                  unitOfMeasureId: item.unitOfMeasureId,
                   reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
                   userId,
                   notes: `Transfer reversal - stock returned to ${existingTransfer.sourceType.toLowerCase()}`,
@@ -684,9 +719,9 @@ const deleteTransfer = async (id, userId) => {
           ) {
             const existingShopStock = await tx.shopStock.findUnique({
               where: {
-                shopId_batchId: {
+                shopId_productId: {
                   shopId: existingTransfer.destShopId,
-                  batchId: item.batchId,
+                  productId: item.productId,
                 },
               },
             });
@@ -699,9 +734,9 @@ const deleteTransfer = async (id, userId) => {
                 operations.push(
                   tx.shopStock.delete({
                     where: {
-                      shopId_batchId: {
+                      shopId_productId: {
                         shopId: existingTransfer.destShopId,
-                        batchId: item.batchId,
+                        productId: item.productId,
                       },
                     },
                   }),
@@ -711,9 +746,9 @@ const deleteTransfer = async (id, userId) => {
                 operations.push(
                   tx.shopStock.update({
                     where: {
-                      shopId_batchId: {
+                      shopId_productId: {
                         shopId: existingTransfer.destShopId,
-                        batchId: item.batchId,
+                        productId: item.productId,
                       },
                     },
                     data: {
@@ -727,10 +762,12 @@ const deleteTransfer = async (id, userId) => {
             operations.push(
               tx.stockLedger.create({
                 data: {
+                  productId: item.productId,
                   invoiceNo: `REV-${destinationInvoiceNo}`,
                   shopId: existingTransfer.destShopId,
                   movementType: 'OUT',
                   quantity: item.quantity,
+                  unitOfMeasureId: item.unitOfMeasureId,
                   reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
                   userId,
                   notes: `Transfer reversal - stock returned to ${existingTransfer.sourceType.toLowerCase()}`,
@@ -785,8 +822,6 @@ const deleteTransfer = async (id, userId) => {
 
   return result;
 };
-
-// Complete Transfer
 const completeTransfer = async (transferId, userId) => {
   const transfer = await getTransferById(transferId);
 
@@ -802,293 +837,660 @@ const completeTransfer = async (transferId, userId) => {
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    // Get all products with their box support info
+    // Get all unit of measures for the transfer items
+    const unitOfMeasureIds = transfer.items.map((item) => item.unitOfMeasureId);
+    const unitOfMeasures = await tx.unitOfMeasure.findMany({
+      where: { id: { in: unitOfMeasureIds } },
+    });
+
+    const unitOfMeasureMap = unitOfMeasures.reduce((acc, uom) => {
+      acc[uom.id] = uom;
+      return acc;
+    }, {});
+
+    // Get base units for all products to check if we need conversion
     const productIds = transfer.items.map((item) => item.productId);
-    const products = await tx.product.findMany({
+    const baseUnits = await tx.unitOfMeasure.findMany({
       where: {
-        id: { in: productIds },
-      },
-      select: {
-        id: true,
-        name: true,
-        hasBox: true,
-        boxSize: true,
-      },
-    });
-
-    const productMap = {};
-    products.forEach((product) => {
-      productMap[product.id] = product;
-    });
-
-    // Prepare all operations for each transfer item
-    const sourceOperations = [];
-    const destinationOperations = [];
-    const stockLedgerOperations = [];
-
-    for (let index = 0; index < transfer.items.length; index++) {
-      const item = transfer.items[index];
-      const product = productMap[item.productId];
-
-      if (!product) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          `Product not found for item ${item.id}`,
-        );
-      }
-
-      // Calculate piece quantity based on isBox flag
-      let pieceQuantity = item.quantity;
-
-      if (item.isBox) {
-        // If isBox is true, convert boxes to pieces using product's boxSize
-        if (!product.hasBox) {
-          throw new ApiError(
-            httpStatus.BAD_REQUEST,
-            `Product "${product.name}" does not support box/packaging. Please enable box support for this product.`,
-          );
-        }
-
-        if (!product.boxSize || product.boxSize <= 0) {
-          throw new ApiError(
-            httpStatus.BAD_REQUEST,
-            `Product "${product.name}" has invalid box size (${product.boxSize}). Please configure box size correctly.`,
-          );
-        }
-
-        pieceQuantity = item.quantity * product.boxSize;
-      } else {
-        pieceQuantity = item.quantity;
-      }
-
-      // Validate piece quantity is positive
-      if (pieceQuantity <= 0) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          `Invalid quantity for product "${product.name}". Quantity must be greater than 0.`,
-        );
-      }
-
-      // Create unique invoice numbers for each ledger entry
-      const sourceInvoiceNo = `${transfer.shortCode}-OUT-${index}`;
-      const destinationInvoiceNo = `${transfer.shortCode}-IN-${index}`;
-
-      // ========== SOURCE OPERATIONS (Remove stock) ==========
-      if (transfer.sourceType === 'STORE' && transfer.sourceStoreId) {
-        // Get current source stock
-        const sourceStock = await tx.storeStock.findUnique({
-          where: {
-            storeId_productId: {
-              storeId: transfer.sourceStoreId,
-              productId: item.productId,
-            },
+        base: true,
+        products: {
+          some: {
+            id: { in: productIds },
           },
-        });
+        },
+      },
+    });
 
-        if (!sourceStock) {
-          throw new ApiError(
-            httpStatus.BAD_REQUEST,
-            `Product "${product.name}" not found in source store stock`,
-          );
-        }
+    const baseUnitMap = {};
+    baseUnits.forEach((unit) => {
+      productIds.forEach((productId) => {
+        baseUnitMap[productId] = unit;
+      });
+    });
 
-        if (sourceStock.quantity < pieceQuantity) {
-          throw new ApiError(
-            httpStatus.BAD_REQUEST,
-            `Insufficient stock for product "${product.name}". Available: ${sourceStock.quantity} pieces, Requested: ${pieceQuantity} pieces`,
-          );
-        }
+    // FIRST: Validate all stock availability before making any changes
+    for (const item of transfer.items) {
+      const quantityToUse = item.quantity;
+      const hasDimensions = item.height && item.width && item.height > 0 && item.width > 0;
 
-        const newSourceQuantity = sourceStock.quantity - pieceQuantity;
-
-        sourceOperations.push(
-          tx.storeStock.update({
+      // Validate source stock
+      if (transfer.sourceType === 'STORE' && transfer.sourceStoreId) {
+        if (hasDimensions) {
+          const sourceStoreStock = await tx.storeStock.findUnique({
             where: {
               storeId_productId: {
                 storeId: transfer.sourceStoreId,
                 productId: item.productId,
               },
             },
-            data: {
-              quantity: { decrement: pieceQuantity },
+            include: {
+              variants: true,
             },
-          }),
-        );
+          });
 
-        stockLedgerOperations.push(
-          tx.stockLedger.create({
-            data: {
-              productId: item.productId,
-              storeId: transfer.sourceStoreId,
-              movementType: 'TRANSFER',
-              pieceQuantity,
-              boxQuantity: item.isBox ? item.quantity : 0,
-              reference: transfer.reference || `TRANSFER-${transfer.shortCode}`,
-              userId,
-              notes: item.isBox
-                ? `Transfer OUT - ${transfer.shortCode} (${item.quantity} box(es) × ${product.boxSize} = ${pieceQuantity} pieces)`
-                : `Transfer OUT - ${transfer.shortCode} (${item.quantity} piece(s))`,
-              movementDate: new Date(),
+          if (!sourceStoreStock) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Source store stock not found for product ${item.productId}`,
+            );
+          }
+
+          const sourceVariant = sourceStoreStock.variants.find(
+            (v) =>
+              Math.abs(v.height - (item.height || 0)) < 0.01 &&
+              Math.abs(v.width - (item.width || 0)) < 0.01,
+          );
+
+          if (!sourceVariant) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Variant ${item.height}x${item.width} not found in source store`,
+            );
+          }
+
+          if (sourceVariant.quantity < quantityToUse) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Insufficient variant stock in source store. Available: ${sourceVariant.quantity}, Requested: ${quantityToUse}`,
+            );
+          }
+
+          // Check if after decrement it would become negative
+          if (sourceVariant.quantity - quantityToUse < 0) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Cannot transfer. Variant ${item.height}x${item.width} would have negative stock. Available: ${sourceVariant.quantity}, Requested: ${quantityToUse}`,
+            );
+          }
+        } else {
+          const sourceStoreStock = await tx.storeStock.findUnique({
+            where: {
+              storeId_productId: {
+                storeId: transfer.sourceStoreId,
+                productId: item.productId,
+              },
             },
-          }),
-        );
+          });
+
+          if (!sourceStoreStock) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Source store stock not found for product ${item.productId}`,
+            );
+          }
+
+          if (sourceStoreStock.quantity < quantityToUse) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Insufficient stock in source store. Available: ${sourceStoreStock.quantity}, Requested: ${quantityToUse}`,
+            );
+          }
+
+          // Check if after decrement it would become negative
+          if (sourceStoreStock.quantity - quantityToUse < 0) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Cannot transfer. Product would have negative stock. Available: ${sourceStoreStock.quantity}, Requested: ${quantityToUse}`,
+            );
+          }
+        }
       } else if (transfer.sourceType === 'SHOP' && transfer.sourceShopId) {
-        // Get current source stock
-        const sourceStock = await tx.shopStock.findUnique({
-          where: {
-            shopId_productId: {
-              shopId: transfer.sourceShopId,
-              productId: item.productId,
-            },
-          },
-        });
-
-        if (!sourceStock) {
-          throw new ApiError(
-            httpStatus.BAD_REQUEST,
-            `Product "${product.name}" not found in source shop stock`,
-          );
-        }
-
-        if (sourceStock.quantity < pieceQuantity) {
-          throw new ApiError(
-            httpStatus.BAD_REQUEST,
-            `Insufficient stock for product "${product.name}". Available: ${sourceStock.quantity} pieces, Requested: ${pieceQuantity} pieces`,
-          );
-        }
-
-        const newSourceQuantity = sourceStock.quantity - pieceQuantity;
-
-        sourceOperations.push(
-          tx.shopStock.update({
+        if (hasDimensions) {
+          const sourceShopStock = await tx.shopStock.findUnique({
             where: {
               shopId_productId: {
                 shopId: transfer.sourceShopId,
                 productId: item.productId,
               },
             },
-            data: {
-              quantity: { decrement: pieceQuantity },
+            include: {
+              variants: true,
             },
-          }),
-        );
+          });
 
-        stockLedgerOperations.push(
-          tx.stockLedger.create({
-            data: {
-              productId: item.productId,
-              shopId: transfer.sourceShopId,
-              movementType: 'TRANSFER',
-              pieceQuantity,
-              boxQuantity: item.isBox ? item.quantity : 0,
-              reference: transfer.reference || `TRANSFER-${transfer.shortCode}`,
-              userId,
-              notes: item.isBox
-                ? `Transfer OUT - ${transfer.shortCode} (${item.quantity} box(es) × ${product.boxSize} = ${pieceQuantity} pieces)`
-                : `Transfer OUT - ${transfer.shortCode} (${item.quantity} piece(s))`,
-              movementDate: new Date(),
-            },
-          }),
-        );
-      }
+          if (!sourceShopStock) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Source shop stock not found for product ${item.productId}`,
+            );
+          }
 
-      // ========== DESTINATION OPERATIONS (Add stock) ==========
-      if (transfer.destinationType === 'STORE' && transfer.destStoreId) {
-        destinationOperations.push(
-          tx.storeStock.upsert({
-            where: {
-              storeId_productId: {
-                storeId: transfer.destStoreId,
-                productId: item.productId,
-              },
-            },
-            update: {
-              quantity: { increment: pieceQuantity },
-            },
-            create: {
-              storeId: transfer.destStoreId,
-              productId: item.productId,
-              quantity: pieceQuantity,
-              status: 'Available',
-            },
-          }),
-        );
+          const sourceVariant = sourceShopStock.variants.find(
+            (v) =>
+              Math.abs(v.height - (item.height || 0)) < 0.01 &&
+              Math.abs(v.width - (item.width || 0)) < 0.01,
+          );
 
-        stockLedgerOperations.push(
-          tx.stockLedger.create({
-            data: {
-              productId: item.productId,
-              storeId: transfer.destStoreId,
-              movementType: 'TRANSFER',
-              pieceQuantity,
-              boxQuantity: item.isBox ? item.quantity : 0,
-              reference: transfer.reference || `TRANSFER-${transfer.shortCode}`,
-              userId,
-              notes: item.isBox
-                ? `Transfer IN - ${transfer.shortCode} (${item.quantity} box(es) × ${product.boxSize} = ${pieceQuantity} pieces)`
-                : `Transfer IN - ${transfer.shortCode} (${item.quantity} piece(s))`,
-              movementDate: new Date(),
-            },
-          }),
-        );
-      } else if (transfer.destinationType === 'SHOP' && transfer.destShopId) {
-        destinationOperations.push(
-          tx.shopStock.upsert({
+          if (!sourceVariant) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Variant ${item.height}x${item.width} not found in source shop`,
+            );
+          }
+
+          if (sourceVariant.quantity < quantityToUse) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Insufficient variant stock in source shop. Available: ${sourceVariant.quantity}, Requested: ${quantityToUse}`,
+            );
+          }
+
+          // Check if after decrement it would become negative
+          if (sourceVariant.quantity - quantityToUse < 0) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Cannot transfer. Variant ${item.height}x${item.width} would have negative stock. Available: ${sourceVariant.quantity}, Requested: ${quantityToUse}`,
+            );
+          }
+        } else {
+          const sourceShopStock = await tx.shopStock.findUnique({
             where: {
               shopId_productId: {
-                shopId: transfer.destShopId,
+                shopId: transfer.sourceShopId,
                 productId: item.productId,
               },
             },
-            update: {
-              quantity: { increment: pieceQuantity },
-            },
-            create: {
-              shopId: transfer.destShopId,
-              productId: item.productId,
-              quantity: pieceQuantity,
-              status: 'Available',
-            },
-          }),
-        );
+          });
 
-        stockLedgerOperations.push(
-          tx.stockLedger.create({
-            data: {
-              productId: item.productId,
-              shopId: transfer.destShopId,
-              movementType: 'TRANSFER',
-              pieceQuantity,
-              boxQuantity: item.isBox ? item.quantity : 0,
-              reference: transfer.reference || `TRANSFER-${transfer.shortCode}`,
-              userId,
-              notes: item.isBox
-                ? `Transfer IN - ${transfer.shortCode} (${item.quantity} box(es) × ${product.boxSize} = ${pieceQuantity} pieces)`
-                : `Transfer IN - ${transfer.shortCode} (${item.quantity} piece(s))`,
-              movementDate: new Date(),
-            },
-          }),
-        );
+          if (!sourceShopStock) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Source shop stock not found for product ${item.productId}`,
+            );
+          }
+
+          if (sourceShopStock.quantity < quantityToUse) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Insufficient stock in source shop. Available: ${sourceShopStock.quantity}, Requested: ${quantityToUse}`,
+            );
+          }
+
+          // Check if after decrement it would become negative
+          if (sourceShopStock.quantity - quantityToUse < 0) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Cannot transfer. Product would have negative stock. Available: ${sourceShopStock.quantity}, Requested: ${quantityToUse}`,
+            );
+          }
+        }
       }
     }
 
-    // Execute all operations in parallel
-    await Promise.all([
-      ...sourceOperations,
-      ...destinationOperations,
-      ...stockLedgerOperations,
-    ]);
+    // Prepare all operations for each transfer item
+    const operations = await Promise.all(
+      transfer.items.map(async (item, index) => {
+        const unitOfMeasure = unitOfMeasureMap[item.unitOfMeasureId];
 
-    // Calculate total pieces transferred
-    let totalPiecesTransferred = 0;
-    for (const item of transfer.items) {
-      const product = productMap[item.productId];
-      if (item.isBox) {
-        totalPiecesTransferred += item.quantity * product.boxSize;
-      } else {
-        totalPiecesTransferred += item.quantity;
-      }
-    }
+        if (!unitOfMeasure) {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `Unit of measure not found for item ${item.id}`,
+          );
+        }
+
+        const quantityToUse = item.quantity;
+        const itemOperations = [];
+
+        // Check if this is a variant-based item (has height and width)
+        const hasDimensions =
+          item.height && item.width && item.height > 0 && item.width > 0;
+
+        // Create unique invoice numbers for each ledger entry by appending item index and movement type
+        const sourceInvoiceNo = `${transfer.shortCode}-OUT-${index}`;
+        const destinationInvoiceNo = `${transfer.shortCode}-IN-${index}`;
+
+        // Remove stock from source operations with variant support
+        if (transfer.sourceType === 'STORE' && transfer.sourceStoreId) {
+          if (hasDimensions) {
+            // Find the specific variant in source store
+            const sourceStoreStock = await tx.storeStock.findUnique({
+              where: {
+                storeId_productId: {
+                  storeId: transfer.sourceStoreId,
+                  productId: item.productId,
+                },
+              },
+              include: {
+                variants: true,
+              },
+            });
+
+            const sourceVariant = sourceStoreStock.variants.find(
+              (v) =>
+                Math.abs(v.height - (item.height || 0)) < 0.01 &&
+                Math.abs(v.width - (item.width || 0)) < 0.01,
+            );
+
+            // Deduct from variant
+            itemOperations.push(
+              tx.storeProductVariant.update({
+                where: { id: sourceVariant.id },
+                data: {
+                  quantity: { decrement: quantityToUse },
+                },
+              }),
+              // Also update the main store stock total quantity
+              tx.storeStock.update({
+                where: {
+                  storeId_productId: {
+                    storeId: transfer.sourceStoreId,
+                    productId: item.productId,
+                  },
+                },
+                data: {
+                  quantity: { decrement: quantityToUse },
+                },
+              }),
+              tx.stockLedger.create({
+                data: {
+                  productId: item.productId,
+                  storeId: transfer.sourceStoreId,
+                  invoiceNo: sourceInvoiceNo,
+                  movementType: 'OUT',
+                  quantity: quantityToUse,
+                  height: item.height,
+                  width: item.width,
+                  unitOfMeasureId: item.unitOfMeasureId,
+                  reference: `TRANSFER-${transfer.shortCode}`,
+                  userId,
+                  notes: `Transfer out to ${transfer.destinationType.toLowerCase()} - Variant: ${
+                    item.height
+                  }x${item.width}`,
+                  movementDate: new Date(),
+                },
+              }),
+            );
+          } else {
+            // Regular quantity-based item
+            itemOperations.push(
+              tx.storeStock.update({
+                where: {
+                  storeId_productId: {
+                    storeId: transfer.sourceStoreId,
+                    productId: item.productId,
+                  },
+                },
+                data: {
+                  quantity: { decrement: quantityToUse },
+                },
+              }),
+              tx.stockLedger.create({
+                data: {
+                  productId: item.productId,
+                  storeId: transfer.sourceStoreId,
+                  invoiceNo: sourceInvoiceNo,
+                  movementType: 'OUT',
+                  quantity: quantityToUse,
+                  unitOfMeasureId: item.unitOfMeasureId,
+                  reference: `TRANSFER-${transfer.shortCode}`,
+                  userId,
+                  notes: `Transfer out to ${transfer.destinationType.toLowerCase()}`,
+                  movementDate: new Date(),
+                },
+              }),
+            );
+          }
+        } else if (transfer.sourceType === 'SHOP' && transfer.sourceShopId) {
+          if (hasDimensions) {
+            // Find the specific variant in source shop
+            const sourceShopStock = await tx.shopStock.findUnique({
+              where: {
+                shopId_productId: {
+                  shopId: transfer.sourceShopId,
+                  productId: item.productId,
+                },
+              },
+              include: {
+                variants: true,
+              },
+            });
+
+            const sourceVariant = sourceShopStock.variants.find(
+              (v) =>
+                Math.abs(v.height - (item.height || 0)) < 0.01 &&
+                Math.abs(v.width - (item.width || 0)) < 0.01,
+            );
+
+            // Deduct from variant
+            itemOperations.push(
+              tx.shopProductVariant.update({
+                where: { id: sourceVariant.id },
+                data: {
+                  quantity: { decrement: quantityToUse },
+                },
+              }),
+              // Also update the main shop stock total quantity
+              tx.shopStock.update({
+                where: {
+                  shopId_productId: {
+                    shopId: transfer.sourceShopId,
+                    productId: item.productId,
+                  },
+                },
+                data: {
+                  quantity: { decrement: quantityToUse },
+                },
+              }),
+              tx.stockLedger.create({
+                data: {
+                  productId: item.productId,
+                  shopId: transfer.sourceShopId,
+                  invoiceNo: sourceInvoiceNo,
+                  movementType: 'OUT',
+                  quantity: quantityToUse,
+                  height: item.height,
+                  width: item.width,
+                  unitOfMeasureId: item.unitOfMeasureId,
+                  reference:
+                    transfer.reference || `TRANSFER-${transfer.shortCode}`,
+                  userId,
+                  notes: `Transfer out to ${transfer.destinationType.toLowerCase()} - Variant: ${
+                    item.height
+                  }x${item.width}`,
+                  movementDate: new Date(),
+                },
+              }),
+            );
+          } else {
+            // Regular quantity-based item
+            itemOperations.push(
+              tx.shopStock.update({
+                where: {
+                  shopId_productId: {
+                    shopId: transfer.sourceShopId,
+                    productId: item.productId,
+                  },
+                },
+                data: {
+                  quantity: { decrement: quantityToUse },
+                },
+              }),
+              tx.stockLedger.create({
+                data: {
+                  productId: item.productId,
+                  invoiceNo: sourceInvoiceNo,
+                  shopId: transfer.sourceShopId,
+                  movementType: 'OUT',
+                  quantity: quantityToUse,
+                  unitOfMeasureId: item.unitOfMeasureId,
+                  reference:
+                    transfer.reference || `TRANSFER-${transfer.shortCode}`,
+                  userId,
+                  notes: `Transfer out to ${transfer.destinationType.toLowerCase()}`,
+                  movementDate: new Date(),
+                },
+              }),
+            );
+          }
+        }
+
+        // Add stock to destination operations with variant support
+        if (transfer.destinationType === 'STORE' && transfer.destStoreId) {
+          if (hasDimensions) {
+            // Handle destination store stock addition with variants
+            // First, ensure the store stock exists
+            const destStoreStock = await tx.storeStock.upsert({
+              where: {
+                storeId_productId: {
+                  storeId: transfer.destStoreId,
+                  productId: item.productId,
+                },
+              },
+              update: {
+                quantity: { increment: quantityToUse },
+              },
+              create: {
+                storeId: transfer.destStoreId,
+                productId: item.productId,
+                quantity: quantityToUse,
+                unitOfMeasureId: item.unitOfMeasureId,
+                status: 'Available',
+              },
+            });
+
+            // Then handle the variant
+            const existingVariant = await tx.storeProductVariant.findUnique({
+              where: {
+                storeStockId_height_width: {
+                  storeStockId: destStoreStock.id,
+                  height: item.height,
+                  width: item.width,
+                },
+              },
+            });
+
+            if (existingVariant) {
+              // Update existing variant
+              itemOperations.push(
+                tx.storeProductVariant.update({
+                  where: { id: existingVariant.id },
+                  data: {
+                    quantity: { increment: quantityToUse },
+                  },
+                }),
+              );
+            } else {
+              // Create new variant
+              itemOperations.push(
+                tx.storeProductVariant.create({
+                  data: {
+                    storeStockId: destStoreStock.id,
+                    height: item.height,
+                    width: item.width,
+                    quantity: quantityToUse,
+                  },
+                }),
+              );
+            }
+
+            // Add stock ledger entry
+            itemOperations.push(
+              tx.stockLedger.create({
+                data: {
+                  productId: item.productId,
+                  invoiceNo: destinationInvoiceNo,
+                  storeId: transfer.destStoreId,
+                  movementType: 'IN',
+                  quantity: quantityToUse,
+                  height: item.height,
+                  width: item.width,
+                  unitOfMeasureId: item.unitOfMeasureId,
+                  reference:
+                    transfer.reference || `TRANSFER-${transfer.shortCode}`,
+                  userId,
+                  notes: `Transfer in from ${transfer.sourceType.toLowerCase()} - Variant: ${
+                    item.height
+                  }x${item.width}`,
+                  movementDate: new Date(),
+                },
+              }),
+            );
+          } else {
+            // Regular quantity-based item for store
+            itemOperations.push(
+              tx.storeStock.upsert({
+                where: {
+                  storeId_productId: {
+                    storeId: transfer.destStoreId,
+                    productId: item.productId,
+                  },
+                },
+                update: {
+                  quantity: { increment: quantityToUse },
+                },
+                create: {
+                  storeId: transfer.destStoreId,
+                  productId: item.productId,
+                  quantity: quantityToUse,
+                  unitOfMeasureId: item.unitOfMeasureId,
+                  status: 'Available',
+                },
+              }),
+              tx.stockLedger.create({
+                data: {
+                  productId: item.productId,
+                  invoiceNo: destinationInvoiceNo,
+                  storeId: transfer.destStoreId,
+                  movementType: 'IN',
+                  quantity: quantityToUse,
+                  unitOfMeasureId: item.unitOfMeasureId,
+                  reference:
+                    transfer.reference || `TRANSFER-${transfer.shortCode}`,
+                  userId,
+                  notes: `Transfer in from ${transfer.sourceType.toLowerCase()}`,
+                  movementDate: new Date(),
+                },
+              }),
+            );
+          }
+        } else if (transfer.destinationType === 'SHOP' && transfer.destShopId) {
+          if (hasDimensions) {
+            // Handle destination shop stock addition with variants
+            // First, ensure the shop stock exists
+            const destShopStock = await tx.shopStock.upsert({
+              where: {
+                shopId_productId: {
+                  shopId: transfer.destShopId,
+                  productId: item.productId,
+                },
+              },
+              update: {
+                quantity: { increment: quantityToUse },
+              },
+              create: {
+                shopId: transfer.destShopId,
+                productId: item.productId,
+                quantity: quantityToUse,
+                unitOfMeasureId: item.unitOfMeasureId,
+                status: 'Available',
+              },
+            });
+
+            // Then handle the variant
+            const existingVariant = await tx.shopProductVariant.findUnique({
+              where: {
+                shopStockId_height_width: {
+                  shopStockId: destShopStock.id,
+                  height: item.height,
+                  width: item.width,
+                },
+              },
+            });
+
+            if (existingVariant) {
+              // Update existing variant
+              itemOperations.push(
+                tx.shopProductVariant.update({
+                  where: { id: existingVariant.id },
+                  data: {
+                    quantity: { increment: quantityToUse },
+                  },
+                }),
+              );
+            } else {
+              // Create new variant
+              itemOperations.push(
+                tx.shopProductVariant.create({
+                  data: {
+                    shopStockId: destShopStock.id,
+                    height: item.height,
+                    width: item.width,
+                    quantity: quantityToUse,
+                  },
+                }),
+              );
+            }
+
+            // Add stock ledger entry
+            itemOperations.push(
+              tx.stockLedger.create({
+                data: {
+                  productId: item.productId,
+                  invoiceNo: destinationInvoiceNo,
+                  shopId: transfer.destShopId,
+                  movementType: 'IN',
+                  quantity: quantityToUse,
+                  height: item.height,
+                  width: item.width,
+                  unitOfMeasureId: item.unitOfMeasureId,
+                  reference:
+                    transfer.reference || `TRANSFER-${transfer.shortCode}`,
+                  userId,
+                  notes: `Transfer in from ${transfer.sourceType.toLowerCase()} - Variant: ${
+                    item.height
+                  }x${item.width}`,
+                  movementDate: new Date(),
+                },
+              }),
+            );
+          } else {
+            // Regular quantity-based item for shop
+            itemOperations.push(
+              tx.shopStock.upsert({
+                where: {
+                  shopId_productId: {
+                    shopId: transfer.destShopId,
+                    productId: item.productId,
+                  },
+                },
+                update: {
+                  quantity: { increment: quantityToUse },
+                },
+                create: {
+                  shopId: transfer.destShopId,
+                  productId: item.productId,
+                  quantity: quantityToUse,
+                  unitOfMeasureId: item.unitOfMeasureId,
+                  status: 'Available',
+                },
+              }),
+              tx.stockLedger.create({
+                data: {
+                  productId: item.productId,
+                  invoiceNo: destinationInvoiceNo,
+                  shopId: transfer.destShopId,
+                  movementType: 'IN',
+                  quantity: quantityToUse,
+                  unitOfMeasureId: item.unitOfMeasureId,
+                  reference:
+                    transfer.reference || `TRANSFER-${transfer.shortCode}`,
+                  userId,
+                  notes: `Transfer in from ${transfer.sourceType.toLowerCase()}`,
+                  movementDate: new Date(),
+                },
+              }),
+            );
+          }
+        }
+
+        return itemOperations;
+      }),
+    );
+
+    // Flatten all operations and execute them in parallel
+    const allOperations = operations.flat();
+    await Promise.all(allOperations);
 
     // Update transfer status to COMPLETED
     const updatedTransfer = await tx.transfer.update({
@@ -1097,29 +1499,14 @@ const completeTransfer = async (transferId, userId) => {
         status: 'COMPLETED',
         updatedById: userId,
       },
-      include: {
-        items: {
-          include: {
-            product: true,
-          },
-        },
-        sourceStore: true,
-        sourceShop: true,
-        destStore: true,
-        destShop: true,
-        createdBy: true,
-        updatedBy: true,
-      },
     });
 
     // Create log entry
     await tx.log.create({
       data: {
-        action: `Completed transfer ${
-          transfer.reference || transfer.shortCode
-        } with ${
+        action: `Completed transfer ${transfer.reference || transfer.id} with ${
           transfer.items.length
-        } items. Total pieces transferred: ${totalPiecesTransferred}`,
+        } items`,
         userId,
       },
     });
@@ -1129,7 +1516,6 @@ const completeTransfer = async (transferId, userId) => {
 
   return result;
 };
-
 // Cancel Transfer
 const cancelTransfer = async (transferId, userId) => {
   const transfer = await getTransferById(transferId);
@@ -1230,5 +1616,4 @@ module.exports = {
   completeTransfer,
   cancelTransfer,
   bulkUpdateAdditionalPrices,
-  getTransferBatchesById,
 };

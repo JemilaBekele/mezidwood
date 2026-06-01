@@ -5,7 +5,7 @@ const { productController } = require('../controllers');
 const auth = require('../middlewares/auth');
 const { uploadImage } = require('../utils/multer');
 
-// const checkPermission = require('../middlewares/permission.middleware');
+const checkPermission = require('../middlewares/permission.middleware');
 
 // Create a product
 
@@ -13,7 +13,7 @@ router.post(
   '/api/products',
   auth,
   uploadImage,
-  // checkPermission('CREATE_PRODUCT'),
+  checkPermission('CREATE_PRODUCT'),
   productController.createProduct,
 );
 router.get(
@@ -26,7 +26,24 @@ router.get(
   // checkPermission('CREATE_PRODUCT'), getRandomProductsWithShopStocks
   productController.getRandomProductsWithShopStocks,
 );
-
+router.post(
+  '/api/products/Batch/single',
+  auth,
+  // checkPermission('CREATE_PRODUCT'),
+  productController.createProductBatchsingle,
+);
+router.post(
+  '/api/products/:productId/stocks',
+  auth,
+  // checkPermission('CREATE_PRODUCT_STOCK'), // Uncomment if you have permission checks
+  productController.createProductStock,
+);
+router.get(
+  '/api/products/get/all/:productId/batches',
+  auth,
+  // checkPermission('VIEW_PRODUCT_BATCHES'), // Uncomment if you have permission checks
+  productController.getBatchesByProduct,
+);
 router.get(
   '/api/products/get/all/Top/Selling/Products',
   auth,
@@ -62,7 +79,7 @@ router.put(
   '/api/products/:id',
   auth,
   uploadImage,
-  // checkPermission('UPDATE_PRODUCT'),
+  checkPermission('UPDATE_PRODUCT'),
   productController.updateProduct,
 );
 
@@ -70,7 +87,7 @@ router.put(
 router.delete(
   '/api/products/:id',
   auth,
-  // checkPermission('DELETE_PRODUCT'),
+  checkPermission('DELETE_PRODUCT'),
   productController.deleteProduct,
 );
 router.get(
@@ -79,8 +96,14 @@ router.get(
   productController.getProductById,
 );
 router.get(
-  '/api/products/shop/find/ByShops/:productId',
+  '/api/products/Batch/shop/find/ByShops/:productId',
   auth, // if you need authentication
-  productController.getProductByShops,
+  productController.getProductBatchesByShopsController,
+);
+//
+router.get(
+  '/api/products/Batch/shop/find/ByShops/ForUser/:productId',
+  auth, // if you need authentication
+  productController.getProductBatchesByShopsForUser,
 );
 module.exports = router;

@@ -18,11 +18,17 @@ const getSellById = async (identifier) => {
         include: {
           product: {
             include: {
-              category: true,
               unitOfMeasure: true,
+              category: true,
             },
           },
           shop: true,
+          unitOfMeasure: true,
+          batches: {
+            include: {
+              batch: true,
+            },
+          },
         },
       },
     },
@@ -42,10 +48,17 @@ const getSellByIdByuser = async (id, userId = null) => {
         include: {
           product: {
             include: {
+              unitOfMeasure: true,
               category: true,
             },
           },
           shop: true,
+          unitOfMeasure: true,
+          batches: {
+            include: {
+              batch: true, // Just include the batch relation directly
+            },
+          },
         },
       },
     },
@@ -127,10 +140,17 @@ const getSellByInvoiceNo = async (invoiceNo) => {
         include: {
           product: {
             include: {
+              unitOfMeasure: true,
               category: true,
             },
           },
           shop: true,
+          unitOfMeasure: true,
+          batches: {
+            include: {
+              batch: true,
+            },
+          },
         },
       },
     },
@@ -203,10 +223,17 @@ const getAllSells = async ({
         include: {
           product: {
             include: {
+              unitOfMeasure: true,
               category: true,
             },
           },
           shop: true,
+          unitOfMeasure: true,
+          batches: {
+            include: {
+              batch: true,
+            },
+          },
         },
       },
       SellStockCorrection: {
@@ -214,7 +241,6 @@ const getAllSells = async ({
           id: true,
           status: true, // Only including status as requested
           createdAt: true,
-          isChecked: true, // Make sure this is included!
         },
       },
       _count: {
@@ -222,6 +248,7 @@ const getAllSells = async ({
       },
     },
   });
+
   return {
     sells,
     count: sells.length,
@@ -230,6 +257,8 @@ const getAllSells = async ({
 
 const generateInvoiceNumber = async () => {
   try {
+    console.log('🔢 [INVOICE] Generating invoice number...');
+
     // Get all invoice numbers
     const allSells = await prisma.sell.findMany({
       select: { invoiceNo: true },
@@ -240,6 +269,7 @@ const generateInvoiceNumber = async () => {
     if (allSells.length === 0) {
       // No invoices exist, start from 00001
       const invoiceNumber = 'INV-00001';
+      console.log('✅ [INVOICE] First invoice:', invoiceNumber);
       return invoiceNumber;
     }
 
@@ -256,17 +286,27 @@ const generateInvoiceNumber = async () => {
     }
 
     const nextNumber = maxNumber === 0 ? 1 : maxNumber + 1;
+    console.log(
+      '🔢 [INVOICE] Max number found:',
+      maxNumber,
+      'Next:',
+      nextNumber,
+    );
 
     // Format: Always 5 digits
     const invoiceNumber = `INV-${nextNumber.toString().padStart(5, '0')}`;
+    console.log('✅ [INVOICE] Generated:', invoiceNumber);
 
     return invoiceNumber;
   } catch (error) {
+    console.error('❌ [INVOICE ERROR]:', error);
     return `INV-${Date.now().toString().slice(-8)}`;
   }
 };
-
+// Create Sell
+// Create Sell
 const createSell = async (sellBody, userId) => {
+  console.log(sellBody);
   const user = await prisma.user.findUnique({
     where: { id: userId },
     include: { branch: true },
@@ -288,9 +328,9 @@ const createSell = async (sellBody, userId) => {
   }
 
   const invoiceNo = await generateInvoiceNumber();
+  // Check if discount exists
   const checkdiscount = restSellBody.discount || 0;
   const hasDiscount = checkdiscount > 0;
-
   // Extract product IDs and shop IDs from items
   const productIds = items.map((item) => item.productId).filter(Boolean);
   const shopIds = items.map((item) => item.shopId).filter(Boolean);
@@ -306,10 +346,11 @@ const createSell = async (sellBody, userId) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'All items must have a shopId');
   }
 
-  // Fetch products with their additional prices
+  // Fetch products with their additional prices and unit of measure
   const products = await prisma.product.findMany({
     where: { id: { in: productIds } },
     include: {
+      unitOfMeasure: true,
       AdditionalPrice: {
         where: {
           OR: [
@@ -321,20 +362,27 @@ const createSell = async (sellBody, userId) => {
     },
   });
 
-  // Fetch available shop stocks for validation - updated to use direct product relation
+  // Fetch available shop stocks for validation - corrected query
   const shopStocks = await prisma.shopStock.findMany({
     where: {
       shopId: { in: shopIds },
       status: 'Available',
       quantity: { gt: 0 },
-      productId: { in: productIds },
+      batch: {
+        productId: { in: productIds }, // Access productId through batch relation
+      },
     },
     include: {
-      product: true,
+      batch: {
+        include: {
+          product: true, // Include product to access productId
+        },
+      },
       shop: true,
     },
   });
 
+  let allItemsApproved = true;
   const enhancedItems = items.map((item, index) => {
     if (!item.productId) {
       throw new ApiError(
@@ -358,10 +406,32 @@ const createSell = async (sellBody, userId) => {
       );
     }
 
-    // Calculate piece quantity based on isBox flag
-    const isBox = item.isBox || false;
+    // Check available stock for this product in the selected shop (for validation only)
+    const availableStock = shopStocks
+      .filter(
+        (stock) =>
+          stock.batch.productId === item.productId &&
+          stock.shopId === item.shopId,
+      )
+      .reduce((sum, stock) => sum + stock.quantity, 0);
 
-    // Ensure unitPrice is converted to a number
+    if (item.quantity <= 0) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Item ${index + 1} has invalid quantity`,
+      );
+    }
+
+    if (item.quantity > availableStock) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Item ${index + 1} quantity (${
+          item.quantity
+        }) exceeds available stock (${availableStock}) in shop`,
+      );
+    }
+
+    // ✅ Ensure unitPrice is converted to a number
     const unitPrice = Number(item.unitPrice);
     if (
       typeof unitPrice !== 'number' ||
@@ -374,45 +444,49 @@ const createSell = async (sellBody, userId) => {
       );
     }
 
-    // Calculate total price - convert only if isBox is true
-    let totalPrice;
-    if (isBox) {
-      // If it's a box, convert the total price (price * quantity * boxSize)
-      totalPrice = unitPrice * item.quantity * product.boxSize;
-    } else {
-      // If it's not a box, keep the original calculation (price * quantity)
-      totalPrice = unitPrice * item.quantity;
+    // ✅ Get standard price from product
+
+    // ✅ Get additional prices for THIS specific shop (both global and shop-specific)
+    const shopAdditionalPrices = product.AdditionalPrice.filter(
+      (ap) => ap.shopId === null || ap.shopId === item.shopId,
+    );
+
+    // ✅ Check if unit price matches standard price OR any additional price for this shop
+    const isAdditionalPrice = shopAdditionalPrices.some(
+      (ap) => ap.price === unitPrice,
+    );
+
+    const isPriceValid = isAdditionalPrice;
+
+    // If any item has invalid price, mark the entire sale as not approved
+    if (!isPriceValid) {
+      allItemsApproved = false;
     }
 
     return {
       ...item,
       productId: item.productId,
       shopId: item.shopId,
-      isBox,
-      quantity: item.quantity, // Store as pieces in the database
-      unitPrice, // Unit price remains unchanged
-      boxSize: product.boxSize,
-      totalPrice,
+      unitOfMeasureId: item.unitOfMeasureId || product.unitOfMeasureId,
+      unitPrice,
+      isPriceValid, // Track if this item's price is valid
+      availableStock, // Store available stock for reference
     };
   });
 
-  // Calculate subtotal - convert only for box items
-  const subTotal = enhancedItems.reduce((sum, item) => {
-    if (item.isBox) {
-      // For box items, use the converted total price
-      return sum + item.unitPrice * item.quantity * item.boxSize;
-    }
-    // For non-box items, use regular calculation
-    return sum + item.unitPrice * item.quantity;
-  }, 0);
-
+  const subTotal = enhancedItems.reduce(
+    (sum, item) => sum + item.unitPrice * item.quantity,
+    0,
+  );
   const discount = restSellBody.discount || 0;
   const vat = restSellBody.vat || 0;
   const grandTotal = subTotal - discount + vat;
 
   // Determine sale status based on price validation
+  const saleStatus =
+    allItemsApproved && !hasDiscount ? 'APPROVED' : 'NOT_APPROVED';
 
-  // Create the sell record without stock updates
+  // Create only the sell record without stock updates
   const sell = await prisma.sell.create({
     data: {
       invoiceNo,
@@ -421,10 +495,9 @@ const createSell = async (sellBody, userId) => {
       subTotal,
       discount,
       vat,
-      balance: grandTotal,
       grandTotal,
       NetTotal: grandTotal,
-      saleStatus: 'NOT_APPROVED',
+      saleStatus, // Set status based on price validation
       saleDate: restSellBody.saleDate
         ? new Date(restSellBody.saleDate)
         : new Date(),
@@ -436,12 +509,11 @@ const createSell = async (sellBody, userId) => {
         create: enhancedItems.map((item) => ({
           productId: item.productId,
           shopId: item.shopId,
-          isBox: item.isBox,
-          remainingQuantity: item.quantity,
-          quantity: item.quantity, // Already in pieces
-          unitPrice: item.unitPrice, // Unit price remains unchanged
-          totalPrice: item.totalPrice, // Using the converted total price
-          itemSaleStatus: 'PENDING',
+          unitOfMeasureId: item.unitOfMeasureId,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          totalPrice: item.unitPrice * item.quantity,
+          itemSaleStatus: 'PENDING', // Default status for items
         })),
       },
     },
@@ -453,28 +525,125 @@ const createSell = async (sellBody, userId) => {
         include: {
           product: {
             include: {
+              unitOfMeasure: true,
               category: true,
             },
           },
+          unitOfMeasure: true,
           shop: true,
         },
       },
     },
   });
 
+  if (saleStatus === 'APPROVED') {
+    try {
+      const uniqueShopIds = sell.items
+        .map((item) => item.shopId)
+        .filter(Boolean)
+        .filter((shopId, index, array) => array.indexOf(shopId) === index);
+
+      // Find users who have access to these shops
+      const usersWithShopAccess = await prisma.user.findMany({
+        where: {
+          shops: {
+            some: {
+              id: { in: uniqueShopIds },
+            },
+          },
+          status: 'Active', // Only active users
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          shops: {
+            where: {
+              id: { in: uniqueShopIds },
+            },
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      });
+
+      // Create shop notifications (store in database)
+      const shopNotifications = await Promise.allSettled(
+        uniqueShopIds.map((shopId) =>
+          prisma.notification.create({
+            data: {
+              shopId,
+              title: 'Sale Approved - Prepare for Delivery',
+              message: `Sale #${sell.invoiceNo} has been approved and is ready for delivery preparation`,
+              type: 'SELL_READY_FOR_DELIVERY',
+              relatedEntityType: 'SELL',
+            },
+          }),
+        ),
+      );
+
+      // Get the Socket.IO instance
+      const io = getIO();
+
+      // Create notification object for real-time sending
+      const realTimeNotification = {
+        title: 'New Sale Approved',
+        message: `Sale #${sell.invoiceNo} has been approved and needs delivery preparation`,
+        type: 'SELL_READY_FOR_DELIVERY',
+        relatedEntityType: 'SELL',
+        saleId: sell.id,
+        invoiceNo: sell.invoiceNo,
+        timestamp: new Date().toISOString(),
+      };
+      // Send real-time notifications to users with shop access
+      usersWithShopAccess.forEach((user) => {
+        // Send to each user individually - remove 'user:' prefix
+        io.to(user.id).emit('new-notification', realTimeNotification);
+
+        // Also send to user's shops for additional targeting
+        user.shops.forEach((shop) => {
+          // Remove prefixes to match what frontend will join
+          io.to(`${user.id}:${shop.id}`).emit(
+            'new-notification',
+            realTimeNotification,
+          );
+        });
+      });
+
+      // Log statistics
+      const successfulShopCount = shopNotifications.filter(
+        (result) => result.status === 'fulfilled',
+      ).length;
+
+      console.log(
+        `📢 Successfully processed notifications for ${successfulShopCount} shops and ${usersWithShopAccess.length} users for approved sale #${sell.invoiceNo}`,
+      );
+    } catch (notificationError) {
+      console.error(
+        '❌ Unexpected error in notification process:',
+        notificationError,
+      );
+    }
+  }
+
   return sell;
 };
+
 // Update Sell
 const updateSell = async (sellId, sellBody, userId) => {
+  // Check if sell exists
   const existingSell = await getSellById(sellId);
   if (!existingSell) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Sale not found');
   }
-
+  // ✅ DON'T UPDATE IF LOCK IS TRUE
   if (existingSell.locked === true) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Cannot update locked sale');
   }
 
+  // Cannot update delivered or cancelled sells
   if (
     ['DELIVERED', 'PARTIALLY_DELIVERED', 'CANCELLED'].includes(
       existingSell.saleStatus,
@@ -486,6 +655,7 @@ const updateSell = async (sellId, sellBody, userId) => {
     );
   }
 
+  // Check if invoice number already exists (excluding current sell)
   if (sellBody.invoiceNo && sellBody.invoiceNo !== existingSell.invoiceNo) {
     if (await getSellByInvoiceNo(sellBody.invoiceNo)) {
       throw new ApiError(
@@ -515,19 +685,25 @@ const updateSell = async (sellId, sellBody, userId) => {
     );
   }
 
+  // ✅ DISCOUNT LOGIC: Check if discount exists in the update request
+  // If discount is not provided in the update, use the existing discount
   const newDiscount =
     restSellBody.discount !== undefined
       ? Number(restSellBody.discount)
       : existingSell.discount;
 
+  // Track if discount is being changed from zero to non-zero or vice versa
   const existingDiscountWasZero = existingSell.discount === 0;
   const newDiscountIsZero = newDiscount === 0;
   const discountChangedFromZeroToNonZero =
     existingDiscountWasZero && !newDiscountIsZero;
   const discountChangedFromNonZeroToZero =
     !existingDiscountWasZero && newDiscountIsZero;
+
+  // ✅ HAS DISCOUNT LOGIC: Sale has discount if newDiscount > 0
   const hasDiscount = newDiscount > 0;
 
+  // Extract product IDs and shop IDs from items
   const productIds = items.map((item) => item.productId).filter(Boolean);
   const shopIds = items.map((item) => item.shopId).filter(Boolean);
 
@@ -542,26 +718,38 @@ const updateSell = async (sellId, sellBody, userId) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'All items must have a shopId');
   }
 
+  // Fetch products with their additional prices and unit of measure
   const products = await prisma.product.findMany({
     where: { id: { in: productIds } },
     include: {
+      unitOfMeasure: true,
       AdditionalPrice: {
         where: {
-          OR: [{ shopId: null }, { shopId: { in: shopIds } }],
+          OR: [
+            { shopId: null }, // Global additional prices
+            { shopId: { in: shopIds } }, // Shop-specific additional prices
+          ],
         },
       },
     },
   });
 
+  // Fetch available shop stocks for validation
   const shopStocks = await prisma.shopStock.findMany({
     where: {
       shopId: { in: shopIds },
       status: 'Available',
       quantity: { gt: 0 },
-      productId: { in: productIds },
+      batch: {
+        productId: { in: productIds },
+      },
     },
     include: {
-      product: true,
+      batch: {
+        include: {
+          product: true,
+        },
+      },
       shop: true,
     },
   });
@@ -590,27 +778,17 @@ const updateSell = async (sellId, sellBody, userId) => {
       );
     }
 
-    // Calculate piece quantity based on isBox flag
-    let pieceQuantity = item.quantity;
-    const isBox = item.isBox || false;
-
-    if (isBox) {
-      if (!product.hasBox || !product.boxSize || product.boxSize <= 0) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          `Product "${product.name}" does not support box/packaging or has invalid box size.`,
-        );
-      }
-      pieceQuantity = item.quantity * product.boxSize;
-    }
-
+    // Check available stock for this product in the selected shop
+    // For updates, we need to consider the existing sale quantities
     const availableStock = shopStocks
       .filter(
         (stock) =>
-          stock.productId === item.productId && stock.shopId === item.shopId,
+          stock.batch.productId === item.productId &&
+          stock.shopId === item.shopId,
       )
       .reduce((sum, stock) => sum + stock.quantity, 0);
 
+    // For update, we need to add back the quantities from existing sale items
     const existingItem = existingSell.items.find(
       (existing) =>
         existing.productId === item.productId &&
@@ -621,24 +799,23 @@ const updateSell = async (sellId, sellBody, userId) => {
       ? availableStock + existingItem.quantity
       : availableStock;
 
-    if (pieceQuantity <= 0) {
+    if (item.quantity <= 0) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
         `Item ${index + 1} has invalid quantity`,
       );
     }
 
-    if (pieceQuantity > adjustedAvailableStock) {
+    if (item.quantity > adjustedAvailableStock) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
         `Item ${index + 1} quantity (${
-          isBox
-            ? `${item.quantity} box(es) = ${pieceQuantity} pieces`
-            : `${pieceQuantity} pieces`
-        }) exceeds available stock (${adjustedAvailableStock} pieces) in shop`,
+          item.quantity
+        }) exceeds available stock (${adjustedAvailableStock}) in shop`,
       );
     }
 
+    // ✅ Ensure unitPrice is converted to a number
     const unitPrice = Number(item.unitPrice);
     if (
       typeof unitPrice !== 'number' ||
@@ -651,105 +828,80 @@ const updateSell = async (sellId, sellBody, userId) => {
       );
     }
 
+    // ✅ Get standard price from product
+
+    // ✅ Get additional prices for THIS specific shop (both global and shop-specific)
     const shopAdditionalPrices = product.AdditionalPrice.filter(
       (ap) => ap.shopId === null || ap.shopId === item.shopId,
     );
 
+    // ✅ Check if unit price matches standard price OR any additional price for this shop
     const isAdditionalPrice = shopAdditionalPrices.some(
       (ap) => ap.price === unitPrice,
     );
 
-    if (!isAdditionalPrice) {
-      allItemsApproved = false;
-    }
+    const isPriceValid = isAdditionalPrice;
 
-    // Calculate total price - convert only if isBox is true
-    let totalPrice;
-    if (isBox) {
-      // If it's a box, convert the total price (price * quantity * boxSize)
-      totalPrice = unitPrice * item.quantity * product.boxSize;
-    } else {
-      // If it's not a box, keep the original calculation (price * quantity)
-      totalPrice = unitPrice * item.quantity;
+    // If any item has invalid price, mark the entire sale as not approved
+    if (!isPriceValid) {
+      allItemsApproved = false;
     }
 
     return {
       ...item,
       productId: item.productId,
       shopId: item.shopId,
-      isBox,
-      quantity: item.quantity,
-      originalQuantity: item.quantity, // Keep original quantity for reference
+      unitOfMeasureId: item.unitOfMeasureId || product.unitOfMeasureId,
       unitPrice,
-      totalPrice,
-      isPriceValid: isAdditionalPrice,
-      availableStock: adjustedAvailableStock,
-      boxSize: product.boxSize,
+      isPriceValid, // Track if this item's price is valid
+      availableStock: adjustedAvailableStock, // Store adjusted available stock for reference
     };
   });
 
-  // Calculate subtotal - convert only for box items
-  const subTotal = enhancedItems.reduce((sum, item) => {
-    if (item.isBox) {
-      // For box items, use the converted total price
-      return sum + item.unitPrice * item.originalQuantity * item.boxSize;
-    }
-    // For non-box items, use regular calculation
-    return sum + item.unitPrice * item.quantity;
-  }, 0);
-
-  const discount = newDiscount;
+  const subTotal = enhancedItems.reduce(
+    (sum, item) => sum + item.unitPrice * item.quantity,
+    0,
+  );
+  const discount = newDiscount; // Use the calculated newDiscount
   const vat = restSellBody.vat || existingSell.vat || 0;
   const grandTotal = subTotal - discount + vat;
 
+  // ✅ DETERMINE SALE STATUS BASED ON PRICE VALIDATION AND DISCOUNT LOGIC
+  // Rules:
+  // 1. If any item has invalid price → NOT_APPROVED
+  // 2. If there's any discount (newDiscount > 0) → NOT_APPROVED
+  // 3. Only APPROVED if all items have valid prices AND no discount
+
   let saleStatus;
 
-  // Any update will set status to NOT_APPROVED unless all conditions are met
+  // If discount is being added (changed from 0 to > 0), force NOT_APPROVED
   if (discountChangedFromZeroToNonZero) {
     saleStatus = 'NOT_APPROVED';
-  } else if (discountChangedFromNonZeroToZero) {
+  }
+  // If discount is being removed (changed from > 0 to 0), check if items are valid
+  else if (discountChangedFromNonZeroToZero) {
     saleStatus = allItemsApproved ? 'APPROVED' : 'NOT_APPROVED';
-  } else if (hasDiscount) {
-    saleStatus = 'NOT_APPROVED';
-  } else {
-    // If there's any update (items changed, prices changed, etc.), set to NOT_APPROVED
-    // Compare if items have changed from existing sell
-    const itemsChanged =
-      JSON.stringify(
-        enhancedItems.map((item) => ({
-          productId: item.productId,
-          shopId: item.shopId,
-          isBox: item.isBox,
-          remainingQuantity: item.quantity,
-
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-        })),
-      ) !==
-      JSON.stringify(
-        existingSell.items.map((item) => ({
-          productId: item.productId,
-          shopId: item.shopId,
-          isBox: item.isBox,
-          remainingQuantity: item.quantity,
-
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-        })),
-      );
-
-    if (itemsChanged) {
+  }
+  // If discount value is not changing, maintain existing logic
+  else {
+    // If there's a discount (existing or new), sale cannot be approved
+    // eslint-disable-next-line no-lonely-if
+    if (hasDiscount) {
       saleStatus = 'NOT_APPROVED';
     } else {
+      // No discount, check item prices
       saleStatus = allItemsApproved ? 'APPROVED' : 'NOT_APPROVED';
     }
   }
 
+  // Update the sell inside a transaction
   const result = await prisma.$transaction(async (tx) => {
+    // Delete all existing items
     await tx.sellItem.deleteMany({
       where: { sellId },
     });
 
+    // Update sell with new items, totals, and status
     const sell = await tx.sell.update({
       where: { id: sellId },
       data: {
@@ -760,7 +912,7 @@ const updateSell = async (sellId, sellBody, userId) => {
         vat,
         grandTotal,
         NetTotal: grandTotal,
-        saleStatus,
+        saleStatus, // Set status based on price validation AND discount logic
         saleDate: restSellBody.saleDate
           ? new Date(restSellBody.saleDate)
           : existingSell.saleDate,
@@ -770,13 +922,11 @@ const updateSell = async (sellId, sellBody, userId) => {
           create: enhancedItems.map((item) => ({
             productId: item.productId,
             shopId: item.shopId,
-            isBox: item.isBox,
-            remainingQuantity: item.quantity,
-
-            quantity: item.quantity, // Store as pieces in the database
-            unitPrice: item.unitPrice, // Unit price remains unchanged
-            totalPrice: item.totalPrice, // Using the converted total price
-            itemSaleStatus: 'PENDING',
+            unitOfMeasureId: item.unitOfMeasureId,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            totalPrice: item.unitPrice * item.quantity,
+            itemSaleStatus: 'PENDING', // Default status for items
           })),
         },
       },
@@ -788,9 +938,11 @@ const updateSell = async (sellId, sellBody, userId) => {
           include: {
             product: {
               include: {
+                unitOfMeasure: true,
                 category: true,
               },
             },
+            unitOfMeasure: true,
             shop: true,
           },
         },
@@ -799,6 +951,7 @@ const updateSell = async (sellId, sellBody, userId) => {
     return sell;
   });
 
+  // ✅ ADD NOTIFICATION CREATION HERE - Only if sell status changed to APPROVED
   if (existingSell.saleStatus !== 'APPROVED' && saleStatus === 'APPROVED') {
     try {
       const uniqueShopIds = result.items
@@ -806,23 +959,34 @@ const updateSell = async (sellId, sellBody, userId) => {
         .filter(Boolean)
         .filter((shopId, index, array) => array.indexOf(shopId) === index);
 
+      // Find users who have access to these shops
       const usersWithShopAccess = await prisma.user.findMany({
         where: {
-          shops: { some: { id: { in: uniqueShopIds } } },
-          status: 'Active',
+          shops: {
+            some: {
+              id: { in: uniqueShopIds },
+            },
+          },
+          status: 'Active', // Only active users
         },
         select: {
           id: true,
           name: true,
           email: true,
           shops: {
-            where: { id: { in: uniqueShopIds } },
-            select: { id: true, name: true },
+            where: {
+              id: { in: uniqueShopIds },
+            },
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
       });
 
-      await Promise.allSettled(
+      // Create shop notifications (store in database)
+      const shopNotifications = await Promise.allSettled(
         uniqueShopIds.map((shopId) =>
           prisma.notification.create({
             data: {
@@ -836,7 +1000,10 @@ const updateSell = async (sellId, sellBody, userId) => {
         ),
       );
 
+      // Get the Socket.IO instance
       const io = getIO();
+
+      // Create notification object for real-time sending
       const realTimeNotification = {
         title: 'Sale Updated & Approved',
         message: `Sale #${result.invoiceNo} has been updated and approved, ready for delivery preparation`,
@@ -846,18 +1013,36 @@ const updateSell = async (sellId, sellBody, userId) => {
         invoiceNo: result.invoiceNo,
         timestamp: new Date().toISOString(),
       };
-
+      // Send real-time notifications to users with shop access
+      // eslint-disable-next-line no-shadow
       usersWithShopAccess.forEach((user) => {
+        // Send to each user individually - remove 'user:' prefix
         io.to(user.id).emit('new-notification', realTimeNotification);
+
+        // Also send to user's shops for additional targeting
         user.shops.forEach((shop) => {
+          // Remove prefixes to match what frontend will join
           io.to(`${user.id}:${shop.id}`).emit(
             'new-notification',
             realTimeNotification,
           );
         });
       });
+
+      // Log statistics
+      const successfulShopCount = shopNotifications.filter(
+        (result) => result.status === 'fulfilled',
+      ).length;
+
+      console.log(
+        `📢 Successfully processed notifications for ${successfulShopCount} shops and ${usersWithShopAccess.length} users for updated & approved sale #${result.invoiceNo}`,
+      );
     } catch (notificationError) {
-      console.error('❌ Error in notification process:', notificationError);
+      console.error(
+        '❌ Unexpected error in notification process:',
+        notificationError,
+      );
+      // Don't throw error - the sale was updated successfully
     }
   }
 
@@ -885,6 +1070,7 @@ const deleteSell = async (id, userId) => {
           },
         },
         shop: true,
+        unitOfMeasure: true,
       },
     });
 
@@ -924,6 +1110,7 @@ const deleteSell = async (id, userId) => {
                 shopId: sellItem.shopId,
                 movementType: 'IN',
                 quantity: quantityToRestore,
+                unitOfMeasureId: sellItem.unitOfMeasureId,
                 reference: `Sell-Delete-${existingSell.invoiceNo}`,
                 userId,
                 notes: `Sale deletion - Stock reversal for Item: ${sellItem.id}`,
@@ -1002,15 +1189,22 @@ const completeSaleDelivery = async (saleId, deliveryData, userId) => {
   }
 
   return prisma.$transaction(async (tx) => {
+    // Get all unit of measures for the sale items
+    const unitOfMeasureIds = sell.items.map((item) => item.unitOfMeasureId);
+    const unitOfMeasures = await tx.unitOfMeasure.findMany({
+      where: { id: { in: unitOfMeasureIds } },
+    });
+
+    const unitOfMeasureMap = unitOfMeasures.reduce((acc, uom) => {
+      acc[uom.id] = uom;
+      return acc;
+    }, {});
+
     // Get sell items that are being delivered
     const sellItemsToDeliver = await tx.sellItem.findMany({
       where: {
         id: { in: deliveryData.items.map((item) => item.itemId) },
         sellId: saleId,
-      },
-      include: {
-        product: true,
-        shop: true,
       },
     });
 
@@ -1029,10 +1223,8 @@ const completeSaleDelivery = async (saleId, deliveryData, userId) => {
       );
     }
 
-    // Process each delivery item
-    const processedItems = [];
-
-    for (const deliveryItem of deliveryData.items) {
+    // Validate all items and batches first
+    deliveryData.items.forEach((deliveryItem) => {
       const sellItem = sellItemsToDeliver.find(
         (item) => item.id === deliveryItem.itemId,
       );
@@ -1044,201 +1236,183 @@ const completeSaleDelivery = async (saleId, deliveryData, userId) => {
         );
       }
 
-      // Get the given quantity (use provided value or deliver remaining)
-      const givenQty =
-        deliveryItem.givenQuantity ||
-        (sellItem.remainingQuantity > 0
-          ? sellItem.remainingQuantity
-          : sellItem.quantity);
+      const unitOfMeasure = unitOfMeasureMap[sellItem.unitOfMeasureId];
 
-      // Calculate new remaining quantity (simple subtraction)
-      const currentRemaining =
-        sellItem.remainingQuantity !== null &&
-        sellItem.remainingQuantity !== undefined
-          ? sellItem.remainingQuantity
-          : sellItem.quantity;
-
-      const newRemainingQuantity = currentRemaining - givenQty;
-
-      // Calculate total given quantity so far
-      const totalGivenSoFar = (sellItem.givenQuantity || 0) + givenQty;
-
-      // Determine new item status
-      let newItemStatus = sellItem.itemSaleStatus;
-      if (newRemainingQuantity <= 0) {
-        newItemStatus = 'DELIVERED';
-      } else if (totalGivenSoFar > 0 && newRemainingQuantity > 0) {
-        newItemStatus = 'PARTIALLY_DELIVERED';
-      }
-
-      if (givenQty <= 0) {
+      if (!unitOfMeasure) {
         throw new ApiError(
           httpStatus.BAD_REQUEST,
-          `Invalid quantity for product "${sellItem.product.name}". Quantity must be greater than 0.`,
-        );
-      }
-
-      // Validate that given quantity doesn't exceed remaining quantity
-      if (givenQty > currentRemaining) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          `Given quantity (${givenQty}) cannot exceed remaining quantity (${currentRemaining}) for item ${sellItem.product.name}`,
+          `Unit of measure not found for item ${sellItem.id}`,
         );
       }
 
       // Validate item status transition
       const allowedItemTransitions = {
-        PENDING: ['DELIVERED', 'CANCELLED', 'PARTIALLY_DELIVERED'],
-        PARTIALLY_DELIVERED: ['DELIVERED', 'CANCELLED'],
+        PENDING: ['DELIVERED', 'CANCELLED'],
         DELIVERED: ['RETURNED'],
         CANCELLED: [],
         RETURNED: [],
       };
 
-      const currentStatus = sellItem.itemSaleStatus;
-      const allowedStatuses = allowedItemTransitions[currentStatus] || [];
-
-      if (!allowedStatuses.includes(newItemStatus)) {
+      if (
+        !allowedItemTransitions[sellItem.itemSaleStatus]?.includes('DELIVERED')
+      ) {
         throw new ApiError(
           httpStatus.BAD_REQUEST,
-          `Cannot transition item from ${currentStatus} to ${newItemStatus}`,
+          `Cannot deliver item ${sellItem.id} from current status: ${sellItem.itemSaleStatus}. Item must be in PENDING status to be delivered.`,
         );
       }
 
-      processedItems.push({
-        sellItem,
-        givenQty,
-        totalGivenSoFar,
-        newRemainingQuantity,
-        newItemStatus,
-      });
-    }
-
-    // Calculate piece quantities for stock removal
-    const processedItemsWithPieces = processedItems.map((item) => {
-      let pieceQuantity = item.givenQty;
-
-      // If it's a box, convert to pieces for stock removal
-      if (item.sellItem.isBox) {
-        if (!item.sellItem.product.hasBox || !item.sellItem.product.boxSize) {
-          throw new ApiError(
-            httpStatus.BAD_REQUEST,
-            `Product "${item.sellItem.product.name}" has invalid box configuration.`,
-          );
-        }
-        pieceQuantity = item.givenQty * item.sellItem.product.boxSize;
+      // Validate that batches exist for this item in delivery data
+      if (
+        !deliveryItem.batches ||
+        !Array.isArray(deliveryItem.batches) ||
+        deliveryItem.batches.length === 0
+      ) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Item ${sellItem.id} has no batches specified in delivery data`,
+        );
       }
 
+      // Validate total batch quantities match item quantity
+      const totalBatchQuantity = deliveryItem.batches.reduce(
+        (sum, batch) => sum + (batch.quantity || 0),
+        0,
+      );
+      if (totalBatchQuantity !== sellItem.quantity) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Item ${sellItem.id}: Total batch quantities (${totalBatchQuantity}) do not match item quantity (${sellItem.quantity})`,
+        );
+      }
+
+      // Validate each batch
+      deliveryItem.batches.forEach((batch, index) => {
+        if (!batch.batchId) {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `Batch ${index + 1} for item ${sellItem.id} is missing batchId`,
+          );
+        }
+        if (!batch.quantity || batch.quantity <= 0) {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `Batch ${batch.batchId} for item ${sellItem.id} has invalid quantity`,
+          );
+        }
+      });
+    });
+
+    // Prepare operations for creating batches and processing delivery
+    const operations = deliveryData.items.flatMap((deliveryItem) => {
+      const sellItem = sellItemsToDeliver.find(
+        (item) => item.id === deliveryItem.itemId,
+      );
+      const itemOperations = [];
+
+      // First, create SellItemBatch records for this item
+      deliveryItem.batches.forEach((batch) => {
+        itemOperations.push(
+          tx.sellItemBatch.create({
+            data: {
+              sellItemId: deliveryItem.itemId,
+              batchId: batch.batchId,
+              quantity: batch.quantity,
+            },
+          }),
+        );
+      });
+
+      // Process each batch for stock updates
+      deliveryItem.batches.forEach((batch) => {
+        const quantityToUse = batch.quantity;
+
+        // Remove stock from shop for this specific batch
+        itemOperations.push(
+          tx.shopStock.update({
+            where: {
+              shopId_batchId: {
+                shopId: sellItem.shopId,
+                batchId: batch.batchId,
+              },
+            },
+            data: {
+              quantity: { decrement: quantityToUse },
+            },
+          }),
+        );
+
+        // Create stock ledger entry for this batch
+        itemOperations.push(
+          tx.stockLedger.create({
+            data: {
+              batchId: batch.batchId,
+              shopId: sellItem.shopId,
+              movementType: 'OUT',
+              quantity: quantityToUse,
+              unitOfMeasureId: sellItem.unitOfMeasureId,
+              reference: `Sell-${sell.invoiceNo}`,
+              userId,
+              notes: `Sale delivery to customer - Item: ${sellItem.id}`,
+              movementDate: new Date(),
+            },
+          }),
+        );
+      });
+
+      // Update item status to DELIVERED
+      itemOperations.push(
+        tx.sellItem.update({
+          where: { id: deliveryItem.itemId },
+          data: { itemSaleStatus: 'DELIVERED' },
+        }),
+      );
+
+      return itemOperations;
+    });
+
+    const updatedItems = deliveryData.items.map((deliveryItem) => {
+      const sellItem = sellItemsToDeliver.find(
+        (item) => item.id === deliveryItem.itemId,
+      );
       return {
-        ...item,
-        pieceQuantity,
+        id: sellItem.id,
+        shopId: sellItem.shopId,
+        previousStatus: sellItem.itemSaleStatus,
+        newStatus: 'DELIVERED',
+        batchCount: deliveryItem.batches.length,
+        totalQuantity: sellItem.quantity,
       };
     });
 
-    // Validate stock availability for all items
-    const stockValidationPromises = processedItemsWithPieces.map(
-      async (item) => {
-        const shopStock = await tx.shopStock.findUnique({
-          where: {
-            shopId_productId: {
-              shopId: item.sellItem.shopId,
-              productId: item.sellItem.productId,
-            },
-          },
-        });
+    // Execute all operations in parallel
+    await Promise.all(operations);
 
-        if (!shopStock) {
-          throw new ApiError(
-            httpStatus.BAD_REQUEST,
-            `Product "${item.sellItem.product.name}" not found in shop stock for delivery.`,
-          );
-        }
-
-        if (shopStock.quantity < item.pieceQuantity) {
-          throw new ApiError(
-            httpStatus.BAD_REQUEST,
-            `Insufficient stock for product "${item.sellItem.product.name}" in shop. Available: ${shopStock.quantity} pieces, Requested: ${item.pieceQuantity} pieces`,
-          );
-        }
-
-        return item;
-      },
-    );
-
-    const validatedItems = await Promise.all(stockValidationPromises);
-
-    // Create stock operations
-    const stockOperations = validatedItems.flatMap((item) => [
-      tx.shopStock.update({
-        where: {
-          shopId_productId: {
-            shopId: item.sellItem.shopId,
-            productId: item.sellItem.productId,
-          },
-        },
-        data: {
-          quantity: { decrement: item.pieceQuantity },
-        },
-      }),
-      tx.stockLedger.create({
-        data: {
-          productId: item.sellItem.productId,
-          shopId: item.sellItem.shopId,
-          movementType: 'OUT',
-          pieceQuantity: item.pieceQuantity,
-          boxQuantity: item.sellItem.isBox ? item.givenQty : 0,
-          reference: `Sell-${sell.invoiceNo}`,
-          userId,
-          notes: item.sellItem.isBox
-            ? `Sale delivery - ${sell.invoiceNo} (${item.givenQty} box(es) = ${item.pieceQuantity} pieces)`
-            : `Sale delivery - ${sell.invoiceNo} (${item.givenQty} piece(s))`,
-          movementDate: new Date(),
-        },
-      }),
-    ]);
-
-    // Update sell items (store quantities as-is, no conversion)
-    const itemUpdatePromises = validatedItems.map((item) =>
-      tx.sellItem.update({
-        where: { id: item.sellItem.id },
-        data: {
-          givenQuantity: item.totalGivenSoFar,
-          remainingQuantity: item.newRemainingQuantity,
-          itemSaleStatus: item.newItemStatus,
-        },
-      }),
-    );
-
-    // Execute all operations
-    await Promise.all([...stockOperations, ...itemUpdatePromises]);
-
-    // Get updated items
-    const updatedItems = await Promise.all(itemUpdatePromises);
-
-    updatedItems.forEach((item, index) => {
-      const processed = validatedItems[index];
-    });
-
-    // Recalculate overall sale status
+    // Recalculate overall sale status based on all item statuses
     const allSaleItems = await tx.sellItem.findMany({
       where: { sellId: saleId },
+      include: {
+        batches: true,
+      },
     });
 
     const itemStatuses = allSaleItems.map((item) => item.itemSaleStatus);
     let newSaleStatus;
 
+    // Determine overall status based on individual item statuses
     if (itemStatuses.every((status) => status === 'DELIVERED')) {
       newSaleStatus = 'DELIVERED';
     } else if (itemStatuses.every((status) => status === 'CANCELLED')) {
       newSaleStatus = 'CANCELLED';
-    } else if (
-      itemStatuses.some((status) => status === 'DELIVERED') ||
-      itemStatuses.some((status) => status === 'PARTIALLY_DELIVERED')
-    ) {
+    } else if (itemStatuses.every((status) => status === 'RETURNED')) {
+      newSaleStatus = 'RETURNED';
+    } else if (itemStatuses.some((status) => status === 'DELIVERED')) {
+      // If any items are delivered, status should be PARTIALLY_DELIVERED (mixed status)
       newSaleStatus = 'PARTIALLY_DELIVERED';
     } else if (itemStatuses.every((status) => status === 'PENDING')) {
       newSaleStatus = 'NOT_APPROVED';
     } else {
+      // Default fallback
       newSaleStatus = 'NOT_APPROVED';
     }
 
@@ -1254,6 +1428,12 @@ const completeSaleDelivery = async (saleId, deliveryData, userId) => {
           include: {
             shop: true,
             product: true,
+            unitOfMeasure: true,
+            batches: {
+              include: {
+                batch: true,
+              },
+            },
           },
         },
         customer: true,
@@ -1261,15 +1441,27 @@ const completeSaleDelivery = async (saleId, deliveryData, userId) => {
       },
     });
 
-    // Calculate total pieces delivered
-    const totalPiecesDelivered = validatedItems.reduce((total, item) => {
-      return total + item.pieceQuantity;
-    }, 0);
+    // Group delivered items by shop for better logging
+    const shopDeliveries = updatedItems.reduce((acc, item) => {
+      if (!acc[item.shopId]) {
+        acc[item.shopId] = { items: 0, batches: 0, quantity: 0 };
+      }
+      acc[item.shopId].items += 1;
+      acc[item.shopId].batches += item.batchCount;
+      acc[item.shopId].quantity += item.totalQuantity;
+      return acc;
+    }, {});
 
-    // Create log entry
+    // Create log entry for delivered items
+    const shopSummary = Object.entries(shopDeliveries)
+      .map(
+        ([shopId, stats]) => `Shop${shopId}:${stats.items}i,${stats.batches}b`,
+      )
+      .join('; ');
+
     await tx.log.create({
       data: {
-        action: `Sale ${sell.invoiceNo} delivered: ${validatedItems.length} items, ${totalPiecesDelivered} pieces`,
+        action: `Sale ${sell.invoiceNo} delivered: ${shopSummary}`,
         userId,
       },
     });
@@ -1284,104 +1476,16 @@ const deliverAllSaleItems = async (saleId, deliveryData, userId) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Sale not found');
   }
 
-  // Get all items that can be delivered - with proper remaining quantity calculation
-  const deliverableItems = sell.items.filter((item) => {
-    // Check if status allows delivery
-    const isEligibleStatus =
-      item.itemSaleStatus === 'PENDING' ||
-      item.itemSaleStatus === 'PARTIALLY_DELIVERED';
-
-    if (!isEligibleStatus) return false;
-
-    // Calculate actual remaining quantity
-    let actualRemaining = 0;
-
-    // If remainingQuantity is set and > 0, use it
-    if (
-      item.remainingQuantity !== null &&
-      item.remainingQuantity !== undefined &&
-      item.remainingQuantity > 0
-    ) {
-      actualRemaining = item.remainingQuantity;
-    }
-    // If remainingQuantity is 0 but givenQuantity is less than quantity, it's incorrect
-    else if (
-      item.remainingQuantity === 0 &&
-      (item.givenQuantity || 0) < item.quantity
-    ) {
-      // Calculate correct remaining quantity
-      actualRemaining = item.quantity - (item.givenQuantity || 0);
-    }
-    // If remainingQuantity is null/undefined, calculate from quantity and givenQuantity
-    else if (
-      item.remainingQuantity === null ||
-      item.remainingQuantity === undefined
-    ) {
-      actualRemaining = item.quantity - (item.givenQuantity || 0);
-    }
-
-    return actualRemaining > 0;
-  });
+  // Get all items that can be delivered (PENDING status)
+  const deliverableItems = sell.items.filter(
+    (item) => item.itemSaleStatus === 'PENDING',
+  );
 
   if (deliverableItems.length === 0) {
-    // Check if there are any non-delivered items
-    const nonDeliveredItems = sell.items.filter(
-      (item) =>
-        item.itemSaleStatus !== 'DELIVERED' &&
-        item.itemSaleStatus !== 'CANCELLED',
-    );
-
-    if (nonDeliveredItems.length === 0) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'No items available for delivery. All items are already delivered or cancelled.',
-      );
-    }
-
-    // Calculate if items have quantity remaining
-    const itemsWithRemaining = nonDeliveredItems.filter((item) => {
-      const remaining = item.quantity - (item.givenQuantity || 0);
-      return remaining > 0;
-    });
-
-    if (itemsWithRemaining.length > 0) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        `Found ${
-          itemsWithRemaining.length
-        } item(s) with remaining quantity, but they have status ${itemsWithRemaining
-          .map((i) => i.itemSaleStatus)
-          .join(', ')}. Please check item statuses.`,
-      );
-    }
-
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      'No deliverable items found in this sale. All items have zero remaining quantity.',
+      'No deliverable items found in this sale. All items are either already delivered, cancelled, or returned.',
     );
-  }
-
-  // If no deliveryData.items provided, create delivery data for all deliverable items
-  if (!deliveryData.items || deliveryData.items.length === 0) {
-    deliveryData.items = deliverableItems.map((item) => {
-      // Calculate the correct remaining quantity
-      let remainingQty = item.remainingQuantity;
-
-      // If remainingQuantity is 0 but givenQuantity is less than quantity, correct it
-      if (remainingQty === 0 && (item.givenQuantity || 0) < item.quantity) {
-        remainingQty = item.quantity - (item.givenQuantity || 0);
-      }
-      // If remainingQuantity is null/undefined, calculate it
-      else if (remainingQty === null || remainingQty === undefined) {
-        remainingQty = item.quantity - (item.givenQuantity || 0);
-      }
-
-      return {
-        itemId: item.id,
-        givenQuantity: remainingQty, // Deliver the remaining quantity
-      };
-    });
-    console.log('Auto-generated delivery items:', deliveryData.items);
   }
 
   return completeSaleDelivery(saleId, deliveryData, userId);
@@ -1530,6 +1634,9 @@ const updateSaleStatus = async (saleId, newStatus, userId) => {
       usersWithShopAccess.forEach((user) => {
         // Send to each user individually - remove 'user:' prefix
         io.to(user.id).emit('new-notification', realTimeNotification);
+        console.log(
+          `✅ Sent real-time notification to user ${user.name} (${user.id})`,
+        );
 
         // Also send to user's shops for additional targeting
         user.shops.forEach((shop) => {
@@ -1545,6 +1652,12 @@ const updateSaleStatus = async (saleId, newStatus, userId) => {
       const successfulShopCount = shopNotifications.filter(
         (result) => result.status === 'fulfilled',
       ).length;
+
+      console.log(
+        `📢 Successfully processed ${newStatus.toLowerCase()} notifications for ${successfulShopCount} shops and ${
+          usersWithShopAccess.length
+        } users for sale #${updatedSale.invoiceNo}`,
+      );
     } catch (notificationError) {
       console.error(
         `❌ Unexpected error in ${newStatus.toLowerCase()} notification process:`,
@@ -1720,6 +1833,10 @@ const cancelSale = async (saleId, userId) => {
     const successfulShopCount = shopNotifications.filter(
       (result) => result.status === 'fulfilled',
     ).length;
+
+    console.log(
+      `📢 Successfully processed cancellation notifications for ${successfulShopCount} shops and ${usersWithShopAccess.length} users for sale #${updatedSale.invoiceNo}`,
+    );
   } catch (notificationError) {
     console.error(
       '❌ Unexpected error in cancellation notification process:',
@@ -1735,454 +1852,9 @@ const getAllSellsuser = async ({
   endDate,
   userId,
   customerName,
-  status,
-  page = 1,
-  limit = 20,
-}) => {
-  // Validate required parameters
-  if (!userId) {
-    throw new Error('User ID is required');
-  }
-
-  // Initialize where clause with required condition
-  const whereClause = {
-    createdById: userId,
-  };
-
-  // DETECT DEFAULT VIEW: Check if any filters are applied
-  const hasCustomerNameFilter = customerName && customerName.trim();
-  const hasStatusFilter = status && status.trim();
-  const hasDateFilter = startDate || endDate;
-
-  const isDefaultView =
-    !hasStatusFilter && !hasDateFilter && !hasCustomerNameFilter && page === 1;
-
-  // For default view: Show all NOT_APPROVED and PARTIALLY_DELIVERED, plus last 10 DELIVERED
-  if (isDefaultView) {
-    // Get last 10 delivered sales
-    const lastDeliveredQuery = {
-      createdById: userId,
-      saleStatus: 'DELIVERED',
-    };
-
-    // Add date filtering for delivered sales (last 3 months for performance)
-    const threeMonthsAgo = new Date();
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-    lastDeliveredQuery.createdAt = { gte: threeMonthsAgo };
-
-    const [
-      lastDeliveredSells,
-      notApprovedSells,
-      partiallyDeliveredSells,
-      approvedSells,
-      cancelledSells,
-    ] = await Promise.all([
-      // Get last 10 delivered sales
-      prisma.sell.findMany({
-        where: lastDeliveredQuery,
-        orderBy: { createdAt: 'desc' },
-        take: 10,
-        include: {
-          branch: true,
-          customer: true,
-          createdBy: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-          items: {
-            include: {
-              product: {
-                include: {
-                  category: true,
-                },
-              },
-              shop: true,
-            },
-          },
-          SellStockCorrection: {
-            select: {
-              id: true,
-              status: true,
-              isChecked: true,
-            },
-          },
-          _count: {
-            select: { items: true },
-          },
-        },
-      }),
-
-      // Get all NOT_APPROVED sales
-      prisma.sell.findMany({
-        where: {
-          createdById: userId,
-          saleStatus: 'NOT_APPROVED',
-        },
-        orderBy: { createdAt: 'desc' },
-        include: {
-          branch: true,
-          customer: true,
-          createdBy: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-          items: {
-            include: {
-              product: {
-                include: {
-                  category: true,
-                },
-              },
-              shop: true,
-            },
-          },
-          SellStockCorrection: {
-            select: {
-              id: true,
-              status: true,
-              isChecked: true,
-            },
-          },
-          _count: {
-            select: { items: true },
-          },
-        },
-      }),
-
-      // Get all PARTIALLY_DELIVERED sales
-      prisma.sell.findMany({
-        where: {
-          createdById: userId,
-          saleStatus: 'PARTIALLY_DELIVERED',
-        },
-        orderBy: { createdAt: 'desc' },
-        include: {
-          branch: true,
-          customer: true,
-          createdBy: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-          items: {
-            include: {
-              product: {
-                include: {
-                  category: true,
-                },
-              },
-              shop: true,
-            },
-          },
-          SellStockCorrection: {
-            select: {
-              id: true,
-              status: true,
-              isChecked: true,
-            },
-          },
-          _count: {
-            select: { items: true },
-          },
-        },
-      }),
-
-      // Get all APPROVED sales
-      prisma.sell.findMany({
-        where: {
-          createdById: userId,
-          saleStatus: 'APPROVED',
-        },
-        orderBy: { createdAt: 'desc' },
-        include: {
-          branch: true,
-          customer: true,
-          createdBy: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-          items: {
-            include: {
-              product: {
-                include: {
-                  category: true,
-                },
-              },
-              shop: true,
-            },
-          },
-          SellStockCorrection: {
-            select: {
-              id: true,
-              status: true,
-              isChecked: true,
-            },
-          },
-          _count: {
-            select: { items: true },
-          },
-        },
-      }),
-
-      // Get all CANCELLED sales
-      prisma.sell.findMany({
-        where: {
-          createdById: userId,
-          saleStatus: 'CANCELLED',
-        },
-        orderBy: { createdAt: 'desc' },
-        include: {
-          branch: true,
-          customer: true,
-          createdBy: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-          items: {
-            include: {
-              product: {
-                include: {
-                  category: true,
-                },
-              },
-              shop: true,
-            },
-          },
-          SellStockCorrection: {
-            select: {
-              id: true,
-              status: true,
-              isChecked: true,
-            },
-          },
-          _count: {
-            select: { items: true },
-          },
-        },
-      }),
-    ]);
-
-    // Combine all results
-    const allSells = [
-      ...notApprovedSells,
-      ...partiallyDeliveredSells,
-      ...approvedSells,
-      ...cancelledSells,
-      ...lastDeliveredSells,
-    ];
-
-    // Sort by createdAt descending
-    allSells.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    // Apply the limit for default view
-    const limitedSells = allSells.slice(0, limit);
-
-    // Get counts for each status
-    const [
-      notApprovedCount,
-      partiallyDeliveredCount,
-      approvedCount,
-      cancelledCount,
-      deliveredCount,
-    ] = await Promise.all([
-      prisma.sell.count({
-        where: {
-          createdById: userId,
-          saleStatus: 'NOT_APPROVED',
-        },
-      }),
-      prisma.sell.count({
-        where: {
-          createdById: userId,
-          saleStatus: 'PARTIALLY_DELIVERED',
-        },
-      }),
-      prisma.sell.count({
-        where: {
-          createdById: userId,
-          saleStatus: 'APPROVED',
-        },
-      }),
-      prisma.sell.count({
-        where: {
-          createdById: userId,
-          saleStatus: 'CANCELLED',
-        },
-      }),
-      prisma.sell.count({
-        where: {
-          createdById: userId,
-          saleStatus: 'DELIVERED',
-        },
-      }),
-    ]);
-
-    return {
-      sells: limitedSells,
-      count: limitedSells.length,
-      totalCount:
-        notApprovedCount +
-        partiallyDeliveredCount +
-        approvedCount +
-        cancelledCount +
-        deliveredCount,
-      isDefaultView: true,
-      statusCounts: {
-        NOT_APPROVED: notApprovedCount,
-        PARTIALLY_DELIVERED: partiallyDeliveredCount,
-        APPROVED: approvedCount,
-        CANCELLED: cancelledCount,
-        DELIVERED: deliveredCount,
-      },
-    };
-  }
-
-  // REGULAR FILTERING LOGIC - NO LIMIT when filtering/searching
-
-  // Handle status filtering
-  if (status) {
-    if (status.includes(',')) {
-      const statuses = status
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s);
-      if (statuses.length > 0) {
-        whereClause.saleStatus = { in: statuses };
-      }
-    } else {
-      whereClause.saleStatus = status;
-    }
-  }
-
-  // Handle customer name filtering
-  if (customerName && customerName.trim()) {
-    const customerNameLower = customerName.trim().toLowerCase();
-    whereClause.customer = {
-      name: {
-        contains: customerNameLower,
-        mode: 'insensitive',
-      },
-    };
-  }
-
-  // Handle date filtering
-  try {
-    if (startDate && endDate) {
-      const startOfRange = new Date(startDate);
-      const endOfRange = new Date(endDate);
-
-      if (
-        Number.isNaN(startOfRange.getTime()) ||
-        Number.isNaN(endOfRange.getTime())
-      ) {
-        throw new Error('Invalid date format');
-      }
-
-      startOfRange.setHours(0, 0, 0, 0);
-      endOfRange.setHours(23, 59, 59, 999);
-
-      whereClause.createdAt = {
-        gte: startOfRange,
-        lte: endOfRange,
-      };
-    } else if (startDate && !endDate) {
-      const startOfRange = new Date(startDate);
-      if (Number.isNaN(startOfRange.getTime())) {
-        throw new Error('Invalid start date format');
-      }
-      startOfRange.setHours(0, 0, 0, 0);
-      whereClause.createdAt = { gte: startOfRange };
-    } else if (endDate && !startDate) {
-      const endOfRange = new Date(endDate);
-      if (Number.isNaN(endOfRange.getTime())) {
-        throw new Error('Invalid end date format');
-      }
-      endOfRange.setHours(23, 59, 59, 999);
-      const twelveMonthsAgo = new Date();
-      twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-
-      whereClause.createdAt = {
-        gte: twelveMonthsAgo,
-        lte: endOfRange,
-      };
-    } else {
-      // When filtering without dates, show all records (no date limit)
-      // Remove this else block to show all records regardless of date when filtering
-      // If you want to keep some date limit for performance, you can adjust this
-    }
-  } catch (error) {
-    throw new Error(`Invalid date: ${error.message}`);
-  }
-
-  // Execute the query WITHOUT pagination when filtering
-  const sells = await prisma.sell.findMany({
-    where: whereClause,
-    orderBy: { createdAt: 'desc' },
-    include: {
-      branch: true,
-      customer: true,
-      createdBy: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
-      items: {
-        include: {
-          product: {
-            include: {
-              category: true,
-            },
-          },
-          shop: true,
-        },
-      },
-      SellStockCorrection: {
-        select: {
-          id: true,
-          status: true,
-          isChecked: true,
-        },
-      },
-      _count: {
-        select: { items: true },
-      },
-    },
-  });
-
-  const totalCount = sells.length;
-
-  return {
-    sells, // NO LIMIT applied when filtering
-    count: sells.length,
-    totalCount,
-    isDefaultView: false,
-    // Note: When filtering, pagination metadata doesn't apply since we return all results
-  };
-};
-const getAllSellsuserweb = async ({
-  startDate,
-  endDate,
-  userId,
-  customerName,
   status, // This parameter should actually be called saleStatus for clarity
   page = 1,
-  limit = 2000,
+  limit = 20,
 }) => {
   // Validate required parameters
   if (!userId) {
@@ -2338,17 +2010,27 @@ const getAllSellsuserweb = async ({
           include: {
             product: {
               include: {
+                unitOfMeasure: true,
                 category: true,
               },
             },
             shop: true,
+            unitOfMeasure: true,
+            batches: {
+              include: {
+                batch: {
+                  include: {
+                    product: true,
+                  },
+                },
+              },
+            },
           },
         },
         SellStockCorrection: {
           select: {
             id: true,
             status: true,
-            isChecked: true, // Make sure this is included!
           },
         },
         _count: {
@@ -2381,425 +2063,9 @@ const getAllSellsuserweb = async ({
     totalCount,
   };
 };
+
 // Get all Sells filtered by user's shops
 const getAllSellsForStore = async ({
-  startDate,
-  endDate,
-  userId,
-  customerName,
-  salesPersonName,
-  status,
-} = {}) => {
-  // Validate required parameters
-  if (!userId) {
-    throw new Error('User ID is required');
-  }
-
-  // Get user's shops
-  const userWithShops = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      shops: {
-        select: { id: true },
-      },
-    },
-  });
-
-  if (!userWithShops || userWithShops.shops.length === 0) {
-    return {
-      sells: [],
-      count: 0,
-      totalCount: 0,
-      isDefaultView: false,
-    };
-  }
-
-  const userShopIds = userWithShops.shops.map((shop) => shop.id);
-
-  // DETECT DEFAULT VIEW: Check if any filters are applied
-  const hasNoStatusFilter =
-    !status ||
-    (typeof status === 'string' && status.trim() === '') ||
-    status === 'all';
-  const hasNoDateFilter = !startDate && !endDate;
-  const hasNoCustomerFilter = !customerName || customerName.trim() === '';
-  const hasNoSalesPersonFilter =
-    !salesPersonName || salesPersonName.trim() === '';
-
-  const isDefaultView =
-    hasNoStatusFilter &&
-    hasNoDateFilter &&
-    hasNoCustomerFilter &&
-    hasNoSalesPersonFilter;
-
-  // For default view: Show all PARTIALLY_DELIVERED and APPROVED, plus last 10 DELIVERED
-  // EXCLUDE: NOT_APPROVED and CANCELLED
-  if (isDefaultView) {
-    try {
-      // Common where clause for shop filtering
-      const shopFilter = {
-        some: {
-          shopId: {
-            in: userShopIds,
-          },
-        },
-      };
-
-      // Get last 10 delivered sales
-      const lastDeliveredQuery = {
-        saleStatus: 'DELIVERED',
-        items: shopFilter,
-      };
-
-      // Add date filtering for delivered sales (last 3 months for performance)
-      const threeMonthsAgo = new Date();
-      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-      lastDeliveredQuery.saleDate = { gte: threeMonthsAgo };
-
-      const [lastDeliveredSells, partiallyDeliveredSells, approvedSells] =
-        await Promise.all([
-          // Get last 10 delivered sales
-          prisma.sell.findMany({
-            where: lastDeliveredQuery,
-            orderBy: { saleDate: 'desc' },
-            take: 10,
-            include: {
-              branch: true,
-              customer: true,
-              createdBy: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                },
-              },
-              items: {
-                where: {
-                  shopId: {
-                    in: userShopIds,
-                  },
-                },
-                include: {
-                  product: {
-                    include: {
-                      category: true,
-                    },
-                  },
-                  shop: true,
-                },
-              },
-              SellStockCorrection: {
-                select: {
-                  id: true,
-                  status: true,
-                },
-              },
-              _count: {
-                select: { items: true },
-              },
-            },
-          }),
-
-          // Get all PARTIALLY_DELIVERED sales
-          prisma.sell.findMany({
-            where: {
-              saleStatus: 'PARTIALLY_DELIVERED',
-              items: shopFilter,
-            },
-            orderBy: { saleDate: 'desc' },
-            include: {
-              branch: true,
-              customer: true,
-              createdBy: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                },
-              },
-              items: {
-                where: {
-                  shopId: {
-                    in: userShopIds,
-                  },
-                },
-                include: {
-                  product: {
-                    include: {
-                      category: true,
-                    },
-                  },
-                  shop: true,
-                },
-              },
-              SellStockCorrection: {
-                select: {
-                  id: true,
-                  status: true,
-                },
-              },
-              _count: {
-                select: { items: true },
-              },
-            },
-          }),
-
-          // Get all APPROVED sales
-          prisma.sell.findMany({
-            where: {
-              saleStatus: 'APPROVED',
-              items: shopFilter,
-            },
-            orderBy: { saleDate: 'desc' },
-            include: {
-              branch: true,
-              customer: true,
-              createdBy: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                },
-              },
-              items: {
-                where: {
-                  shopId: {
-                    in: userShopIds,
-                  },
-                },
-                include: {
-                  product: {
-                    include: {
-                      category: true,
-                    },
-                  },
-                  shop: true,
-                },
-              },
-              SellStockCorrection: {
-                select: {
-                  id: true,
-                  status: true,
-                },
-              },
-              _count: {
-                select: { items: true },
-              },
-            },
-          }),
-        ]);
-
-      // Combine all results - ONLY INCLUDING: PARTIALLY_DELIVERED, APPROVED, and last 10 DELIVERED
-      const allSells = [
-        ...partiallyDeliveredSells,
-        ...approvedSells,
-        ...lastDeliveredSells, // Last 10 delivered only
-      ];
-
-      // Sort by saleDate descending
-      allSells.sort((a, b) => new Date(b.saleDate) - new Date(a.saleDate));
-
-      // Get counts for each status with shop filtering
-      const [
-        partiallyDeliveredCount,
-        approvedCount,
-        deliveredCount,
-        notApprovedCount,
-        cancelledCount,
-      ] = await Promise.all([
-        prisma.sell.count({
-          where: {
-            saleStatus: 'PARTIALLY_DELIVERED',
-            items: shopFilter,
-          },
-        }),
-        prisma.sell.count({
-          where: {
-            saleStatus: 'APPROVED',
-            items: shopFilter,
-          },
-        }),
-        prisma.sell.count({
-          where: {
-            saleStatus: 'DELIVERED',
-            items: shopFilter,
-          },
-        }),
-        prisma.sell.count({
-          where: {
-            saleStatus: 'NOT_APPROVED',
-            items: shopFilter,
-          },
-        }),
-        prisma.sell.count({
-          where: {
-            saleStatus: 'CANCELLED',
-            items: shopFilter,
-          },
-        }),
-      ]);
-
-      return {
-        sells: allSells,
-        count: allSells.length,
-        totalCount: partiallyDeliveredCount + approvedCount + deliveredCount,
-        isDefaultView: true,
-        statusCounts: {
-          PARTIALLY_DELIVERED: partiallyDeliveredCount,
-          APPROVED: approvedCount,
-          DELIVERED: deliveredCount,
-          NOT_APPROVED: notApprovedCount,
-          CANCELLED: cancelledCount,
-        },
-      };
-    } catch (error) {
-      console.error('Error in default view:', error);
-      throw error;
-    }
-  }
-
-  // REGULAR FILTERING LOGIC (when user applies any filter)
-  const whereClause = {
-    items: {
-      some: {
-        shopId: {
-          in: userShopIds,
-        },
-      },
-    },
-  };
-
-  const twelveMonthsAgo = new Date();
-  twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-
-  // Convert string dates to Date objects if they exist
-  const startDateObj = startDate ? new Date(startDate) : undefined;
-  const endDateObj = endDate ? new Date(endDate) : undefined;
-
-  // Build the date filter
-  if (startDateObj && endDateObj) {
-    // Adjust for end date to include the entire day
-    const adjustedEndDate = new Date(endDateObj);
-    adjustedEndDate.setHours(23, 59, 59, 999);
-
-    whereClause.saleDate = {
-      gte: startDateObj,
-      lte: adjustedEndDate,
-    };
-  } else if (startDateObj) {
-    whereClause.saleDate = {
-      gte: startDateObj,
-      lte: new Date(),
-    };
-  } else if (endDateObj) {
-    // Adjust for end date to include the entire day
-    const adjustedEndDate = new Date(endDateObj);
-    adjustedEndDate.setHours(23, 59, 59, 999);
-
-    whereClause.saleDate = {
-      gte: twelveMonthsAgo,
-      lte: adjustedEndDate,
-    };
-  } else {
-    whereClause.saleDate = {
-      gte: twelveMonthsAgo,
-    };
-  }
-
-  // Filter by status if provided
-  if (status && status !== 'all') {
-    if (Array.isArray(status) && status.length > 0) {
-      whereClause.saleStatus = {
-        in: status,
-      };
-    } else if (typeof status === 'string') {
-      whereClause.saleStatus = status;
-    }
-  } else if (status === 'all') {
-    // Show all statuses including NOT_APPROVED and CANCELLED when 'all' is specified
-    // No saleStatus filter applied
-  } else {
-    // Default for filtered view: exclude NOT_APPROVED (like original)
-    whereClause.saleStatus = { not: 'NOT_APPROVED' };
-  }
-
-  try {
-    const sells = await prisma.sell.findMany({
-      where: whereClause,
-      orderBy: {
-        saleDate: 'desc',
-      },
-      include: {
-        branch: true,
-        customer: true,
-        createdBy: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-        items: {
-          where: {
-            shopId: {
-              in: userShopIds,
-            },
-          },
-          include: {
-            product: {
-              include: {
-                category: true,
-              },
-            },
-            shop: true,
-          },
-        },
-        SellStockCorrection: {
-          select: {
-            id: true,
-            status: true,
-          },
-        },
-        _count: {
-          select: { items: true },
-        },
-      },
-    });
-
-    // Apply case-insensitive filtering in memory if needed
-    let filteredSells = sells;
-
-    if (customerName && customerName.trim()) {
-      const customerNameLower = customerName.trim().toLowerCase();
-      filteredSells = filteredSells.filter(
-        (sell) =>
-          sell.customer &&
-          sell.customer.name.toLowerCase().includes(customerNameLower),
-      );
-    }
-
-    if (salesPersonName && salesPersonName.trim()) {
-      const salesPersonNameLower = salesPersonName.trim().toLowerCase();
-      filteredSells = filteredSells.filter(
-        (sell) =>
-          sell.createdBy &&
-          sell.createdBy.name.toLowerCase().includes(salesPersonNameLower),
-      );
-    }
-
-    return {
-      sells: filteredSells,
-      count: filteredSells.length,
-      totalCount: await prisma.sell.count({ where: whereClause }),
-      isDefaultView: false,
-    };
-  } catch (error) {
-    console.error('Error fetching sells:', error);
-    throw error;
-  }
-};
-
-const getAllSellsForStoreweb = async ({
   startDate,
   endDate,
   userId,
@@ -2944,10 +2210,21 @@ const getAllSellsForStoreweb = async ({
           include: {
             product: {
               include: {
+                unitOfMeasure: true,
                 category: true,
               },
             },
             shop: true,
+            unitOfMeasure: true,
+            batches: {
+              include: {
+                batch: {
+                  include: {
+                    product: true,
+                  },
+                },
+              },
+            },
           },
         },
         SellStockCorrection: {
@@ -3015,303 +2292,6 @@ const unlockSell = async (id) => {
 
   return sell;
 };
-// Helper function to save file
-const addSellFiles = async (sellId, userId, structuredFiles = {}) => {
-  // Validate userId
-  if (!userId) {
-    throw new ApiError(httpStatus.UNAUTHORIZED, 'User ID is required');
-  }
-
-  // Check if sell exists
-  const existingSell = await prisma.sell.findUnique({
-    where: { id: sellId },
-    select: {
-      id: true,
-      invoiceNo: true,
-      imageUrl: true,
-      documentUrl: true,
-    },
-  });
-
-  if (!existingSell) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Sale not found');
-  }
-
-  try {
-    let { imageUrl } = existingSell;
-    let { documentUrl } = existingSell;
-
-    // Handle image upload from structuredFiles
-    if (structuredFiles.image && structuredFiles.image.length > 0) {
-      const imageFile = structuredFiles.image[0];
-      let fileUrl = imageFile.path;
-
-      // Convert Windows path to URL format
-      fileUrl = fileUrl.replace(/\\/g, '/');
-      // Extract the path after 'uploads'
-      const uploadsIndex = fileUrl.indexOf('/uploads/');
-      if (uploadsIndex !== -1) {
-        fileUrl = fileUrl.substring(uploadsIndex);
-      } else {
-        // If no 'uploads' in path, just use the filename
-        fileUrl = `/uploads/sell/images/${imageFile.filename}`;
-      }
-
-      imageUrl = fileUrl;
-    }
-
-    // Handle document upload from structuredFiles
-    if (structuredFiles.document && structuredFiles.document.length > 0) {
-      const documentFile = structuredFiles.document[0];
-      let fileUrl = documentFile.path;
-
-      // Convert Windows path to URL format
-      fileUrl = fileUrl.replace(/\\/g, '/');
-      // Extract the path after 'uploads'
-      const uploadsIndex = fileUrl.indexOf('/uploads/');
-      if (uploadsIndex !== -1) {
-        fileUrl = fileUrl.substring(uploadsIndex);
-      } else {
-        // If no 'uploads' in path, just use the filename
-        fileUrl = `/uploads/sell/documents/${documentFile.filename}`;
-      }
-
-      documentUrl = fileUrl;
-    }
-
-    // Update sell record with both files
-    const updatedSell = await prisma.$transaction(async (prismaTx) => {
-      const sell = await prismaTx.sell.update({
-        where: { id: sellId },
-        data: {
-          imageUrl,
-          documentUrl,
-        },
-      });
-
-      // Create log entry
-      const addedFiles = [];
-      if (structuredFiles.image && structuredFiles.image.length > 0)
-        addedFiles.push('image');
-      if (structuredFiles.document && structuredFiles.document.length > 0)
-        addedFiles.push('document');
-
-      if (addedFiles.length > 0) {
-        await prismaTx.log.create({
-          data: {
-            action: `Added/Updated ${addedFiles.join(' and ')} for sale ${
-              existingSell.invoiceNo
-            }`,
-            userId,
-          },
-        });
-      }
-
-      return sell;
-    });
-
-    return {
-      success: true,
-      message: `${structuredFiles.image ? 'Image' : ''}${
-        structuredFiles.image && structuredFiles.document ? ' and ' : ''
-      }${
-        structuredFiles.document ? 'Document' : ''
-      } added/updated successfully`,
-      data: updatedSell,
-    };
-  } catch (error) {
-    if (error.code) {
-      console.error('Prisma error code:', error.code);
-    }
-
-    throw new ApiError(
-      httpStatus.INTERNAL_SERVER_ERROR,
-      `Failed to add files to sale: ${error.message}`,
-    );
-  }
-};
-const addSellPayment = async (sellId, paymentData, userId) => {
-  const { amount } = paymentData;
-
-  try {
-    // Validate amount
-    if (!amount || amount <= 0) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Payment amount must be greater than 0',
-      );
-    }
-
-    // Get the sell with current status
-    const sell = await prisma.sell.findUnique({
-      where: { id: sellId },
-      include: {
-        items: true,
-        sellPayments: {
-          // ✅ Changed from 'payments' to 'sellPayments'
-          orderBy: { createdAt: 'desc' },
-        },
-      },
-    });
-
-    if (!sell) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Sell not found');
-    }
-
-    // Check if sell is cancelled
-    if (sell.saleStatus === 'CANCELLED') {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Cannot add payment to cancelled sale',
-      );
-    }
-
-    // Calculate current total paid
-    const currentTotalPaid = sell.sellPayments.reduce(
-      // ✅ Changed from 'payments' to 'sellPayments'
-      (sum, payment) => sum + payment.amount,
-      0,
-    );
-    const newTotalPaid = currentTotalPaid + amount;
-
-    // Check if payment exceeds grand total
-    if (newTotalPaid > sell.grandTotal) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        `Payment amount (${amount}) exceeds remaining balance (${
-          sell.grandTotal - currentTotalPaid
-        })`,
-      );
-    }
-
-    // Determine new payment status
-    let paymentStatus;
-    if (newTotalPaid >= sell.grandTotal) {
-      paymentStatus = 'PAID';
-    } else if (newTotalPaid > 0 && newTotalPaid < sell.grandTotal) {
-      paymentStatus = 'PARTIAL';
-    } else {
-      paymentStatus = 'PENDING';
-    }
-
-    // Calculate new balance (remaining amount to pay)
-    const newBalance = sell.grandTotal - newTotalPaid;
-    // Create payment and update sell in transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // Create payment record
-      const payment = await tx.sellPayment.create({
-        data: {
-          sellId,
-          amount,
-          createdById: userId,
-        },
-        include: {
-          createdBy: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-        },
-      });
-
-      // Update sell with new totals and status
-      const updatedSell = await tx.sell.update({
-        where: { id: sellId },
-        data: {
-          totalPaid: newTotalPaid,
-          balance: newBalance,
-          paymentStatus,
-        },
-        include: {
-          customer: true,
-          branch: true,
-          sellPayments: {
-            // ✅ Changed from 'payments' to 'sellPayments'
-            orderBy: { createdAt: 'desc' },
-            include: {
-              createdBy: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      return { payment, sell: updatedSell };
-    });
-
-    return result;
-  } catch (error) {
-    console.error('=== addSellPayment ERROR ===');
-    console.error('Error type:', error.constructor.name);
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-
-    // Log Prisma-specific error details
-    if (error.code) {
-      console.error('Prisma error code:', error.code);
-      console.error('Prisma error meta:', error.meta);
-    }
-
-    // Log any response data if it's an API error
-    if (error.response) {
-      console.error('Error response:', error.response.data);
-    }
-
-    console.error('=== addSellPayment ERROR END ===');
-    throw error;
-  }
-};
-const getSellPaymentHistory = async (sellId) => {
-  const sell = await prisma.sell.findUnique({
-    where: { id: sellId },
-    include: {
-      sellPayments: {
-        // ✅ Changed from 'payments' to 'sellPayments'
-        orderBy: { createdAt: 'desc' },
-        include: {
-          createdBy: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-        },
-      },
-      customer: true,
-    },
-  });
-
-  if (!sell) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Sell not found');
-  }
-  return {
-    sell: {
-      id: sell.id,
-      invoiceNo: sell.invoiceNo,
-      grandTotal: sell.grandTotal,
-      totalPaid: sell.totalPaid,
-      balance: sell.balance,
-      paymentStatus: sell.paymentStatus,
-      customer: sell.customer,
-    },
-    payments: sell.sellPayments, // ✅ Changed from 'payments' to 'sellPayments'
-    summary: {
-      totalPayments: sell.sellPayments.length, // ✅ Changed from 'payments' to 'sellPayments'
-      totalAmountPaid: sell.totalPaid,
-      remainingBalance: sell.balance,
-      isFullyPaid: sell.paymentStatus === 'PAID',
-    },
-  };
-};
-
 module.exports = {
   unlockSell,
   getSellById,
@@ -3327,11 +2307,6 @@ module.exports = {
   cancelSale,
   partialSaleDelivery,
   getAllSellsuser,
-  getAllSellsuserweb,
   getAllSellsForStore,
-  getAllSellsForStoreweb,
   getSellByIdByuser,
-  addSellFiles,
-  addSellPayment,
-  getSellPaymentHistory,
 };

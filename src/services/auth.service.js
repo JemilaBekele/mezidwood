@@ -37,75 +37,109 @@ const emailBruteLimiter = new RateLimiterMemory({
 const normalizeIpAddress = (ipAddr) => String(ipAddr || 'unknown_ip');
 
 const login = async (email, password, ipAddr) => {
-  const normalizedIp = normalizeIpAddress(ipAddr);
-  const promises = [slowerBruteLimiter.consume(normalizedIp)];
+  try {
+    console.log('Login attempt:', {
+      email,
+      ipAddr,
+    });
 
-  // Find user with role, permissions, and branch
-  const user = await prisma.user.findUnique({
-    where: { email },
-    include: {
-      role: {
-        include: {
-          permissions: {
-            include: {
-              permission: true,
+    const normalizedIp = normalizeIpAddress(ipAddr);
+
+    console.log('Normalized IP:', normalizedIp);
+
+    const promises = [slowerBruteLimiter.consume(normalizedIp)];
+
+    // Find user
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: {
+        role: {
+          include: {
+            permissions: {
+              include: {
+                permission: true,
+              },
             },
           },
         },
+        branch: true,
+        shops: true,
+        stores: true,
       },
-      branch: true, // Include branch information
-      shops: true, // Include assigned shops
-      stores: true, // Include assigned stores
-    },
-  });
-  // Check if user exists and password matches
-  if (!user || !(await userService.isPasswordMatch(user, password))) {
-    if (user) {
-      // Only consume email/ip limiters if a user with the email exists
-      promises.push(
-        emailIpBruteLimiter.consume(`${email}_${normalizedIp}`),
-        emailBruteLimiter.consume(email),
+    });
+
+    console.log('User found:', user ? user.email : 'No user');
+
+    // Check password
+    const passwordMatch =
+      user && (await userService.isPasswordMatch(user, password));
+
+    console.log('Password match:', passwordMatch);
+
+    if (!user || !passwordMatch) {
+      console.log('Invalid credentials');
+
+      if (user) {
+        promises.push(
+          emailIpBruteLimiter.consume(`${email}_${normalizedIp}`),
+          emailBruteLimiter.consume(email),
+        );
+      }
+
+      await Promise.all(promises);
+
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Incorrect email or password',
       );
     }
-    // Wait for all rate limiter promises to resolve before throwing error
-    await Promise.all(promises);
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Incorrect email or password');
+
+    console.log('User status:', user.status);
+
+    // Check status
+    if (user.status !== 'Active') {
+      console.log('Inactive account');
+
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'Your account is not active. Please contact administrator.',
+      );
+    }
+
+    const formattedUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      roleType: user.roleType,
+      role: user.role?.name,
+      lastLoginAt: user.lastLoginAt,
+      status: user.status,
+      phone: user.phone,
+      branch: user?.branch,
+      shops: user.shops,
+      stores: user.stores,
+      permissions:
+        user.role?.permissions?.map((rp) => rp.permission.name) || [],
+    };
+
+    console.log('Formatted user:', formattedUser);
+
+    // Update login time
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        lastLoginAt: new Date(),
+      },
+    });
+
+    console.log('Last login updated');
+
+    return formattedUser;
+  } catch (error) {
+    console.error('LOGIN ERROR:', error);
+
+    throw error;
   }
-
-  // Check if user is active
-  if (user.status !== 'Active') {
-    throw new ApiError(
-      httpStatus.FORBIDDEN,
-      'Your account is not active. Please contact administrator.',
-    );
-  }
-
-  // Format the user object with permission names only and branch info
-  const formattedUser = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    roleType: user.roleType,
-    role: user.role?.name,
-    lastLoginAt: user.lastLoginAt,
-    status: user.status,
-    phone: user.phone,
-    // Include branch information if exists
-    branch: user?.branch,
-    // Include assigned shops and stores
-    shops: user.shops,
-    stores: user.stores,
-    // Include permissions
-    permissions: user.role?.permissions?.map((rp) => rp.permission.name) || [],
-  };
-
-  // Update last login time
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { lastLoginAt: new Date() },
-  });
-
-  return formattedUser;
 };
 const Storelogin = async (email, password, ipAddr) => {
   const normalizedIp = normalizeIpAddress(ipAddr);

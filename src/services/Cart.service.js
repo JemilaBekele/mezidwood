@@ -252,6 +252,7 @@ const createOrUpdateCart = async (cartBody, userId) => {
     where: { id: userId },
     include: { branch: true },
   });
+  // console.log(cartBody);
   if (!user) {
     throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
   }

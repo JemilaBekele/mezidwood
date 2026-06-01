@@ -3,13 +3,13 @@ const express = require('express');
 const router = express.Router();
 const { stockCorrectionController } = require('../controllers');
 const auth = require('../middlewares/auth');
-// const checkPermission = require('../middlewares/permission.middleware');
+const checkPermission = require('../middlewares/permission.middleware');
 
 // Create a stockcorrection
 router.post(
   '/api/stock-corrections',
   auth,
-  //   checkPermission('CREATE_STOCK_CORRECTION'),
+  checkPermission('CREATE_STOCK_CORRECTION'),
   stockCorrectionController.createStockCorrection,
 );
 
@@ -48,7 +48,7 @@ router.get(
 router.put(
   '/api/stock-corrections/:id',
   auth,
-  //   checkPermission('UPDATE_STOCK_CORRECTION'),
+  checkPermission('UPDATE_STOCK_CORRECTION'),
   stockCorrectionController.updateStockCorrection,
 );
 
@@ -56,7 +56,7 @@ router.put(
 router.post(
   '/api/stock-corrections/:id/approve',
   auth,
-  //   checkPermission('APPROVE_STOCK_CORRECTION'),
+  checkPermission('APPROVE_STOCK_CORRECTION'),
   stockCorrectionController.approveStockCorrection,
 );
 
@@ -64,7 +64,7 @@ router.post(
 router.post(
   '/api/stock-corrections/:id/reject',
   auth,
-  //   checkPermission('REJECT_STOCK_CORRECTION'),
+  checkPermission('REJECT_STOCK_CORRECTION'),
   stockCorrectionController.rejectStockCorrection,
 );
 
@@ -72,7 +72,7 @@ router.post(
 router.delete(
   '/api/stock-corrections/:id',
   auth,
-  //   checkPermission('DELETE_STOCK_CORRECTION'),
+  checkPermission('DELETE_STOCK_CORRECTION'),
   stockCorrectionController.deleteStockCorrection,
 );
 

@@ -4,25 +4,23 @@ const prisma = require('./prisma');
 
 // Get Purchase by ID
 const getPurchaseById = async (id) => {
+  console.log('Fetching purchase by ID:', id);
   const purchase = await prisma.purchase.findUnique({
     where: { id },
     include: {
       supplier: true,
       store: true,
-      shop: true,
       createdBy: true,
       updatedBy: true,
       items: {
         include: {
-          product: {
-            include: {
-              unitOfMeasure: true,
-            },
-          },
+          product: true,
+          unitOfMeasure: true, // ✅ Added unit of measure
         },
       },
     },
   });
+
   return purchase;
 };
 
@@ -91,17 +89,17 @@ const getAllPurchases = async (filter = {}) => {
 };
 
 // Create Purchase
+// Create Purchase
 const createPurchase = async (purchaseBody, userId) => {
-  // If purchaseBody is a string, try to parse it as JSON
-  const parsedBody = purchaseBody;
-
-  // Now use parsedBody instead of purchaseBody
-  const { items, ...restPurchaseBody } = parsedBody;
-
   // Check if invoice number already exists
-  if (await getPurchaseByInvoiceNo(restPurchaseBody.invoiceNo)) {
+  if (await getPurchaseByInvoiceNo(purchaseBody.invoiceNo)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invoice number already taken');
   }
+
+  // Parse items if it's a string
+  const { items: itemsString, ...restPurchaseBody } = purchaseBody;
+  const items =
+    typeof itemsString === 'string' ? JSON.parse(itemsString) : itemsString;
 
   // Validate items
   if (!items || !Array.isArray(items) || items.length === 0) {
@@ -113,41 +111,63 @@ const createPurchase = async (purchaseBody, userId) => {
 
   // Validate individual item properties
   items.forEach((item, index) => {
-    if (!item.productId) {
+    if (!item.productId || !item.unitOfMeasureId) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        `Item ${index + 1} is missing required fields (productId)`,
+        `Item ${
+          index + 1
+        } is missing required fields (productId or unitOfMeasureId)`,
       );
     }
-    if (item.quantity <= 0) {
+
+    // Validate quantity - always required
+    if (!item.quantity || item.quantity <= 0) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        `Item ${index + 1} has invalid quantity`,
+        `Item ${
+          index + 1
+        } has invalid quantity. Quantity must be greater than 0.`,
       );
     }
+
+    // Validate dimensions if provided
+    if (item.height !== undefined || item.width !== undefined) {
+      // If either dimension is provided, both must be valid
+      if (!item.height || item.height <= 0) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Item ${
+            index + 1
+          } has invalid height. Height must be greater than 0 when dimensions are provided.`,
+        );
+      }
+      if (!item.width || item.width <= 0) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Item ${
+            index + 1
+          } has invalid width. Width must be greater than 0 when dimensions are provided.`,
+        );
+      }
+    }
+
     if (item.unitPrice < 0) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
         `Item ${index + 1} has invalid unit price`,
       );
     }
-    if (item.isBox !== undefined && typeof item.isBox !== 'boolean') {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        `Item ${index + 1} has invalid isBox value (must be boolean)`,
-      );
-    }
   });
 
-  // Recalculate totalPrice
+  // Recalculate totalPrice for security
   const validatedItems = items.map((item) => ({
     ...item,
-    isBox: item.isBox || false,
     totalPrice: item.quantity * item.unitPrice,
   }));
 
-  // Convert purchaseDate
+  // Convert purchaseDate to DateTime object
   const purchaseDate = new Date(restPurchaseBody.purchaseDate);
+  // Replace global isNaN with Number.isNaN
   if (Number.isNaN(purchaseDate.getTime())) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid purchase date');
   }
@@ -158,32 +178,30 @@ const createPurchase = async (purchaseBody, userId) => {
     (sum, item) => sum + item.totalPrice,
     0,
   );
-  const grandTotal = subTotal;
-
-  // Prepare data for creation
-  const createData = {
-    ...restPurchaseBody,
-    purchaseDate,
-    totalProducts,
-    subTotal,
-    grandTotal,
-    createdById: userId,
-    shopId: restPurchaseBody.shopId || null,
-    storeId: restPurchaseBody.storeId || null,
-  };
+  const grandTotal = subTotal; // You might add taxes/discounts here later
 
   // Create the purchase transaction
   const result = await prisma.$transaction(async (tx) => {
+    // Create the purchase
     const purchase = await tx.purchase.create({
       data: {
-        ...createData,
+        ...restPurchaseBody,
+        purchaseDate,
+        totalProducts,
+        subTotal,
+        grandTotal,
+        createdById: userId, // Add created by user ID here
+
         items: {
           create: validatedItems.map((item) => ({
             productId: item.productId,
-            isBox: item.isBox,
+            unitOfMeasureId: item.unitOfMeasureId,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             totalPrice: item.totalPrice,
+            // Add height and width if they exist
+            ...(item.height !== undefined && { height: item.height }),
+            ...(item.width !== undefined && { width: item.width }),
           })),
         },
       },
@@ -191,12 +209,12 @@ const createPurchase = async (purchaseBody, userId) => {
         items: {
           include: {
             product: true,
+            unitOfMeasure: true,
           },
         },
         supplier: true,
         store: true,
-        shop: true,
-        createdBy: true,
+        createdBy: true, // Include createdBy relation in the response
       },
     });
 
@@ -207,224 +225,174 @@ const createPurchase = async (purchaseBody, userId) => {
 };
 
 // Update Purchase
-// Update Purchase
 const updatePurchase = async (purchaseId, purchaseBody, userId) => {
-  try {
-    // Auto-detect and fix swapped parameters if needed
-    // Check if purchaseId is actually an object (purchaseBody) and purchaseBody is a string (userId)
-    if (
-      typeof purchaseId === 'object' &&
-      purchaseId !== null &&
-      purchaseId.invoiceNo
-    ) {
-      // If purchaseId is an object with invoiceNo, it's actually the purchaseBody
-      // and purchaseBody might be the userId
-      const temp = purchaseId;
-      purchaseId = purchaseBody; // This might be the actual purchaseId
-      purchaseBody = temp; // This is the actual purchaseBody
-    }
+  // Check if purchase exists
+  const existingPurchase = await getPurchaseById(purchaseId);
+  if (!existingPurchase) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Purchase not found');
+  }
 
-    // Ensure purchaseId is a string
-    if (typeof purchaseId !== 'string') {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid purchase ID format');
-    }
+  // Check if current user is the creator of this purchase
+  if (existingPurchase.createdById !== userId) {
+    throw new ApiError(
+      httpStatus.FORBIDDEN,
+      'Only the creator can update this purchase',
+    );
+  }
 
-    // Check if purchase exists
-    const existingPurchase = await getPurchaseById(purchaseId);
-    if (!existingPurchase) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Purchase not found');
-    }
-
-    // Check if current user is the creator of this purchase
-    if (existingPurchase.createdById !== userId) {
-      throw new ApiError(
-        httpStatus.FORBIDDEN,
-        'Only the creator can update this purchase',
-      );
-    }
-
-    // Check if invoice number already exists (excluding current purchase)
-    if (
-      purchaseBody.invoiceNo &&
-      purchaseBody.invoiceNo !== existingPurchase.invoiceNo
-    ) {
-      if (await getPurchaseByInvoiceNo(purchaseBody.invoiceNo)) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          'Invoice number already taken',
-        );
-      }
-    }
-
-    // Parse items if it's a string
-    const { items: itemsString, ...restPurchaseBody } = purchaseBody;
-    const items =
-      typeof itemsString === 'string' ? JSON.parse(itemsString) : itemsString;
-
-    // Validate items
-    if (!items || !Array.isArray(items) || items.length === 0) {
+  // Check if invoice number already exists (excluding current purchase)
+  if (
+    purchaseBody.invoiceNo &&
+    purchaseBody.invoiceNo !== existingPurchase.invoiceNo
+  ) {
+    if (await getPurchaseByInvoiceNo(purchaseBody.invoiceNo)) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        'Purchase must have at least one item',
+        'Invoice number already taken',
+      );
+    }
+  }
+
+  // Parse items if it's a string
+  const { items: itemsString, ...restPurchaseBody } = purchaseBody;
+  const items =
+    typeof itemsString === 'string' ? JSON.parse(itemsString) : itemsString;
+
+  // Validate items
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Purchase must have at least one item',
+    );
+  }
+
+  // Validate individual item properties
+  items.forEach((item, index) => {
+    if (!item.productId || !item.unitOfMeasureId) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Item ${
+          index + 1
+        } is missing required fields (productId or unitOfMeasureId)`,
       );
     }
 
-    // Validate individual item properties
-    items.forEach((item, index) => {
-      if (!item.productId) {
+    // Validate quantity - always required
+    if (!item.quantity || item.quantity <= 0) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Item ${
+          index + 1
+        } has invalid quantity. Quantity must be greater than 0.`,
+      );
+    }
+
+    // Validate dimensions if provided
+    if (item.height !== undefined || item.width !== undefined) {
+      // If either dimension is provided, both must be valid
+      if (!item.height || item.height <= 0) {
         throw new ApiError(
           httpStatus.BAD_REQUEST,
-          `Item ${index + 1} is missing required fields (productId)`,
+          `Item ${
+            index + 1
+          } has invalid height. Height must be greater than 0 when dimensions are provided.`,
         );
       }
-      if (item.quantity <= 0) {
+      if (!item.width || item.width <= 0) {
         throw new ApiError(
           httpStatus.BAD_REQUEST,
-          `Item ${index + 1} has invalid quantity`,
+          `Item ${
+            index + 1
+          } has invalid width. Width must be greater than 0 when dimensions are provided.`,
         );
       }
-      if (item.unitPrice < 0) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          `Item ${index + 1} has invalid unit price`,
-        );
-      }
-      // Validate isBox if provided (should be boolean)
-      if (item.isBox !== undefined && typeof item.isBox !== 'boolean') {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          `Item ${index + 1} has invalid isBox value (must be boolean)`,
-        );
-      }
+    }
+
+    if (item.unitPrice < 0) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Item ${index + 1} has invalid unit price`,
+      );
+    }
+  });
+
+  // Recalculate totalPrice for security
+  const validatedItems = items.map((item) => ({
+    ...item,
+    totalPrice: item.quantity * item.unitPrice,
+  }));
+
+  // Convert purchaseDate to DateTime object if provided
+  let { purchaseDate } = existingPurchase;
+  if (restPurchaseBody.purchaseDate) {
+    purchaseDate = new Date(restPurchaseBody.purchaseDate);
+    if (Number.isNaN(purchaseDate.getTime())) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid purchase date');
+    }
+  }
+
+  // Calculate totals
+  const totalProducts = validatedItems.length;
+  const subTotal = validatedItems.reduce(
+    (sum, item) => sum + item.totalPrice,
+    0,
+  );
+  const grandTotal = subTotal; // You might add taxes/discounts here later
+
+  // Update the purchase transaction
+  const result = await prisma.$transaction(async (tx) => {
+    // First delete all existing items
+    await tx.purchaseItem.deleteMany({
+      where: {
+        purchaseId,
+      },
     });
 
-    // Recalculate totalPrice for security and process isBox
-    const validatedItems = items.map((item) => ({
-      ...item,
-      isBox: item.isBox || false, // Default to false if not provided
-      totalPrice: item.quantity * item.unitPrice,
-    }));
-
-    // Convert purchaseDate to DateTime object if provided
-    let { purchaseDate } = existingPurchase;
-    if (restPurchaseBody.purchaseDate) {
-      purchaseDate = new Date(restPurchaseBody.purchaseDate);
-      if (Number.isNaN(purchaseDate.getTime())) {
-        throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid purchase date');
-      }
-    }
-
-    // Calculate totals
-    const totalProducts = validatedItems.length;
-    const subTotal = validatedItems.reduce(
-      (sum, item) => sum + item.totalPrice,
-      0,
-    );
-    const grandTotal = subTotal;
-
-    // Validate that either store OR shop is selected, but not both
-    const hasStore =
-      restPurchaseBody.storeId && restPurchaseBody.storeId.trim() !== '';
-    const hasShop =
-      restPurchaseBody.shopId && restPurchaseBody.shopId.trim() !== '';
-
-    // Use existing values if not provided in update
-    const finalStoreId = hasStore
-      ? restPurchaseBody.storeId
-      : existingPurchase.storeId;
-    const finalShopId = hasShop
-      ? restPurchaseBody.shopId
-      : existingPurchase.shopId;
-
-    if (
-      (!finalStoreId || finalStoreId === '') &&
-      (!finalShopId || finalShopId === '')
-    ) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Either Store or Shop must be selected',
-      );
-    }
-
-    if (
-      finalStoreId &&
-      finalStoreId !== '' &&
-      finalShopId &&
-      finalShopId !== ''
-    ) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Cannot select both Store and Shop. Please choose only one.',
-      );
-    }
-
-    // Update the purchase transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // First delete all existing items
-      await tx.purchaseItem.deleteMany({
-        where: {
-          purchaseId,
-        },
-      });
-
-      // Prepare update data
-      const updateData = {
+    // Update the purchase
+    const purchase = await tx.purchase.update({
+      where: {
+        id: purchaseId,
+      },
+      data: {
         ...restPurchaseBody,
         purchaseDate,
         totalProducts,
         subTotal,
         grandTotal,
-        storeId: finalStoreId || null,
-        shopId: finalShopId || null,
+        updatedById: userId, // Add updated by user ID here
         items: {
           create: validatedItems.map((item) => ({
             productId: item.productId,
-            isBox: item.isBox,
+            unitOfMeasureId: item.unitOfMeasureId,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             totalPrice: item.totalPrice,
+            // Add height and width if they exist
+            ...(item.height !== undefined && { height: item.height }),
+            ...(item.width !== undefined && { width: item.width }),
           })),
         },
-      };
-
-      // Remove items from the main data object (it's handled separately)
-      delete updateData.items;
-
-      // Update the purchase
-      const purchase = await tx.purchase.update({
-        where: {
-          id: purchaseId,
-        },
-        data: updateData,
-        include: {
-          items: {
-            include: {
-              product: true,
-            },
+      },
+      include: {
+        items: {
+          include: {
+            product: true,
+            unitOfMeasure: true,
           },
-          supplier: true,
-          store: true,
-          shop: true,
         },
-      });
-
-      return purchase;
+        supplier: true,
+        store: true,
+        createdBy: true,
+        updatedBy: true,
+      },
     });
 
-    return result;
-  } catch (error) {
-    // Log validation errors
-    if (error instanceof ApiError) {
-      throw error;
-    }
+    return purchase;
+  });
 
-    // Throw generic error for other cases
-    throw new ApiError(
-      httpStatus.INTERNAL_SERVER_ERROR,
-      'Error updating purchase',
-    );
-  }
+  return result;
 };
+
 // Delete Purchase
 const deletePurchase = async (id, userId) => {
   const existingPurchase = await getPurchaseById(id);
@@ -450,26 +418,15 @@ const deletePurchase = async (id, userId) => {
 
         // Only reverse stock operations if purchase was approved
         if (wasApproved) {
-          // 1. Update ProductBatch stock
-          operations.push(
-            tx.productBatch.update({
-              where: { id: item.batchId },
-              data: {
-                stock: {
-                  decrement: item.quantity,
-                },
-              },
-            }),
-          );
-
-          // 2. Create reversal stock ledger entry
+          // 1. Create reversal stock ledger entry
           operations.push(
             tx.stockLedger.create({
               data: {
+                productId: item.productId,
                 storeId: existingPurchase.storeId,
                 movementType: 'OUT',
                 quantity: item.quantity,
-
+                unitOfMeasureId: item.unitOfMeasureId,
                 reference: `PURCHASE-DELETE-${existingPurchase.invoiceNo}`,
                 userId,
                 notes: `Stock reversed from deleted purchase ${existingPurchase.invoiceNo}`,
@@ -478,12 +435,12 @@ const deletePurchase = async (id, userId) => {
             }),
           );
 
-          // 3. Update StoreStock
+          // 2. Update StoreStock (no batch relation anymore)
           const existingStoreStock = await tx.storeStock.findUnique({
             where: {
-              storeId_batchId: {
+              storeId_productId: {
                 storeId: existingPurchase.storeId,
-                batchId: item.batchId,
+                productId: item.productId,
               },
             },
           });
@@ -496,9 +453,9 @@ const deletePurchase = async (id, userId) => {
               operations.push(
                 tx.storeStock.delete({
                   where: {
-                    storeId_batchId: {
+                    storeId_productId: {
                       storeId: existingPurchase.storeId,
-                      batchId: item.batchId,
+                      productId: item.productId,
                     },
                   },
                 }),
@@ -508,9 +465,9 @@ const deletePurchase = async (id, userId) => {
               operations.push(
                 tx.storeStock.update({
                   where: {
-                    storeId_batchId: {
+                    storeId_productId: {
                       storeId: existingPurchase.storeId,
-                      batchId: item.batchId,
+                      productId: item.productId,
                     },
                   },
                   data: {
@@ -554,6 +511,7 @@ const deletePurchase = async (id, userId) => {
 
   return { message: 'Purchase deleted successfully' };
 };
+
 const acceptPurchase = async (purchaseId, paymentStatus, userId) => {
   try {
     const purchase = await prisma.purchase.findUnique({
@@ -561,37 +519,17 @@ const acceptPurchase = async (purchaseId, paymentStatus, userId) => {
       include: {
         items: {
           include: {
-            product: true, // Include product to access boxSize and hasBox
+            product: true,
+            unitOfMeasure: true,
           },
         },
         store: true,
-        shop: true,
       },
     });
 
     if (!purchase) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Purchase not found');
     }
-
-    // Validate that either store or shop exists
-    if (!purchase.storeId && !purchase.shopId) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Purchase must be associated with either a store or a shop',
-      );
-    }
-
-    if (purchase.storeId && purchase.shopId) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Purchase cannot be associated with both a store and a shop',
-      );
-    }
-
-    // Determine the location type and ID
-    const isStore = !!purchase.storeId;
-    const locationId = isStore ? purchase.storeId : purchase.shopId;
-    const locationType = isStore ? 'store' : 'shop';
 
     // Check if purchase is already accepted (has stock ledger entries)
     const existingLedgerEntries = await prisma.stockLedger.count({
@@ -614,204 +552,241 @@ const acceptPurchase = async (purchaseId, paymentStatus, userId) => {
       },
     });
 
-    // Only create stock for fully paid purchases
+    // Only create stock for approved purchases
     if (paymentStatus === 'APPROVED') {
-      const result = await prisma.$transaction(async (tx) => {
-        // Get all existing stocks in one query based on location type
-        const productIds = purchase.items.map((item) => item.productId);
+      const result = await prisma.$transaction(
+        async (tx) => {
+          // First, create/update all store stocks and variants
+          const stockPromises = purchase.items.map(async (item) => {
+            const { productId, quantity, unitOfMeasureId, height, width } =
+              item;
 
-        let existingStocks = [];
-        let existingStockMap = {};
-
-        if (isStore) {
-          // Get existing store stocks
-          existingStocks = await tx.storeStock.findMany({
-            where: {
-              storeId: locationId,
-              productId: { in: productIds },
-            },
-          });
-
-          existingStockMap = existingStocks.reduce((acc, stock) => {
-            acc[stock.productId] = stock;
-            return acc;
-          }, {});
-        } else {
-          // Get existing shop stocks
-          existingStocks = await tx.shopStock.findMany({
-            where: {
-              shopId: locationId,
-              productId: { in: productIds },
-            },
-          });
-
-          existingStockMap = existingStocks.reduce((acc, stock) => {
-            acc[stock.productId] = stock;
-            return acc;
-          }, {});
-        }
-
-        // Prepare all operations
-        const stockOperations = [];
-        const stockLedgerOperations = [];
-
-        for (const item of purchase.items) {
-          const { quantity, product, isBox } = item;
-
-          // Calculate piece quantity based on isBox flag
-          let pieceQuantity = quantity;
-
-          if (isBox) {
-            // If isBox is true, convert boxes to pieces using product's boxSize
-            if (!product.hasBox) {
+            // Validate quantity
+            if (quantity <= 0) {
               throw new ApiError(
                 httpStatus.BAD_REQUEST,
-                `Product "${product.name}" does not support box/packaging. Please enable box support for this product.`,
+                `Invalid quantity for item ${item.id || productId}`,
               );
             }
 
-            if (!product.boxSize || product.boxSize <= 0) {
-              throw new ApiError(
-                httpStatus.BAD_REQUEST,
-                `Product "${product.name}" has invalid box size (${product.boxSize}). Please configure box size correctly.`,
-              );
+            // Check if this is a dimension-based item
+            const isDimensionBased =
+              height != null && width != null && height > 0 && width > 0;
+
+            // Validate dimensions for dimension-based items
+            if (isDimensionBased) {
+              if (height <= 0 || width <= 0) {
+                throw new ApiError(
+                  httpStatus.BAD_REQUEST,
+                  `Invalid dimensions for item ${
+                    item.id || productId
+                  }: height and width must be positive numbers`,
+                );
+              }
             }
 
-            pieceQuantity = quantity * product.boxSize;
-          }
+            // Find or create the main store stock record
+            const mainStoreStock = await tx.storeStock.upsert({
+              where: {
+                storeId_productId: {
+                  storeId: purchase.storeId,
+                  productId,
+                },
+              },
+              create: {
+                storeId: purchase.storeId,
+                productId,
+                quantity: 0,
+                unitOfMeasureId,
+                status: 'Available',
+              },
+              update: {}, // Don't update anything on conflict
+            });
 
-          // Validate piece quantity is positive
-          if (pieceQuantity <= 0) {
-            throw new ApiError(
-              httpStatus.BAD_REQUEST,
-              `Invalid quantity for product "${product.name}". Quantity must be greater than 0.`,
-            );
-          }
-
-          // Stock operations (store or shop)
-          const existingStock = existingStockMap[product.id];
-
-          if (isStore) {
-            // Handle store stock
-            if (existingStock) {
-              // Update existing store stock
-              stockOperations.push(
-                tx.storeStock.update({
-                  where: { id: existingStock.id },
-                  data: {
-                    quantity: { increment: pieceQuantity },
-                    status: 'Available',
+            if (isDimensionBased) {
+              // Handle dimension-based item
+              // Use findUnique with composite unique constraint instead of findFirst for better performance
+              const existingVariant = await tx.storeProductVariant.findUnique({
+                where: {
+                  storeStockId_height_width: {
+                    storeStockId: mainStoreStock.id,
+                    height,
+                    width,
                   },
-                }),
-              );
-            } else {
-              // Create new store stock
-              stockOperations.push(
-                tx.storeStock.create({
+                },
+              });
+
+              if (existingVariant) {
+                // Update existing variant
+                await tx.storeProductVariant.update({
+                  where: { id: existingVariant.id },
                   data: {
-                    storeId: locationId,
-                    productId: product.id,
-                    quantity: pieceQuantity,
-                    status: 'Available',
+                    quantity: {
+                      increment: quantity,
+                    },
                   },
-                }),
-              );
+                });
+              } else {
+                // Create new variant
+                await tx.storeProductVariant.create({
+                  data: {
+                    storeStockId: mainStoreStock.id,
+                    height,
+                    width,
+                    quantity,
+                  },
+                });
+              }
+
+              // Create stock ledger entry with dimensions
+              await tx.stockLedger.create({
+                data: {
+                  productId,
+                  storeId: purchase.storeId,
+                  movementType: 'IN',
+                  height,
+                  width,
+                  quantity,
+                  unitOfMeasureId,
+                  reference: purchase.invoiceNo,
+                  userId,
+                  notes: `Purchase acceptance - ${purchase.invoiceNo} - Added ${quantity} piece(s) (${height}x${width})`,
+                  movementDate: purchase.purchaseDate || new Date(),
+                },
+              });
+
+              return {
+                storeStockId: mainStoreStock.id,
+                isDimensionBased: true,
+                variantCount: 1,
+              };
             }
-          } else {
-            // Handle shop stock
-            if (existingStock) {
-              // Update existing shop stock
-              stockOperations.push(
-                tx.shopStock.update({
-                  where: { id: existingStock.id },
-                  data: {
-                    quantity: { increment: pieceQuantity },
-                    status: 'Available',
-                  },
-                }),
-              );
-            } else {
-              // Create new shop stock
-              stockOperations.push(
-                tx.shopStock.create({
-                  data: {
-                    shopId: locationId,
-                    productId: product.id,
-                    quantity: pieceQuantity,
-                    status: 'Available',
-                  },
-                }),
-              );
-            }
-          }
 
-          // Stock ledger operations - record based on location type
-          stockLedgerOperations.push(
-            tx.stockLedger.create({
+            // Handle quantity-based item (no dimensions)
+            await tx.storeStock.update({
+              where: { id: mainStoreStock.id },
               data: {
-                productId: product.id,
-                storeId: isStore ? locationId : null,
-                shopId: !isStore ? locationId : null,
+                quantity: {
+                  increment: quantity,
+                },
+              },
+            });
+
+            // Create stock ledger entry without dimensions
+            await tx.stockLedger.create({
+              data: {
+                productId,
+                storeId: purchase.storeId,
                 movementType: 'IN',
-                pieceQuantity,
-                boxQuantity: isBox ? quantity : 0,
+                quantity,
+                unitOfMeasureId,
                 reference: purchase.invoiceNo,
                 userId,
-                notes: isBox
-                  ? `Purchase acceptance - ${
-                      purchase.invoiceNo
-                    } (${quantity} box(es) × ${
-                      product.boxSize
-                    } = ${pieceQuantity} pieces) - ${locationType}: ${
-                      isStore ? purchase.store?.name : purchase.shop?.name
-                    }`
-                  : `Purchase acceptance - ${
-                      purchase.invoiceNo
-                    } (${quantity} piece(s)) - ${locationType}: ${
-                      isStore ? purchase.store?.name : purchase.shop?.name
-                    }`,
-                movementDate: purchase.purchaseDate,
+                notes: `Purchase acceptance - ${purchase.invoiceNo}`,
+                movementDate: purchase.purchaseDate || new Date(),
               },
-            }),
-          );
-        }
+            });
 
-        // Execute all operations in parallel
-        const [stockUpdates, stockLedgerEntries] = await Promise.all([
-          Promise.all(stockOperations),
-          Promise.all(stockLedgerOperations),
-        ]);
+            return {
+              storeStockId: mainStoreStock.id,
+              isDimensionBased: false,
+              variantCount: 0,
+            };
+          });
 
-        // Calculate total pieces added
-        const totalPiecesAdded = purchase.items.reduce((total, item) => {
-          const { quantity, product, isBox } = item;
-          if (isBox) {
-            return total + quantity * product.boxSize;
+          // Execute all stock operations
+          const stockResults = await Promise.all(stockPromises);
+
+          // Get unique store stock IDs that had dimension-based updates
+          const dimensionStoreStockIds = [
+            ...new Set(
+              stockResults
+                .filter((result) => result.isDimensionBased)
+                .map((result) => result.storeStockId),
+            ),
+          ];
+
+          // Update total quantities for store stocks that had dimension variants
+          if (dimensionStoreStockIds.length > 0) {
+            const updateTotalPromises = dimensionStoreStockIds.map(
+              async (stockId) => {
+                // Get all variants for this store stock
+                const variants = await tx.storeProductVariant.findMany({
+                  where: { storeStockId: stockId },
+                });
+
+                // Calculate total quantity from all variants
+                const totalQuantity = variants.reduce(
+                  (sum, v) => sum + v.quantity,
+                  0,
+                );
+
+                // Update the main store stock total quantity
+                await tx.storeStock.update({
+                  where: { id: stockId },
+                  data: { quantity: totalQuantity },
+                });
+
+                return { stockId, totalQuantity };
+              },
+            );
+
+            await Promise.all(updateTotalPromises);
           }
-          return total + quantity;
-        }, 0);
 
-        // Create log entry
-        await tx.log.create({
-          data: {
-            action: `Accepted purchase ${purchase.invoiceNo} with ${
-              purchase.items.length
-            } items. Total pieces added: ${totalPiecesAdded} to ${locationType}: ${
-              isStore ? purchase.store?.name : purchase.shop?.name
-            }`,
-            userId,
-          },
-        });
+          // Create log entry
+          await tx.log.create({
+            data: {
+              action: `Accepted purchase ${purchase.invoiceNo} with ${purchase.items.length} items. Payment status: ${paymentStatus}`,
+              userId,
+            },
+          });
 
-        return {
-          purchase: updatedPurchase,
-          stockLedgerEntries,
-          stockUpdates,
-          totalPiecesAdded,
-          locationType,
-          locationName: isStore ? purchase.store?.name : purchase.shop?.name,
-        };
-      });
+          // Fetch updated store stocks with variants for response
+          const updatedStoreStocks = await tx.storeStock.findMany({
+            where: {
+              storeId: purchase.storeId,
+              productId: {
+                in: purchase.items.map((item) => item.productId),
+              },
+            },
+            include: {
+              variants: {
+                orderBy: [{ height: 'asc' }, { width: 'asc' }],
+              },
+            },
+          });
+
+          // Get all stock ledger entries created
+          const stockLedgerEntries = await tx.stockLedger.findMany({
+            where: {
+              reference: purchase.invoiceNo,
+              movementType: 'IN',
+            },
+            orderBy: {
+              createdAt: 'asc',
+            },
+          });
+
+          return {
+            purchase: updatedPurchase,
+            stockLedgerEntries,
+            storeStockUpdates: updatedStoreStocks,
+            summary: {
+              totalItems: purchase.items.length,
+              dimensionBasedItems: stockResults.filter(
+                (r) => r.isDimensionBased,
+              ).length,
+              quantityBasedItems: stockResults.filter(
+                (r) => !r.isDimensionBased,
+              ).length,
+            },
+          };
+        },
+        {
+          timeout: 10000, // 10 second timeout for large purchases
+        },
+      );
 
       return result;
     }
@@ -826,143 +801,39 @@ const acceptPurchase = async (purchaseId, paymentStatus, userId) => {
 
     return {
       purchase: updatedPurchase,
-      message: `Payment status updated to ${paymentStatus}. No stock created as purchase is not fully approved.`,
+      message: `Payment status updated to ${paymentStatus}. No stock created as purchase is not approved.`,
     };
   } catch (error) {
-    console.error('❌ Error in acceptPurchase:', error);
-
-    // Handle transaction errors specifically
+    // Handle specific Prisma errors
+    if (error.code === 'P2002') {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        'Unique constraint violation. This might indicate a duplicate variant.',
+      );
+    }
     if (error.code === 'P2025') {
       throw new ApiError(
         httpStatus.NOT_FOUND,
         'Related record not found during transaction',
       );
     }
+    if (error.code === 'P2034') {
+      throw new ApiError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        'Transaction failed due to a conflict. Please try again.',
+      );
+    }
 
-    // Re-throw ApiError as is
+    // Re-throw ApiError instances
     if (error instanceof ApiError) {
       throw error;
     }
 
+    // Log unexpected errors
+    console.error('Unexpected error in acceptPurchase:', error);
     throw new ApiError(
       httpStatus.INTERNAL_SERVER_ERROR,
-      `Failed to accept purchase: ${error.message}`,
-    );
-  }
-};
-// services/purchase.service.js or similar
-
-const addPurchaseFiles = async (purchaseId, userId, structuredFiles = {}) => {
-  // Validate userId
-  if (!userId) {
-    throw new ApiError(httpStatus.UNAUTHORIZED, 'User ID is required');
-  }
-
-  // Check if purchase exists
-  const existingPurchase = await prisma.purchase.findUnique({
-    where: { id: purchaseId },
-    select: {
-      id: true,
-      invoiceNo: true,
-      imageUrl: true,
-      documentUrl: true,
-    },
-  });
-
-  if (!existingPurchase) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Purchase not found');
-  }
-
-  try {
-    let { imageUrl } = existingPurchase;
-    let { documentUrl } = existingPurchase;
-
-    // Handle image upload from structuredFiles
-    if (structuredFiles.image && structuredFiles.image.length > 0) {
-      const imageFile = structuredFiles.image[0];
-      let fileUrl = imageFile.path;
-
-      // Convert Windows path to URL format
-      fileUrl = fileUrl.replace(/\\/g, '/');
-      // Extract the path after 'uploads'
-      const uploadsIndex = fileUrl.indexOf('/uploads/');
-      if (uploadsIndex !== -1) {
-        fileUrl = fileUrl.substring(uploadsIndex);
-      } else {
-        // If no 'uploads' in path, just use the filename
-        fileUrl = `/uploads/purchase/images/${imageFile.filename}`;
-      }
-
-      imageUrl = fileUrl;
-    }
-
-    // Handle document upload from structuredFiles
-    if (structuredFiles.document && structuredFiles.document.length > 0) {
-      const documentFile = structuredFiles.document[0];
-      let fileUrl = documentFile.path;
-
-      // Convert Windows path to URL format
-      fileUrl = fileUrl.replace(/\\/g, '/');
-      // Extract the path after 'uploads'
-      const uploadsIndex = fileUrl.indexOf('/uploads/');
-      if (uploadsIndex !== -1) {
-        fileUrl = fileUrl.substring(uploadsIndex);
-      } else {
-        // If no 'uploads' in path, just use the filename
-        fileUrl = `/uploads/purchase/documents/${documentFile.filename}`;
-      }
-
-      documentUrl = fileUrl;
-    }
-
-    // Update purchase record with both files
-    const updatedPurchase = await prisma.$transaction(async (prismaTx) => {
-      const purchase = await prismaTx.purchase.update({
-        where: { id: purchaseId },
-        data: {
-          imageUrl,
-          documentUrl,
-        },
-      });
-
-      // Create log entry
-      const addedFiles = [];
-      if (structuredFiles.image && structuredFiles.image.length > 0)
-        addedFiles.push('image');
-      if (structuredFiles.document && structuredFiles.document.length > 0)
-        addedFiles.push('document');
-
-      if (addedFiles.length > 0) {
-        await prismaTx.log.create({
-          data: {
-            action: `Added/Updated ${addedFiles.join(' and ')} for purchase ${
-              existingPurchase.invoiceNo
-            }`,
-            userId,
-          },
-        });
-      }
-
-      return purchase;
-    });
-
-    return {
-      success: true,
-      message: `${structuredFiles.image ? 'Image' : ''}${
-        structuredFiles.image && structuredFiles.document ? ' and ' : ''
-      }${
-        structuredFiles.document ? 'Document' : ''
-      } added/updated successfully`,
-      data: updatedPurchase,
-    };
-  } catch (error) {
-    if (error.code) {
-      console.error('Prisma error code:', error.code);
-    }
-
-    throw new ApiError(
-      httpStatus.INTERNAL_SERVER_ERROR,
-      `Failed to add files to purchase: ${error.message}`,
+      'An unexpected error occurred while accepting the purchase',
     );
   }
 };
@@ -974,5 +845,4 @@ module.exports = {
   updatePurchase,
   deletePurchase,
   acceptPurchase,
-  addPurchaseFiles,
 };

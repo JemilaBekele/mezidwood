@@ -16,7 +16,8 @@
 
 ## Overview
 
-This car stock management system implements a comprehensive authentication and authorization system using **NextAuth.js** on the frontend and **JWT-based authentication** with **Role-Based Access Control (RBAC)** on the backend.
+This ikiz curtain
+ management system implements a comprehensive authentication and authorization system using **NextAuth.js** on the frontend and **JWT-based authentication** with **Role-Based Access Control (RBAC)** on the backend.
 
 ### Key Technologies
 - **Frontend**: NextAuth.js, Zustand for state management, TypeScript

@@ -384,7 +384,6 @@ const getAvailableBatchesByProductAndShop = async (productId, shopId) => {
     throw error;
   }
 };
-
 module.exports = {
   getShopById,
   getAllshop,

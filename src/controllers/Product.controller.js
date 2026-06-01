@@ -5,41 +5,6 @@ const { productService } = require('../services');
 const ApiError = require('../utils/ApiError');
 
 // Create Product
-// Helper function to process product data
-const processProductData = (body) => {
-  const processedData = { ...body };
-
-  // Convert warningQuantity to number if it exists
-  if (
-    processedData.warningQuantity !== undefined &&
-    processedData.warningQuantity !== null
-  ) {
-    processedData.warningQuantity = Number(processedData.warningQuantity);
-  }
-
-  // Convert other numeric fields if needed
-  if (
-    processedData.sellPrice !== undefined &&
-    processedData.sellPrice !== null
-  ) {
-    processedData.sellPrice = Number(processedData.sellPrice);
-  }
-
-  if (processedData.boxSize !== undefined && processedData.boxSize !== null) {
-    processedData.boxSize = Number(processedData.boxSize);
-  }
-
-  // Convert boolean strings to actual booleans
-  if (processedData.isActive === 'true') processedData.isActive = true;
-  if (processedData.isActive === 'false') processedData.isActive = false;
-
-  if (processedData.hasBox === 'true') processedData.hasBox = true;
-  if (processedData.hasBox === 'false') processedData.hasBox = false;
-
-  return processedData;
-};
-
-// Create Product
 const createProduct = catchAsync(async (req, res) => {
   // Structure files by field name
   const structuredFiles = {};
@@ -60,13 +25,7 @@ const createProduct = catchAsync(async (req, res) => {
   // Ensure image field exists even if no file was uploaded
   structuredFiles.image = structuredFiles.image || undefined;
 
-  // Process the request body to convert types
-  const processedBody = processProductData(req.body);
-
-  const product = await productService.createProduct(
-    processedBody,
-    structuredFiles,
-  );
+  const product = await productService.createProduct(req.body, structuredFiles);
 
   res.status(httpStatus.CREATED).send({
     success: true,
@@ -74,8 +33,6 @@ const createProduct = catchAsync(async (req, res) => {
     product,
   });
 });
-
-// Update Product
 const updateProduct = catchAsync(async (req, res) => {
   // Structure files by field name
   const structuredFiles = {};
@@ -96,12 +53,9 @@ const updateProduct = catchAsync(async (req, res) => {
   // Ensure image field exists even if no file was uploaded
   structuredFiles.image = structuredFiles.image || undefined;
 
-  // Process the request body to convert types
-  const processedBody = processProductData(req.body);
-
   const product = await productService.updateProduct(
     req.params.id,
-    processedBody,
+    req.body,
     structuredFiles,
   );
 
@@ -111,6 +65,43 @@ const updateProduct = catchAsync(async (req, res) => {
     product,
   });
 });
+const createProductStock = catchAsync(async (req, res) => {
+  const { productId } = req.params;
+  const userId = req.user.id;
+
+  // Extract stocks array from request body
+  // The frontend is sending { stocks: [...] } so we need to extract the array
+  let stockData = req.body;
+
+  // Check if the body has a 'stocks' property
+  if (stockData && stockData.stocks && Array.isArray(stockData.stocks)) {
+    stockData = stockData.stocks;
+  } else if (stockData && !Array.isArray(stockData)) {
+    // If it's a single object but not in an array, wrap it
+    stockData = [stockData];
+  }
+
+  try {
+    const productBatch = await productService.createProductStock(
+      productId,
+      stockData, // Now this should be an array
+      userId,
+    );
+
+    res.status(httpStatus.CREATED).send({
+      success: true,
+      message: 'Product stock created successfully',
+      productBatch,
+    });
+  } catch (error) {
+    res.status(error.statusCode || httpStatus.INTERNAL_SERVER_ERROR).send({
+      success: false,
+      message: error.message || 'Internal server error',
+    });
+  }
+});
+// Update Product
+
 // Get Product by ID
 const getProduct = catchAsync(async (req, res) => {
   const product = await productService.getProductById(req.params.id);
@@ -123,6 +114,14 @@ const getProduct = catchAsync(async (req, res) => {
   });
 });
 
+const getBatchesByProduct = catchAsync(async (req, res) => {
+  const { productId } = req.params;
+  const result = await productService.getBatchesByProduct(productId);
+  res.status(httpStatus.OK).send({
+    success: true,
+    ...result,
+  });
+});
 // Get Product by Code
 const getProductByCode = catchAsync(async (req, res) => {
   const product = await productService.getProductByCode(req.params.code);
@@ -146,7 +145,6 @@ const getActiveAllProducts = catchAsync(async (req, res) => {
 
 const getProducts = catchAsync(async (req, res) => {
   const userId = req.user.id;
-
   const result = await productService.getAllProducts(userId);
   res.status(httpStatus.OK).send({
     success: true,
@@ -154,45 +152,22 @@ const getProducts = catchAsync(async (req, res) => {
   });
 });
 const getTopSellingProducts = catchAsync(async (req, res) => {
-  const { searchTerm, categoryName, brandName } = req.query;
+  const { searchTerm, categoryId, subCategoryId } = req.query;
   const userId = req.user.id;
 
   // Convert empty strings to null and ensure proper parameter assignment
   const processedSearchTerm =
     searchTerm && searchTerm.trim() !== '' ? searchTerm.trim() : null;
-  const processedCategoryName =
-    categoryName && categoryName.trim() !== '' ? categoryName.trim() : null;
-  const processedBrandName =
-    brandName && brandName.trim() !== '' ? brandName.trim() : null;
-
-  // DEBUG: Check if parameters are being mixed up
-  if (processedSearchTerm && isValidUUID(processedSearchTerm)) {
-    console.warn(
-      '⚠️ WARNING: searchTerm looks like a UUID, might be parameter mixup',
-    );
-  }
-
-  // DEBUG: Check if category name looks like UUID
-  if (processedCategoryName && isValidUUID(processedCategoryName)) {
-    console.warn(
-      '⚠️ WARNING: categoryName looks like a UUID, did you mean to use the name?',
-    );
-  }
-
-  // DEBUG: Check if brand name looks like UUID
-  if (processedBrandName && isValidUUID(processedBrandName)) {
-    console.warn(
-      '⚠️ WARNING: brandName looks like a UUID, did you mean to use the name?',
-    );
-  }
-
-
+  const processedCategoryId =
+    categoryId && categoryId.trim() !== '' ? categoryId.trim() : null;
+  const processedSubCategoryId =
+    subCategoryId && subCategoryId.trim() !== '' ? subCategoryId.trim() : null;
 
   const result = await productService.getTopSellingProducts(
     userId,
-    processedSearchTerm,
-    processedCategoryName,
-    processedBrandName,
+    processedSearchTerm, // This should be the text search
+    processedCategoryId, // This should be the category ID
+    processedSubCategoryId, // This should be the subcategory ID
   );
 
   res.status(httpStatus.OK).send({
@@ -200,13 +175,6 @@ const getTopSellingProducts = catchAsync(async (req, res) => {
     ...result,
   });
 });
-
-// Helper function to check if string is a valid UUID
-function isValidUUID(str) {
-  const uuidRegex =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(str);
-}
 const getRandomProductsWithShopStocks = catchAsync(async (req, res) => {
   const result = await productService.getRandomProductsWithShopStocks();
 
@@ -223,7 +191,14 @@ const deleteProduct = catchAsync(async (req, res) => {
     message: 'Product deleted successfully',
   });
 });
-
+const createProductBatchsingle = catchAsync(async (req, res) => {
+  const productBatch = await productService.createProductBatchsingle(req.body);
+  res.status(httpStatus.CREATED).send({
+    success: true,
+    message: 'Product batch created successfully',
+    data: productBatch,
+  });
+});
 const getProductById = catchAsync(async (req, res) => {
   const { productId } = req.params;
   const userId = req.user.id;
@@ -238,31 +213,52 @@ const getProductById = catchAsync(async (req, res) => {
 
   res.status(httpStatus.OK).send({ product: productDetails });
 });
-
-const getProductByShops = catchAsync(async (req, res) => {
+const getProductBatchesByShopsController = catchAsync(async (req, res) => {
   const { productId } = req.params;
-  const userId = req.user.id;
-  const products = await productService.getProductByShops(productId, userId);
 
-  if (!products || products.length === 0) {
+  const batches = await productService.getProductBatchesByShops(productId);
+
+  if (!batches || batches.length === 0) {
     throw new ApiError(
       httpStatus.NOT_FOUND,
-      'No available products found for this product',
+      'No available batches found for this product',
+    );
+  }
+  res.status(httpStatus.OK).send({ batches });
+});
+// getProductBatchesByShopsForUser
+const getProductBatchesByShopsForUser = catchAsync(async (req, res) => {
+  const { productId } = req.params;
+  const userId = req.user.id;
+  const batches = await productService.getProductBatchesByShopsForUser(
+    productId,
+    userId,
+  );
+
+  if (!batches || batches.length === 0) {
+    throw new ApiError(
+      httpStatus.NOT_FOUND,
+      'No available batches found for this product',
     );
   }
 
-  res.status(httpStatus.OK).send({ products });
+  res.status(httpStatus.OK).send({ batches });
 });
+
 module.exports = {
+  createProductStock,
   createProduct,
   getProduct,
   getProductByCode,
   getProducts,
   updateProduct,
   deleteProduct,
+  getBatchesByProduct,
+  createProductBatchsingle,
   getProductById,
+  getProductBatchesByShopsController,
   getTopSellingProducts,
   getActiveAllProducts,
   getRandomProductsWithShopStocks,
-  getProductByShops,
+  getProductBatchesByShopsForUser,
 };

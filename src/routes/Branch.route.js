@@ -13,12 +13,6 @@ router.post(
   branchController.createBranch,
 );
 
-router.post(
-  '/api/products/:productId/stocks',
-  auth,
-  branchController.createProductStock,
-);
-
 // Get a branch by ID getAllProducts
 router.get(
   '/api/all/Products/stock/employee',
@@ -27,6 +21,7 @@ router.get(
 );
 router.get(
   '/api/branches/:id',
+  auth,
   checkPermission('VIEW_BRANCH'),
   branchController.getBranch,
 );
@@ -34,7 +29,6 @@ router.get(
 // Get all branches
 router.get(
   '/api/branches',
-  // auth,
   // checkPermission('VIEW_BRANCH'),
   branchController.getBranches,
 );
@@ -54,5 +48,9 @@ router.delete(
   checkPermission('DELETE_BRANCH'),
   branchController.deleteBranch,
 );
-
+router.get(
+  '/api/curtain-orders/estimated/delivery/date',
+  auth,
+  branchController.getEstimatedCurtainDeliveryTime,
+);
 module.exports = router;

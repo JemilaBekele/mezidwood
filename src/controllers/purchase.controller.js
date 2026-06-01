@@ -17,6 +17,7 @@ const createPurchase = catchAsync(async (req, res) => {
 
 // Get Purchase by ID
 const getPurchase = catchAsync(async (req, res) => {
+  console.log('Fetching purchase by ID:', req.params.id);
   const purchase = await purchaseService.getPurchaseById(req.params.id);
   if (!purchase) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Purchase not found');
@@ -90,79 +91,7 @@ const deletePurchase = catchAsync(async (req, res) => {
     message: 'Purchase deleted successfully',
   });
 });
-const addPurchaseFiles = catchAsync(async (req, res) => {
-  // Structure files by field name with detailed logging
-  const structuredFiles = {};
 
-  if (req.files) {
-    for (const [fieldname, files] of Object.entries(req.files)) {
-      structuredFiles[fieldname] = files;
-
-      files.forEach((file, index) => {
-        console.log(`     [${index}] File details:`, {
-          fieldname: file.fieldname,
-          originalname: file.originalname,
-          mimetype: file.mimetype,
-          size: file.size,
-          path: file.path,
-          destination: file.destination,
-          filename: file.filename,
-        });
-      });
-    }
-  } else {
-    console.log('3. No files found in request');
-  }
-
-  // Validate purchase ID
-  const purchaseId = req.params.id;
-  if (!purchaseId) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Purchase ID is required');
-  }
-
-  // Validate user is authenticated
-  if (!req.user || !req.user.id) {
-    throw new ApiError(httpStatus.UNAUTHORIZED, 'User not authenticated');
-  }
-
-  // Validate at least one file is provided
-  if (Object.keys(structuredFiles).length === 0) {
-    throw new ApiError(
-      httpStatus.BAD_REQUEST,
-      'At least one file (image or document) is required',
-    );
-  }
-
-  try {
-    const result = await purchaseService.addPurchaseFiles(
-      purchaseId,
-      req.user.id,
-      structuredFiles,
-    );
-
-    res.status(httpStatus.OK).send({
-      success: true,
-      message: result.message,
-      data: {
-        id: result.data.id,
-        invoiceNo: result.data.invoiceNo,
-        imageUrl: result.data.imageUrl,
-        documentUrl: result.data.documentUrl,
-      },
-    });
-  } catch (error) {
-    // Check if it's already an ApiError
-    if (error instanceof ApiError) {
-      throw error;
-    }
-
-    // Convert to ApiError if not
-    throw new ApiError(
-      httpStatus.INTERNAL_SERVER_ERROR,
-      `Failed to add files to purchase: ${error.message}`,
-    );
-  }
-});
 module.exports = {
   createPurchase,
   getPurchase,
@@ -171,5 +100,4 @@ module.exports = {
   updatePurchase,
   deletePurchase,
   acceptPurchase,
-  addPurchaseFiles,
 };

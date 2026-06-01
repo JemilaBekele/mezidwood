@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { customerSupplierController } = require('../controllers');
 const auth = require('../middlewares/auth');
-// const checkPermission = require('../middlewares/permission.middleware');
+const checkPermission = require('../middlewares/permission.middleware');
 
 // Customer Routes
 
@@ -11,7 +11,7 @@ const auth = require('../middlewares/auth');
 router.post(
   '/api/customers',
   auth,
-  //   checkPermission('CREATE_CUSTOMER'),
+  checkPermission('CREATE_CUSTOMER'),
   customerSupplierController.createCustomer,
 );
 
@@ -41,7 +41,7 @@ router.get(
 router.put(
   '/api/customers/:id',
   auth,
-  //   checkPermission('UPDATE_CUSTOMER'),
+  checkPermission('UPDATE_CUSTOMER'),
   customerSupplierController.updateCustomer,
 );
 
@@ -49,7 +49,7 @@ router.put(
 router.delete(
   '/api/customers/:id',
   auth,
-  //   checkPermission('DELETE_CUSTOMER'),
+  checkPermission('DELETE_CUSTOMER'),
   customerSupplierController.deleteCustomer,
 );
 
@@ -59,7 +59,7 @@ router.delete(
 router.post(
   '/api/suppliers',
   auth,
-  //   checkPermission('CREATE_SUPPLIER'),
+  checkPermission('CREATE_SUPPLIER'),
   customerSupplierController.createSupplier,
 );
 
@@ -83,7 +83,7 @@ router.get(
 router.put(
   '/api/suppliers/:id',
   auth,
-  //   checkPermission('UPDATE_SUPPLIER'),
+  checkPermission('UPDATE_SUPPLIER'),
   customerSupplierController.updateSupplier,
 );
 
@@ -91,30 +91,8 @@ router.put(
 router.delete(
   '/api/suppliers/:id',
   auth,
-  //   checkPermission('DELETE_SUPPLIER'),
+  checkPermission('DELETE_SUPPLIER'),
   customerSupplierController.deleteSupplier,
 );
 
-/**
- * Get all sells for a specific customer
- */
-router.get(
-  '/api/customers/:customerId/sells',
-  auth,
-  customerSupplierController.getCustomerSells,
-);
-
-/**
- * Get payment summary for a specific customer
- */
-router.get(
-  '/api/customers/:customerId/payment-summary',
-  auth,
-  customerSupplierController.getCustomerPaymentSummary,
-);
-router.get(
-  '/api/suppliers/:supplierId/purchases',
-  auth,
-  customerSupplierController.getSupplierPurchases,
-);
 module.exports = router;

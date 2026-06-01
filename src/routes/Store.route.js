@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { storeController } = require('../controllers');
 const auth = require('../middlewares/auth');
-// const checkPermission = require('../middlewares/permission.middleware');
+const checkPermission = require('../middlewares/permission.middleware');
 
 // Store Routes
 
@@ -11,7 +11,7 @@ const auth = require('../middlewares/auth');
 router.post(
   '/api/stores',
   auth,
-  // checkPermission('CREATE_STORE'),
+  checkPermission('CREATE_STORE'),
   storeController.createStore,
 );
 router.get(
@@ -40,7 +40,7 @@ router.get(
 router.put(
   '/api/stores/:id',
   auth,
-  // checkPermission('UPDATE_STORE'),
+  checkPermission('UPDATE_STORE'),
   storeController.updateStore,
 );
 
@@ -48,7 +48,7 @@ router.put(
 router.delete(
   '/api/stores/:id',
   auth,
-  // checkPermission('DELETE_STORE'),
+  checkPermission('DELETE_STORE'),
   storeController.deleteStore,
 );
 router.get('/api/stores/ledgers/all', auth, storeController.getAllStockLedgers);

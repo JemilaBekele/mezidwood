@@ -588,416 +588,107 @@ const getAllProducts = async (userId) => {
     })),
   };
 };
-const generateUniqueReferenceNumber = async (prefix) => {
-  const timestamp = Date.now();
-  const random = Math.floor(Math.random() * 10000)
-    .toString()
-    .padStart(4, '0');
-  return `${prefix}-${timestamp}${random}`;
-};
+const getEstimatedCurtainDeliveryTime = async (startDate, endDate) => {
+  const whereCondition = {
+    deliveryDeadline: {
+      not: null,
+    },
+    curtainStatus: {
+      in: ['COMPLETED', 'DELIVERED', 'FINISHED', 'RETURNED'],
+    },
+  };
 
-const createProductStock = async (productId, stocksData, userId) => {
-  try {
-    // stocksData can be an array or single object
-    const stocks = Array.isArray(stocksData) ? stocksData : [stocksData];
+  // Date filter - use deliveryDeadline or createdAt based on your needs
+  if (startDate || endDate) {
+    whereCondition.deliveryDeadline = {};
 
-    // Validate all stocks first
-    const validationErrors = [];
-
-    stocks.forEach((stockData, index) => {
-      const { pieceQuantity, boxQuantity, storeId, shopId } = stockData;
-
-      if (!productId) {
-        validationErrors.push(`Stock ${index + 1}: Product ID is required`);
-      }
-
-      // Validate either storeId or shopId is provided
-      if (!storeId && !shopId) {
-        validationErrors.push(
-          `Stock ${index + 1}: Either Store ID or Shop ID is required`,
-        );
-      }
-
-      // Validate quantity (either pieceQuantity or boxQuantity must be provided)
-      const hasPieceQuantity =
-        pieceQuantity !== undefined &&
-        pieceQuantity !== null &&
-        pieceQuantity > 0;
-      const hasBoxQuantity =
-        boxQuantity !== undefined && boxQuantity !== null && boxQuantity > 0;
-
-      if (!hasPieceQuantity && !hasBoxQuantity) {
-        validationErrors.push(
-          `Stock ${index + 1}: Either piece quantity or box quantity must be provided and greater than 0`,
-        );
-      }
-    });
-
-    if (validationErrors.length > 0) {
-      throw new ApiError(httpStatus.BAD_REQUEST, validationErrors.join('; '));
+    if (startDate) {
+      whereCondition.deliveryDeadline.gte = new Date(startDate);
     }
 
-    // Get all unique store IDs and shop IDs for batch fetching
-    const storeIds = [
-      ...new Set(stocks.filter((s) => s.storeId).map((stock) => stock.storeId)),
-    ];
-    const shopIds = [
-      ...new Set(stocks.filter((s) => s.shopId).map((stock) => stock.shopId)),
-    ];
-
-    // Fetch product
-    const product = await prisma.product.findUnique({
-      where: { id: productId },
-      include: {
-        category: true,
-        brand: true,
-      },
-    });
-
-    if (!product) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Product not found');
+    if (endDate) {
+      whereCondition.deliveryDeadline.lte = new Date(endDate);
     }
-
-    // Fetch all stores in one query
-    const stores =
-      storeIds.length > 0
-        ? await prisma.store.findMany({
-            where: { id: { in: storeIds } },
-            include: { branch: true },
-          })
-        : [];
-
-    // Fetch all shops in one query
-    const shops =
-      shopIds.length > 0
-        ? await prisma.shop.findMany({
-            where: { id: { in: shopIds } },
-            include: { branch: true },
-          })
-        : [];
-
-    // Create maps for quick lookup
-    const storeMap = Object.fromEntries(
-      stores.map((store) => [store.id, store]),
-    );
-    const shopMap = Object.fromEntries(shops.map((shop) => [shop.id, shop]));
-
-    // Check if all stores exist
-    const missingStoreIds = storeIds.filter((id) => !storeMap[id]);
-    if (missingStoreIds.length > 0) {
-      throw new ApiError(
-        httpStatus.NOT_FOUND,
-        `Stores not found: ${missingStoreIds.join(', ')}`,
-      );
-    }
-
-    // Check if all shops exist
-    const missingShopIds = shopIds.filter((id) => !shopMap[id]);
-    if (missingShopIds.length > 0) {
-      throw new ApiError(
-        httpStatus.NOT_FOUND,
-        `Shops not found: ${missingShopIds.join(', ')}`,
-      );
-    }
-
-    // Prepare results array
-    const results = await Promise.all(
-      stocks.map(async (stockData, index) => {
-        const { pieceQuantity, boxQuantity, storeId, shopId, notes } =
-          stockData;
-        const store = storeId ? storeMap[storeId] : null;
-        const shop = shopId ? shopMap[shopId] : null;
-        const locationType = storeId ? 'store' : 'shop';
-        const locationName = storeId ? store?.name : shop?.name;
-        const locationId = storeId || shopId;
-
-        try {
-          // Generate reference number for each stock
-          const reference = await generateUniqueReferenceNumber('STK-INIT');
-
-          // Calculate total piece quantity (convert boxes to pieces if product has box support)
-          let totalPieceQuantity = 0;
-          let finalBoxQuantity = 0;
-          let finalPieceQuantity = 0;
-
-          // Handle box quantity - must be converted to pieces if product supports boxes
-          if (boxQuantity && boxQuantity > 0) {
-            if (product.hasBox && product.boxSize) {
-              // Convert boxes to pieces
-              totalPieceQuantity += boxQuantity * product.boxSize;
-              finalBoxQuantity = boxQuantity;
-            } else {
-              // If product doesn't support boxes, treat boxQuantity as pieceQuantity
-              throw new ApiError(
-                httpStatus.BAD_REQUEST,
-                `Product "${product.name}" does not support box/packaging. Please enable box support for this product to add stock in boxes.`
-              );
-            }
-          }
-
-          // Handle piece quantity (always added as pieces)
-          if (pieceQuantity && pieceQuantity > 0) {
-            totalPieceQuantity += pieceQuantity;
-            finalPieceQuantity = pieceQuantity;
-          }
-
-          // Validate total quantity is positive
-          if (totalPieceQuantity <= 0) {
-            throw new ApiError(
-              httpStatus.BAD_REQUEST,
-              `Invalid total quantity for product "${product.name}". Total pieces must be greater than 0.`
-            );
-          }
-
-          // Use transaction for each stock entry
-          const result = await prisma.$transaction(async (tx) => {
-            let stockRecord;
-            let stockLedger;
-
-            if (storeId) {
-              // Handle Store Stock
-              stockRecord = await tx.storeStock.upsert({
-                where: {
-                  storeId_productId: {
-                    storeId,
-                    productId,
-                  },
-                },
-                create: {
-                  storeId,
-                  productId,
-                  quantity: totalPieceQuantity,
-                  status: 'Available',
-                },
-                update: {
-                  quantity: {
-                    increment: totalPieceQuantity,
-                  },
-                  updatedAt: new Date(),
-                },
-                include: {
-                  product: {
-                    include: {
-                      category: true,
-                      brand: true,
-                    },
-                  },
-                  store: {
-                    include: {
-                      branch: true,
-                    },
-                  },
-                },
-              });
-
-              // Create stock ledger entry for store
-              const ledgerNotes = [];
-              if (finalBoxQuantity > 0 && finalPieceQuantity > 0) {
-                ledgerNotes.push(
-                  `Initial stock insertion - ${finalBoxQuantity} box(es) × ${product.boxSize} = ${finalBoxQuantity * product.boxSize} pieces + ${finalPieceQuantity} piece(s) = ${totalPieceQuantity} total pieces`
-                );
-              } else if (finalBoxQuantity > 0) {
-                ledgerNotes.push(
-                  `Initial stock insertion - ${finalBoxQuantity} box(es) × ${product.boxSize} = ${totalPieceQuantity} pieces`
-                );
-              } else {
-                ledgerNotes.push(
-                  `Initial stock insertion - ${finalPieceQuantity} piece(s)`
-                );
-              }
-              ledgerNotes.push(`for product ${product.productCode} at store ${store.name}`);
-
-              stockLedger = await tx.stockLedger.create({
-                data: {
-                  productId,
-                  movementType: 'IN',
-                  pieceQuantity: totalPieceQuantity,
-                  boxQuantity: finalBoxQuantity,
-                  reference,
-                  userId,
-                  notes: notes || ledgerNotes.join(' '),
-                  movementDate: new Date(),
-                  storeId,
-                },
-                include: {
-                  product: {
-                    include: {
-                      category: true,
-                      brand: true,
-                    },
-                  },
-                  store: {
-                    include: {
-                      branch: true,
-                    },
-                  },
-                  user: {
-                    select: {
-                      id: true,
-                      name: true,
-                      email: true,
-                    },
-                  },
-                },
-              });
-            } else if (shopId) {
-              // Handle Shop Stock
-              stockRecord = await tx.shopStock.upsert({
-                where: {
-                  shopId_productId: {
-                    shopId,
-                    productId,
-                  },
-                },
-                create: {
-                  shopId,
-                  productId,
-                  quantity: totalPieceQuantity,
-                  status: 'Available',
-                },
-                update: {
-                  quantity: {
-                    increment: totalPieceQuantity,
-                  },
-                  updatedAt: new Date(),
-                },
-                include: {
-                  product: {
-                    include: {
-                      category: true,
-                      brand: true,
-                    },
-                  },
-                  shop: {
-                    include: {
-                      branch: true,
-                    },
-                  },
-                },
-              });
-
-              // Create stock ledger entry for shop
-              const ledgerNotes = [];
-              if (finalBoxQuantity > 0 && finalPieceQuantity > 0) {
-                ledgerNotes.push(
-                  `Initial stock insertion - ${finalBoxQuantity} box(es) × ${product.boxSize} = ${finalBoxQuantity * product.boxSize} pieces + ${finalPieceQuantity} piece(s) = ${totalPieceQuantity} total pieces`
-                );
-              } else if (finalBoxQuantity > 0) {
-                ledgerNotes.push(
-                  `Initial stock insertion - ${finalBoxQuantity} box(es) × ${product.boxSize} = ${totalPieceQuantity} pieces`
-                );
-              } else {
-                ledgerNotes.push(
-                  `Initial stock insertion - ${finalPieceQuantity} piece(s)`
-                );
-              }
-              ledgerNotes.push(`for product ${product.productCode} at shop ${shop.name}`);
-
-              stockLedger = await tx.stockLedger.create({
-                data: {
-                  productId,
-                  movementType: 'IN',
-                  pieceQuantity: totalPieceQuantity,
-                  boxQuantity: finalBoxQuantity,
-                  reference,
-                  userId,
-                  notes: notes || ledgerNotes.join(' '),
-                  movementDate: new Date(),
-                  shopId,
-                },
-                include: {
-                  product: {
-                    include: {
-                      category: true,
-                      brand: true,
-                    },
-                  },
-                  shop: {
-                    include: {
-                      branch: true,
-                    },
-                  },
-                  user: {
-                    select: {
-                      id: true,
-                      name: true,
-                      email: true,
-                    },
-                  },
-                },
-              });
-            }
-
-            // Create log entry
-            const quantityMessage = [];
-            if (finalBoxQuantity > 0) {
-              quantityMessage.push(`${finalBoxQuantity} box(es)`);
-            }
-            if (finalPieceQuantity > 0) {
-              quantityMessage.push(`${finalPieceQuantity} piece(s)`);
-            }
-
-            const actionMessage = 
-              `Initial stock insertion: Added ${quantityMessage.join(' and ')} ` +
-              `(${totalPieceQuantity} total pieces) of ${product.name} (${product.productCode}) ` +
-              `to ${locationType} ${locationName}`;
-
-            await tx.log.create({
-              data: {
-                action: actionMessage,
-                userId,
-              },
-            });
-
-            return {
-              stockRecord,
-              stockLedger,
-              product,
-              location: store || shop,
-              locationType,
-              reference,
-              totalPieceQuantity,
-              boxQuantity: finalBoxQuantity,
-              pieceQuantity: finalPieceQuantity,
-            };
-          });
-
-          const quantityMessage = [];
-          if (result.boxQuantity > 0) {
-            quantityMessage.push(`${result.boxQuantity} box(es)`);
-          }
-          if (result.pieceQuantity > 0) {
-            quantityMessage.push(`${result.pieceQuantity} piece(s)`);
-          }
-
-          return {
-            message: `Successfully added initial stock of ${quantityMessage.join(
-              ' and ',
-            )} (${result.totalPieceQuantity} total pieces) for ${product.name} to ${
-              result.locationType
-            } ${result.location.name}`,
-            reference: result.reference,
-            stockRecord: result.stockRecord,
-            stockLedger: result.stockLedger,
-            product: result.product,
-            location: result.location,
-            locationType: result.locationType,
-            totalPieceQuantity: result.totalPieceQuantity,
-            boxQuantity: result.boxQuantity,
-            pieceQuantity: result.pieceQuantity,
-          };
-        } catch (error) {
-          console.error(`Error processing stock ${index + 1}:`, error);
-          throw error;
-        }
-      }),
-    );
-
-    return results;
-  } catch (error) {
-    console.error('Error stack:', error.stack);
-    throw error;
   }
+
+  const orders = await prisma.curtainOrder.findMany({
+    where: whereCondition,
+    orderBy: {
+      deliveryDeadline: 'desc',
+    },
+    take: 100,
+    select: {
+      id: true,
+      code: true,
+      createdAt: true,
+      deliveryDeadline: true,
+      curtainStatus: true,
+      paymentStatus: true,
+      customer: {
+        select: {
+          id: true,
+          name: true,
+          phone1: true,
+          address: true,
+        },
+      },
+      movementType: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+      totalAmount: true,
+      balance: true,
+      totalPaid: true,
+      remark: true,
+      isSiteMeasured: true,
+      siteMeasurePrice: true,
+    },
+  });
+
+  if (!orders.length) {
+    const fallbackDays = 7;
+
+    return {
+      success: true,
+      averageDays: fallbackDays,
+      estimatedDate: new Date(Date.now() + fallbackDays * 24 * 60 * 60 * 1000),
+      totalOrdersUsed: 0,
+      orders: [],
+      message: 'No delivery history found',
+    };
+  }
+
+  // Calculate average delivery time
+  let totalDays = 0;
+  let validOrdersCount = 0;
+
+  orders.forEach((order) => {
+    const start = new Date(order.createdAt);
+    const end = new Date(order.deliveryDeadline);
+
+    // Only count if dates are valid
+    if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+      const diffDays = Math.ceil(Math.abs(end - start) / (1000 * 60 * 60 * 24));
+      totalDays += diffDays;
+      validOrdersCount++;
+    }
+  });
+
+  const averageDays =
+    validOrdersCount > 0 ? Math.ceil(totalDays / validOrdersCount) : 7;
+
+  const estimatedDate = new Date();
+  estimatedDate.setDate(estimatedDate.getDate() + averageDays);
+
+  return {
+    success: true,
+    averageDays,
+    estimatedDate,
+    totalOrdersUsed: validOrdersCount,
+    orders,
+  };
 };
 module.exports = {
   getBranchById,
@@ -1007,5 +698,5 @@ module.exports = {
   updateBranch,
   deleteBranch,
   getAllProducts,
-  createProductStock,
+  getEstimatedCurtainDeliveryTime,
 };

@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { unitOfMeasureController } = require('../controllers');
 const auth = require('../middlewares/auth');
-// const checkPermission = require('../middlewares/permission.middleware');
+const checkPermission = require('../middlewares/permission.middleware');
 
 // Create a UnitOfMeasure
 router.post(
@@ -31,7 +31,7 @@ router.get(
 router.put(
   '/api/units-of-measure/:id',
   auth,
-  // checkPermission('UPDATE_UNIT_OF_MEASURE'),
+  checkPermission('UPDATE_UNIT_OF_MEASURE'),
   unitOfMeasureController.updateUnitOfMeasure,
 );
 
@@ -39,7 +39,7 @@ router.put(
 router.delete(
   '/api/units-of-measure/:id',
   auth,
-  // checkPermission('DELETE_UNIT_OF_MEASURE'),
+  checkPermission('DELETE_UNIT_OF_MEASURE'),
   unitOfMeasureController.deleteUnitOfMeasure,
 );
 module.exports = router;

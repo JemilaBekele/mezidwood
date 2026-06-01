@@ -114,44 +114,7 @@ const deleteSupplier = catchAsync(async (req, res) => {
     message: 'Supplier deleted successfully',
   });
 });
-const getCustomerSells = catchAsync(async (req, res) => {
-  const { customerId } = req.params;
-  const filters = req.query;
 
-  const result = await customerService.getCustomerSells(customerId, filters);
-
-  res.status(httpStatus.OK).send({
-    success: true,
-    message: 'Customer sells retrieved successfully',
-    data: result,
-  });
-});
-const getCustomerPaymentSummary = catchAsync(async (req, res) => {
-  const { customerId } = req.params;
-
-  const result = await customerService.getCustomerPaymentSummary(customerId);
-
-  res.status(httpStatus.OK).send({
-    success: true,
-    message: 'Customer payment summary retrieved successfully',
-    data: result,
-  });
-});
-const getSupplierPurchases = catchAsync(async (req, res) => {
-  const { supplierId } = req.params;
-  const filters = req.query;
-
-  const result = await customerService.getSupplierPurchases(
-    supplierId,
-    filters,
-  );
-
-  res.status(httpStatus.OK).send({
-    success: true,
-    message: 'Supplier purchases retrieved successfully',
-    data: result,
-  });
-});
 module.exports = {
   // Customer exports
   createCustomer,
@@ -160,9 +123,6 @@ module.exports = {
   updateCustomer,
   deleteCustomer,
   getCustomersWithFallback,
-  getCustomerSells,
-  getCustomerPaymentSummary,
-  getSupplierPurchases,
   // Supplier exports
   createSupplier,
   getSupplier,
