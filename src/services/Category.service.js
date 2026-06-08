@@ -174,42 +174,61 @@ const STATIC_COLOURS = [
   'Beige',
   'Cream',
 ];
+
 // Create Colour
 const createColour = async (colourBody) => {
-  const existingColour = await getColourByName(colourBody.name);
+  try {
+    const existingColour = await getColourByName(colourBody.name);
 
-  if (existingColour) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Colour name already exists');
-  }
+    if (existingColour) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Colour name already exists');
+    }
 
-  const colour = await prisma.colour.create({
-    data: colourBody,
-  });
-
-  const existingStaticColours = await prisma.colour.findMany({
-    where: {
-      name: {
-        in: STATIC_COLOURS.map((item) => item.name),
-      },
-    },
-  });
-
-  const existingColourNames = existingStaticColours.map((item) => item.name);
-
-  const coloursToCreate = STATIC_COLOURS.filter(
-    (item) => !existingColourNames.includes(item.name),
-  );
-
-  if (coloursToCreate.length > 0) {
-    await prisma.colour.createMany({
-      data: coloursToCreate,
-      skipDuplicates: true,
+    const colour = await prisma.colour.create({
+      data: colourBody,
     });
+
+    // Get existing static colours
+    const existingStaticColours = await prisma.colour.findMany({
+      where: {
+        name: {
+          in: STATIC_COLOURS,
+        },
+      },
+      select: {
+        name: true,
+      },
+    });
+
+    const existingColourNames = existingStaticColours.map((item) => item.name);
+
+    // Find colours that don't exist yet
+    const coloursToCreate = STATIC_COLOURS.filter(
+      (colourName) => !existingColourNames.includes(colourName),
+    ).map((colourName) => ({ 
+      name: colourName,
+      // Add any other required fields with default values
+      // isActive: true,
+      // createdAt: new Date(),
+    }));
+
+    // Create missing static colours if any
+    if (coloursToCreate.length > 0) {
+      console.log(`Creating ${coloursToCreate.length} missing static colours:`, 
+        coloursToCreate.map(c => c.name));
+      
+      await prisma.colour.createMany({
+        data: coloursToCreate,
+        skipDuplicates: true,
+      });
+    }
+
+    return colour;
+  } catch (error) {
+    console.error('Error in createColour:', error);
+    throw error;
   }
-
-  return colour;
 };
-
 // Update Colour
 const updateColour = async (id, updateBody) => {
   const existingColour = await getColourById(id);
