@@ -157,11 +157,27 @@ const getAllColours = async (filter, options) => {
     limit,
   };
 };
-
+const STATIC_COLOURS = [
+  'White',
+  'Black',
+  'Red',
+  'Green',
+  'Blue',
+  'Yellow',
+  'Orange',
+  'Purple',
+  'Pink',
+  'Brown',
+  'Gray',
+  'Silver',
+  'Gold',
+  'Beige',
+  'Cream',
+];
 // Create Colour
 const createColour = async (colourBody) => {
-  // Check if colour with same name already exists (case-insensitive)
   const existingColour = await getColourByName(colourBody.name);
+
   if (existingColour) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Colour name already exists');
   }
@@ -169,6 +185,27 @@ const createColour = async (colourBody) => {
   const colour = await prisma.colour.create({
     data: colourBody,
   });
+
+  const existingStaticColours = await prisma.colour.findMany({
+    where: {
+      name: {
+        in: STATIC_COLOURS.map((item) => item.name),
+      },
+    },
+  });
+
+  const existingColourNames = existingStaticColours.map((item) => item.name);
+
+  const coloursToCreate = STATIC_COLOURS.filter(
+    (item) => !existingColourNames.includes(item.name),
+  );
+
+  if (coloursToCreate.length > 0) {
+    await prisma.colour.createMany({
+      data: coloursToCreate,
+      skipDuplicates: true,
+    });
+  }
 
   return colour;
 };
@@ -263,7 +300,7 @@ const getTopSellingProducts = async (dateFilter) => {
   if (startDateTime > endDateTime) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      'Start date cannot be after end date'
+      'Start date cannot be after end date',
     );
   }
 
@@ -379,7 +416,9 @@ const getTopSellingProducts = async (dateFilter) => {
         }
         const product = productSales.get(productKey);
         product.quantity += measurement.curtainPoleQuantity || 1;
-        product.revenue += (measurement.curtainPolePrice || 0) * (measurement.curtainPoleQuantity || 1);
+        product.revenue +=
+          (measurement.curtainPolePrice || 0) *
+          (measurement.curtainPoleQuantity || 1);
       }
 
       // Curtain Pulls
@@ -419,7 +458,10 @@ const getTopSellingProducts = async (dateFilter) => {
       }
 
       // Shatter Vertical Products
-      if (measurement.shatterVerticalProductId && measurement.shatterVerticalProduct) {
+      if (
+        measurement.shatterVerticalProductId &&
+        measurement.shatterVerticalProduct
+      ) {
         const productKey = `shatter_${measurement.shatterVerticalProductId}`;
         if (!productSales.has(productKey)) {
           productSales.set(productKey, {
@@ -452,7 +494,7 @@ const getTopSellingProducts = async (dateFilter) => {
 
     // Top by meters (for fabric products)
     const topByMeters = [...productsArray]
-      .filter(p => p.meters > 0)
+      .filter((p) => p.meters > 0)
       .sort((a, b) => b.meters - a.meters)
       .slice(0, 10);
 
@@ -461,7 +503,10 @@ const getTopSellingProducts = async (dateFilter) => {
       topByRevenue,
       topByMeters,
       summary: {
-        totalProductsSold: productsArray.reduce((sum, p) => sum + p.quantity, 0),
+        totalProductsSold: productsArray.reduce(
+          (sum, p) => sum + p.quantity,
+          0,
+        ),
         totalRevenue: productsArray.reduce((sum, p) => sum + p.revenue, 0),
         uniqueProducts: productsArray.length,
       },
@@ -470,7 +515,7 @@ const getTopSellingProducts = async (dateFilter) => {
     console.error('Error getting top selling products:', error);
     throw new ApiError(
       httpStatus.INTERNAL_SERVER_ERROR,
-      'Failed to get top selling products'
+      'Failed to get top selling products',
     );
   }
 };
@@ -515,7 +560,7 @@ const getTopTailorsByMeters = async (dateFilter) => {
   if (startDateTime > endDateTime) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      'Start date cannot be after end date'
+      'Start date cannot be after end date',
     );
   }
 
@@ -629,16 +674,25 @@ const getTopTailorsByMeters = async (dateFilter) => {
       topByOrders,
       summary: {
         totalTailors: tailorsArray.length,
-        totalMetersAllTailors: tailorsArray.reduce((sum, t) => sum + t.totalMeters, 0),
-        totalEarningsAllTailors: tailorsArray.reduce((sum, t) => sum + t.totalEarnings, 0),
-        totalOrdersAllTailors: tailorsArray.reduce((sum, t) => sum + t.totalOrders, 0),
+        totalMetersAllTailors: tailorsArray.reduce(
+          (sum, t) => sum + t.totalMeters,
+          0,
+        ),
+        totalEarningsAllTailors: tailorsArray.reduce(
+          (sum, t) => sum + t.totalEarnings,
+          0,
+        ),
+        totalOrdersAllTailors: tailorsArray.reduce(
+          (sum, t) => sum + t.totalOrders,
+          0,
+        ),
       },
     };
   } catch (error) {
     console.error('Error getting top tailors:', error);
     throw new ApiError(
       httpStatus.INTERNAL_SERVER_ERROR,
-      'Failed to get top tailors'
+      'Failed to get top tailors',
     );
   }
 };
@@ -652,7 +706,10 @@ const getWorkerLogPerformance = async (dateFilter) => {
   const { startDate, endDate } = dateFilter;
 
   if (!startDate || !endDate) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Start date and end date are required');
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Start date and end date are required',
+    );
   }
 
   const startDateTime = new Date(startDate);
@@ -720,17 +777,27 @@ const getWorkerLogPerformance = async (dateFilter) => {
     });
 
     // Calculate completion rates
-    const workersArray = Array.from(workerStats.values()).map(worker => ({
+    const workersArray = Array.from(workerStats.values()).map((worker) => ({
       ...worker,
-      widthCompletionRate: worker.totalWidthAssigned > 0 
-        ? Math.round((worker.totalWidthCompleted / worker.totalWidthAssigned) * 100)
-        : 0,
-      heightCompletionRate: worker.totalHeightAssigned > 0
-        ? Math.round((worker.totalHeightCompleted / worker.totalHeightAssigned) * 100)
-        : 0,
-      quantityCompletionRate: worker.totalQuantityAssigned > 0
-        ? Math.round((worker.totalQuantityCompleted / worker.totalQuantityAssigned) * 100)
-        : 0,
+      widthCompletionRate:
+        worker.totalWidthAssigned > 0
+          ? Math.round(
+              (worker.totalWidthCompleted / worker.totalWidthAssigned) * 100,
+            )
+          : 0,
+      heightCompletionRate:
+        worker.totalHeightAssigned > 0
+          ? Math.round(
+              (worker.totalHeightCompleted / worker.totalHeightAssigned) * 100,
+            )
+          : 0,
+      quantityCompletionRate:
+        worker.totalQuantityAssigned > 0
+          ? Math.round(
+              (worker.totalQuantityCompleted / worker.totalQuantityAssigned) *
+                100,
+            )
+          : 0,
     }));
 
     // Top by width completed
@@ -740,7 +807,7 @@ const getWorkerLogPerformance = async (dateFilter) => {
 
     // Top by completion rate
     const topByCompletionRate = [...workersArray]
-      .filter(w => w.logsCount > 2) // At least 3 logs for reliable rate
+      .filter((w) => w.logsCount > 2) // At least 3 logs for reliable rate
       .sort((a, b) => b.widthCompletionRate - a.widthCompletionRate)
       .slice(0, 10);
 
@@ -750,8 +817,14 @@ const getWorkerLogPerformance = async (dateFilter) => {
       allWorkers: workersArray,
       summary: {
         totalWorkers: workersArray.length,
-        totalWidthCompleted: workersArray.reduce((sum, w) => sum + w.totalWidthCompleted, 0),
-        totalQuantityCompleted: workersArray.reduce((sum, w) => sum + w.totalQuantityCompleted, 0),
+        totalWidthCompleted: workersArray.reduce(
+          (sum, w) => sum + w.totalWidthCompleted,
+          0,
+        ),
+        totalQuantityCompleted: workersArray.reduce(
+          (sum, w) => sum + w.totalQuantityCompleted,
+          0,
+        ),
         totalLogs: workerLogs.length,
       },
     };
@@ -759,7 +832,7 @@ const getWorkerLogPerformance = async (dateFilter) => {
     console.error('Error getting worker log performance:', error);
     throw new ApiError(
       httpStatus.INTERNAL_SERVER_ERROR,
-      'Failed to get worker log performance'
+      'Failed to get worker log performance',
     );
   }
 };
@@ -821,11 +894,10 @@ const getTopPerformersDashboard = async (dateFilter) => {
     console.error('Error getting top performers dashboard:', error);
     throw new ApiError(
       httpStatus.INTERNAL_SERVER_ERROR,
-      'Failed to get top performers dashboard'
+      'Failed to get top performers dashboard',
     );
   }
 };
-
 
 module.exports = {
   getCategoryById,
