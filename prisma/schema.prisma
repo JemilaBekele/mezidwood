@@ -5,7 +5,8 @@ generator client {
 
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
+
+    url      = env("DATABASE_URL")
 
 }
 enum Status {
@@ -16,46 +17,57 @@ enum Status {
 
 model User {
   id          String      @id @default(uuid()) @map("_id") @db.Char(36)
-  name        String            @map("name")
+  name        String       @map("name")
   phone       String?     @map("phone")
   userCode    String? 
   email       String      @unique
   admin       Boolean     @default(false)
   password    String
-  branchId    String?
-  branch      Branch?      @relation(fields: [branchId], references: [id])
   roleId      String      @db.Char(36)
   role        Role        @relation(fields: [roleId], references: [id])
   status      Status      @default(Active) 
-   // ✅ A user can be assigned to many shops
-  shops       Shop[]   @relation("UserShops")
 
-  // ✅ A user can be assigned to many stores
-  stores      Store[]  @relation("UserStores")     // <-- Enum status field replacing isActive
+    // Store Assignment
+  storeId     String?     @db.Char(36)
+  store       Store?      @relation(fields: [storeId], references: [id])
+
+  // Showroom Assignment
+  showroomId  String?     @db.Char(36)
+  showroom    Showroom?   @relation(fields: [showroomId], references: [id])
+
+    // <-- Enum status field replacing isActive
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 lastLoginAt DateTime?    @default(now())
   @@map("users")
 Log Log[]
-StockLedger StockLedger[]
-CreatorPurchase Purchase[] @relation(name: "creator")
-UpdatedPurchase Purchase[] @relation("UpdatedCheckEntrance")
-CreatedTransfer Transfer[] @relation("createdTransfer")
-UpdatedTransfer Transfer[] @relation("UpdatedTransfer")
-StockCorrection StockCorrection[] @relation("createdStockCorrection")
-UpdateStockCorrection StockCorrection[] @relation("updatedStockCorrection")
-thickcurtainMeasurements CurtainMeasurement[] @relation("ThickCurtainWorker")
-thincurtainMeasurements CurtainMeasurement[] @relation("ThinCurtainWorker")
-curtainOrders CurtainOrder[] @relation(name: "creator")
-curtainMeasurements CurtainMeasurement[] @relation(name: "creator")
-UpdatecurtainOrders CurtainOrder[] @relation(name: "updater")
-stockCorrections StockCorrection[] @relation("approvedStockCorrection")
-curtainWorkerLogs CurtainWorkerLog[]
-creatorcurtainWorkerLogs CurtainWorkerLog[] @relation("CurtainWorkerLogCreator")
-updatecurtainMeasurements CurtainMeasurement[] @relation(name: "updater")
-expenses Expense[]
-curtainPayments CurtainPayment[] @relation(name: "curtain_payment_creator")
-deliverdbycurtainOrders CurtainOrder[] @relation(name: "CurtainDeliveredBy")
+
+purchases Purchase[] @relation(name: "creator")
+uppurchases Purchase[] @relation("UpdatedCheckEntrance")
+proformaInvoices ProformaInvoice[] @relation(name: "creator")
+projects Project[] @relation(name: "creator")
+updateprojects Project[] @relation("Updatedproject")
+approveproformaInvoices ProformaInvoice[] @relation(name: "approver")
+deliveryEstimations DeliveryEstimation[] @relation(name: "creator")
+updatedeliveryEstimations DeliveryEstimation[] @relation("Updatedproject")
+projectStageWorkLogs ProjectStageWorkLog[]
+creatorproformaInvoiceBanks ProformaInvoiceBank[] @relation(name: "creator")
+stockLedgers StockLedger[]
+stockCorrections StockCorrection[] @relation("createdStockCorrection")
+updatedstockCorrections StockCorrection[] @relation("updatedStockCorrection")
+materialIssues MaterialIssue[] @relation("IssuedByUser")
+givenmaterialIssues MaterialIssue[] @relation("GivenToUser")
+projectLogs ProjectLog[]
+designbyprojects Project[] @relation("designproject")
+itemStockLedgers ItemStockLedger[]
+sellPayments SellPayment[]
+sells Sell[] @relation("CreatedSale")
+updaatesells Sell[] @relation("UpdatedSale")
+transfers Transfer[] @relation("createdTransfer")
+updatetransfers Transfer[] @relation("UpdatedTransfer")
+scheduleHistories ScheduleHistory[]
+piLogs PiLog[]
+capacityLotHistories CapacityLotHistory[]
 }
 
 model Role {
@@ -96,6 +108,9 @@ model Company {
   email       String?      @unique
   phone       String?
   address String? // Optional field
+  addressTow   String?
+  tiktok String?
+
   description String?
   tinAddress String? 
   TIN String? 
@@ -109,184 +124,6 @@ model Company {
 
 
 
-model Branch {
-  id          String @id @default(uuid()) @map("_id") @db.Char(36)
-  name        String
-  address     String?
-  phone       String?  @map("phone") // e.g., +88 05454 6446
-  email       String?  @map("email") // e.g., example@example.com
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  @@map("branches")
-  Shop Shop[]
-  Store Store[]
-  User User[]
- 
-}
-
-
-model Shop {
-  id          String @id @default(uuid()) @map("_id") @db.Char(36)
-  name        String
-  branchId    String
-  branch      Branch   @relation(fields: [branchId], references: [id])
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  @@map("shops")
-  ShopStock ShopStock[]
-  StockLedger StockLedger[]
-  SourceTransfer Transfer[] @relation("TransferSourceShop")
-  DestinatTransfer Transfer[] @relation("TransferDestinationShop")
-  StockCorrection StockCorrection[]
-  AdditionalPrice AdditionalPrice[]
-  User User[] @relation("UserShops")
-  notifications Notification[]
-  curtainOrders CurtainOrder[] @relation("TransferSourceShop")
-}
-
-model Store {
-  id          String @id @default(uuid()) @map("_id") @db.Char(36)
-  name        String
-  branchId    String
-  branch      Branch   @relation(fields: [branchId], references: [id])
-  
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  @@map("stores")
-  StoreStock StoreStock[]
-  StockLedger StockLedger[]
-  Purchase Purchase[]
-  SourceTransfer Transfer[] @relation("TransferSourceStore")
-  DestinatTransfer Transfer[] @relation("TransferDestinationStore")
-  StockCorrection StockCorrection[]
-  User User[] @relation("UserStores")
-  notifications Notification[]
-}
-model StoreStock {
-  id          String        @id @default(uuid()) @map("_id") @db.Char(36)
-  storeId     String        @db.Char(36)
-  store       Store         @relation(fields: [storeId], references: [id])
-      productId       String       @db.Char(36)
-      product         Product      @relation(fields: [productId], references: [id])
-
-  quantity    Int?          // Total quantity across all dimensions
-
-  status      StockStatus   @default(Available)
-
-  // ✅ Link directly to a single unit of measure
-  unitOfMeasureId String
-  unitOfMeasure   UnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  variants    StoreProductVariant[]
-
-  @@unique([storeId, productId])  // ✅ Composite unique constraint
-  @@map("store_stocks")
-}
-model StoreProductVariant {
-  id           String     @id @default(uuid())
-  storeStockId String
-  storeStock   StoreStock @relation(fields: [storeStockId], references: [id])
-
-  height       Float
-  width        Float
-  quantity     Int
-
-  @@unique([storeStockId, height, width])
-}
-enum StockStatus {
-  Available
-  Reserved
-  Sold
-  Damaged
-  Returned
-  Disposed
-}
-
-model ShopStock {
-  id          String        @id @default(uuid()) @map("_id") @db.Char(36)
-  shopId      String        @db.Char(36)
-  shop        Shop          @relation(fields: [shopId], references: [id])
-      productId       String       @db.Char(36)
-      product         Product      @relation(fields: [productId], references: [id])
-
-  
-  // ✅ Link directly to a single unit of measure
-  unitOfMeasureId String
-  unitOfMeasure   UnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
-
-   quantity    Int?          // Total quantity across all dimensions
-
-
-  status      StockStatus   @default(Available)
-
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  variants  ShopProductVariant[]
-
-  @@unique([shopId, productId])  // ✅ Composite unique constraint
-  @@map("shop_stocks")
-}
-model ShopProductVariant {
-  id          String    @id @default(uuid())
-  shopStockId String
-  shopStock   ShopStock @relation(fields: [shopStockId], references: [id])
-
-  height      Float
-  width       Float
-  quantity    Int
-
-  @@unique([shopStockId, height, width])
-  curtainWorkerLogs CurtainWorkerLog[]
-}
-model StockLedger {
-  id          String            @id @default(uuid()) @map("_id") @db.Char(36)
-  invoiceNo      String?          @unique                 // Invoice number
-
-  productId       String       @db.Char(36)
-  product         Product      @relation(fields: [productId], references: [id])
-
-
-  storeId     String?           @db.Char(36)
-  store       Store?            @relation(fields: [storeId], references: [id])
-
-  shopId      String?           @db.Char(36)
-  shop        Shop?             @relation(fields: [shopId], references: [id])
-
-  movementType StockMovementType
-    // ✅ Dimension-based quantity
-  height      Float?
-  width       Float?
-  quantity    Int?
-
-
-
-  // ✅ Link directly to a single unit of measure
-  unitOfMeasureId String
-  unitOfMeasure   UnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
-  reference    String?           // invoice, purchase order, transfer ref
-  userId       String?           @db.Char(36)
-  user         User?             @relation(fields: [userId], references: [id])
-
-  notes        String?
-
-  movementDate DateTime @default(now())
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-
-  @@map("stock_ledgers")
-}
-enum StockMovementType {
-  IN          // purchase, stock in
-  OUT         // sales, consumption
-  TRANSFER    // store → shop, shop → store
-  ADJUSTMENT  // manual corrections
-  RETERN
-  TRANSFORM
-}
 
 model Log {
   id        String      @id @default(uuid()) @map("_id") @db.Char(36)
@@ -304,16 +141,20 @@ model Customer {
   id         String   @id @default(uuid()) @map("_id") @db.Char(36)
   name       String   @map("first_name")
     companyName   String?         @db.VarChar(255)
+    isdefault Boolean   @default(true)
   phone1     String   @map("phone1")
   phone2     String?  @map("phone2")   // optional second phone
   tinNumber  String?  @db.VarChar(100)
   address    String?
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
+  email         String?  @db.VarChar(255) // optional email
 
   @@map("customers")
-
-  curtainOrders CurtainOrder[]
+ 
+  proformaInvoices ProformaInvoice[]
+  projects Project[]
+  sells Sell[]
 }
 
 
@@ -335,443 +176,217 @@ model Supplier {
   @@map("suppliers")
   Purchase Purchase[]
 }
+model Bank {
+  id            String   @id @default(uuid())
+  bankName      String
+  accountNumber String   @unique
 
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-model Category {
-  id            String            @id @default(uuid()) @map("_id") @db.Char(36)
-  name          String
-
-  products      Product[]
-
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  
-@@map("categories") // Add this line if your table is actually called 'categories'
+  @@map("banks")
+  purchases Purchase[]
+  proformaInvoiceBanks ProformaInvoiceBank[]
+  sellPayments SellPayment[]
 }
-
-model Colour {
-  id            String            @id @default(uuid()) @map("_id") @db.Char(36)
-  name          String
-
-  products      Product[]
-
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-
-  @@map("colours")
-}
-model CurtainType {
-  id          String    @id @default(uuid()) @map("_id") @db.Char(36)
-  name        String    @unique
-
-  products    Product[]
-
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  @@map("curtain_types")
-}
-model MovementType {
-  id        String    @id @default(uuid()) @map("_id") @db.Char(36)
-  name      String    @unique
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  @@map("movement_types")
-  curtainOrders CurtainOrder[]
-}
-model Expense {
-  id            String       @id @default(uuid()) @map("_id") @db.Char(36)
-
-  title         String
-  description   String?
-
-  amount        Float
-
-  expenseDate   DateTime     @default(now())
-
-  createdById   String?
-  createdBy     User?        @relation(fields: [createdById], references: [id])
-
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-
-  @@map("expenses")
-}
-
-model Product {
-  id            String   @id @default(uuid()) @map("_id") @db.Char(36)
-
-  // Core Identity
-  productCode   String   @unique                      // e.g. PRD001
-  name          String
-  description   String?
-
-  // Curtain-specific attributes
-  fabricName    String?
-  thickCurtain  Boolean?   @default(false)
-  thinCurtain   Boolean?   @default(false)
-  pullsCurtain  Boolean?   @default(false)
-  poleCurtain   Boolean?   @default(false)
-  bracketsCurtain   Boolean?   @default(false)
-  shatterVertical Boolean?   @default(false)
-  // Relationships
-  categoryId    String
-  category      Category   @relation(fields: [categoryId], references: [id])
-
-  colourId      String?
-  colour        Colour?    @relation(fields: [colourId], references: [id])
-
-  curtainTypeId String?     @db.Char(36)
-  curtainType   CurtainType? @relation(fields: [curtainTypeId], references: [id])
-
-  // Pricing
-  sellPrice     Decimal?   @db.Decimal(10, 2)   // base price
-  pricePerMeter Boolean    @default(true)       // 🔥 IMPORTANT for curtains
-
-  warningQuantity Int?     @default(0)
-
-  // Media
-  imageUrl      String?
-
-  // Unit of Measure
-  unitOfMeasureId String
-  unitOfMeasure   UnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
-
-  // Status
-  isActive      Boolean    @default(true)
-
-  // Curtain Measurements Link
-  thickcurtainMeasurements CurtainMeasurement[] @relation(name: "thickcreator")
-
-  // System Relations (unchanged)
-  PurchaseItem                PurchaseItem[]
-  TransferItem                TransferItem[]
-  StockCorrectionItem         StockCorrectionItem[]
-  AdditionalPrice             AdditionalPrice[]
-  storeStocks                 StoreStock[]
-  shopStocks                  ShopStock[]
-  stockLedgers                StockLedger[]
-
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-
-  @@map("products")
-  thincurtainMeasurements CurtainMeasurement[] @relation(name: "thincreator")
-  curtainMeasurements CurtainMeasurement[] @relation(name: "CurtainPole")
-  pullscurtainMeasurements CurtainMeasurement[] @relation(name: "CurtainPulls")
-  bracketcurtainMeasurements CurtainMeasurement[] @relation(name: "CurtainBrackets")
-  shattercurtainMeasurements CurtainMeasurement[] @relation(name: "shatterVerticalCreator")
-}
-
-model AdditionalPrice {
-  id         String      @id @default(uuid()) @map("_id") @db.Char(36)
-  label      String?
-  price      Float
-    productId       String       @db.Char(36)
-  product         Product      @relation(fields: [productId], references: [id])
-
-  shopId      String?        @db.Char(36)
-  shop        Shop?          @relation(fields: [shopId], references: [id])
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  @@map("additional_prices")
-  @@unique([productId, label])
-}
-
 
 model UnitOfMeasure {
   id       String     @id @default(uuid()) @map("_id") @db.Char(36)
   name     String     @unique
   symbol   String?
-  base     Boolean    @default(false)
+    base     Boolean    @default(false)
 
-  // ✅ Back relation to products
-  products Product[]
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
 
-  PurchaseItem PurchaseItem[]
-
-  TransferItem TransferItem[]
-
-  StockLedger StockLedger[]
-
-  ShopStock ShopStock[]
-
-  StoreStock StoreStock[]
-
-  StockCorrectionItem StockCorrectionItem[]
-
-
-    @@map("unitofmeasure") // This maps to the actual table name 'unitofmeasure'
-
+  @@map("units_of_measure")
+  stockLedgers StockLedger[]
+  materials Material[]
+  purchaseItems PurchaseItem[]
 }
+model Showroom {
+  id          String @id @default(uuid()) @map("_id") @db.Char(36)
+  name        String
+  isMain      Boolean  @default(false) @unique
 
-enum CurtainStatus {
-  PENDING
-  FINISHED
-  RETURNED
-  COMPLETED
-  CANCELLED
-  DELIVERED
+  inventoryStocks InventoryStock[]
+
+  itemStocks ItemStock[]
+
+
+  stockCorrections StockCorrection[]
+
+  itemStockLedgers ItemStockLedger[]
+
+  stockLedgers StockLedger[]
+
+  transfers Transfer[] @relation("TransferSourceShowroom")
+
+  distnationtransfers Transfer[] @relation("TransferDestinationShowroom")
+
+  users User[]
 }
-enum PaymentStatusCurtain {
-  PENDING
-  PAID
+model Store {
+  id          String @id @default(uuid()) @map("_id") @db.Char(36)
+  name        String
+  isMain      Boolean  @default(false) @unique
+
+  inventoryStocks InventoryStock[]
+
+  itemStocks ItemStock[]
+
+  purchases Purchase[]
+
+
+  stockCorrections StockCorrection[]
+
+  itemStockLedgers ItemStockLedger[]
+
+  stockLedgers StockLedger[]
+
+  sells Sell[]
+
+  transfers Transfer[] @relation("TransferSourceStore")
+
+  distnationtransfers Transfer[] @relation("TransferDestinationStore")
+
+  users User[]
 }
-
-model CurtainOrder {
-  id               String       @id @default(uuid()) @map("_id") @db.Char(36)
-
-  // Customer
-  code             String?       @unique             
-  customerId       String
-  customer         Customer     @relation(fields: [customerId], references: [id])
-
-  // 🔄 Movement Type (instead of CurtainType)
-  movementTypeId   String?      @db.Char(36)
-  movementType     MovementType? @relation(fields: [movementTypeId], references: [id])
-
-  curtainStatus    CurtainStatus @default(PENDING)
-    curtainstatusnote String?
-
-  paymentStatus    PaymentStatus @default(PENDING)
- 
-   // 🚚 Delivery Person
-  deliveredById    String?      @db.Char(36)
-  deliveredBy      User?        @relation(fields: [deliveredById], references: [id], name: "CurtainDeliveredBy")
-
-  deliveredAt      DateTime?
-
-  // 📐 Site Measurement Info
-  isSiteMeasured   Boolean      @default(false)   // was measurement done on site?
-  siteMeasurePrice Decimal?     @db.Decimal(10, 2) // site measurement fee
-  remark           String?
-  issueDate        DateTime?
-    createdBy User?          @relation(fields: [createdById], references: [id], name: "creator")
-  createdById          String?        @db.Char(36)
-    updatedBy User?          @relation(fields: [updatedById], references: [id], name: "updater")
-  updatedById String?      @db.Char(36)
-
-  deliveryDeadline DateTime?
-
-    createdAt        DateTime     @default(now())
-    updatedAt        DateTime     @updatedAt
-
-    // 💰 Financials
-    totalAmount      Decimal?     @db.Decimal(10, 2)
-   balance          Decimal?     @db.Decimal(10, 2)  // Fix typo from 'balace'
-    totalPaid        Decimal?     @db.Decimal(10, 2)  // Fix from 'totalpaid'
-
-  ShopId    String? @db.Char(36)
-  Shop      Shop?   @relation("TransferSourceShop", fields: [ShopId], references: [id])
-  // Relations
-  measurements     CurtainMeasurement[]
-
-
-
-  @@map("curtain_orders")
-  curtainPayments CurtainPayment[]
-}
-model CurtainPayment {
-  id               String         @id @default(uuid()) @map("_id") @db.Char(36)
-
-  curtainOrderId   String         @db.Char(36)
-  curtainOrder     CurtainOrder   @relation(fields: [curtainOrderId], references: [id], onDelete: Cascade)
-
-  amount           Decimal        @db.Decimal(10, 2)
-
-  paymentMethod    PaymentMethod?
-  note             String?
-
-  paymentDate      DateTime       @default(now())
-
-  createdBy        User?          @relation(fields: [createdById], references: [id], name: "curtain_payment_creator")
-  createdById      String?        @db.Char(36)
-
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-
-  @@map("curtain_payments")
-}
-enum PaymentMethod {
-  CASH
-  TELEBIRR
+enum StockMovementType {
+  IN
+  OUT
+  ADJUSTMENT
   TRANSFER
-
-  // Ethiopian Banks
-  CBE
-  AWASH
-  DASHEN
-  ABYSSINIA
-  HIBRET
-  NIB
-  OROMIA
-  BERHAN
-  BUNNA
-  ZEMEN
-  ENAT
-  COOP
-  WEGAGEN
-  AMHARA
-  TSEHAY
-  GOH
-  HIJRA
-  SIINQEE
-  SHABELLE
-  AHMAD
-  ADDIS
-  LION
-  GADA
-  RAYA
+  RETURN
+  DAMAGE
+  EXPIRE
 }
-enum ProductSize {
-  TWO_POINT_FIVE
-  THREE
-  NORMAL
-}
+model StockLedger {
+  id               String            @id @default(uuid()) @map("_id")  @db.Char(36)
+  movementType     StockMovementType
+  quantity         Int
 
-model CurtainMeasurement {
-  id            String   @id @default(uuid()) @map("_id") @db.Char(36)
+  // 🔗 Material Relation
+  materialId       String          
+  material         Material          @relation(fields: [materialId], references: [id])
+  storeId     String?
+  store       Store?        @relation(fields: [storeId], references: [id])
 
-  orderId       String
-  order         CurtainOrder @relation(fields: [orderId], references: [id])
-
-  roomName      String
-
-  width         Float
-  height        Float
-  extrawidth      Float?        // for shatter vertical curtains
-  quantity      Int?
-  pricePerUnit  Decimal?     @db.Decimal(10, 2)
-  unitprice       Decimal?     @db.Decimal(10, 2)
-  price         Decimal?     @db.Decimal(10, 2)
-  remark        String?
-  size          ProductSize?
-  createdBy User?          @relation(fields: [createdById], references: [id], name: "creator")
-  createdById          String?        @db.Char(36)
-  shatterVerticalProductId String?   @db.Char(36)
-  shatterVerticalProduct   Product?   @relation(fields: [shatterVerticalProductId], references: [id], name: "shatterVerticalCreator")
-
-    curtainSize   Float?
-
-  // 🟫 Thick Curtain Product
-  thickProductId String?   @db.Char(36)
-  thickProduct   Product?   @relation(fields: [thickProductId], references: [id], name: "thickcreator")
-  thickVariant  String?
-  thickMeter      Int?
-  thickPrice      Int?
+  showroomId  String?
+  showroom    Showroom?     @relation(fields: [showroomId], references: [id])
   
+  // 🔗 Unit Relation
+  unitId           String?         
+  unit             UnitOfMeasure?    @relation(fields: [unitId], references: [id])
 
-  // 🟨 Thin Curtain Product
-  thinProductId  String?   @db.Char(36)
-  thinProduct    Product?   @relation(fields: [thinProductId], references: [id], name: "thincreator")
-  thinVariant  String?
-  thinMeter Int?
-  thinPrice Int?
-  // 🟨 Thin Curtain Product
-   // 🟦 Curtain Pole
-  curtainPoleId  String?   @db.Char(36)
-  curtainPole    Product?  @relation(name: "CurtainPole", fields: [curtainPoleId], references: [id])
-  curtainPoleQuantity Int?
-  curtainPolePrice Int?
+  reference        String?
+  movementDate     DateTime          @default(now())
 
-  // 🟩 Curtain Pulls
-  curtainPullsId String?   @db.Char(36)
-  curtainPulls   Product?  @relation(name: "CurtainPulls", fields: [curtainPullsId], references: [id])
-  curtainPullsQuantity Int?
+  userId           String?         
+  user             User?             @relation(fields: [userId], references: [id], map: "fk_stockledger_user")  // ← Added custom name
 
-  // 🟥 Curtain Brackets
-  curtainBracketsId String? @db.Char(36)
-  curtainBrackets   Product? @relation(name: "CurtainBrackets", fields: [curtainBracketsId], references: [id])
-  curtainBracketsQuantity Int?
-  curtainPullsBracketsPrice Int?
+  notes            String?
 
-
-  // 👷 Worker assignment (IMPORTANT)
-  thickWorkerId String?      @db.Char(36)
-  thickWorker   User?        @relation("ThickCurtainWorker", fields: [thickWorkerId], references: [id])
-
-  thickWorkerPaid      Boolean   @default(false)
-  thickWorkerPaidDate  DateTime?
-  thickWorkerPaidAmount     Int? 
-
-
-  thinWorkerId  String?      @db.Char(36)
-  thinWorker    User?        @relation("ThinCurtainWorker", fields: [thinWorkerId], references: [id])
-
-  thinWorkerPaid      Boolean   @default(false)
-  thinWorkerPaidDate  DateTime?
-  thinWorkerPaidAmount     Int? 
-
-  workerPrice Int?    
-  totalWorkerMeter Int?
-  // price for worker labor
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
  
-
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-
-    updatedBy User?          @relation(fields: [updatedById], references: [id], name: "updater")
-  updatedById String?      @db.Char(36)
-
-
-  @@map("curtain_measurements")
-  curtainWorkerLogs CurtainWorkerLog[]
-}
-enum CurtainWorkerLogStatus {
-  PENDING
-  APPROVED
-  REJECTED
+  @@map("stockledger")
 }
 
-model CurtainWorkerLog {
-  id String @id @default(uuid()) @map("_id") @db.Char(36)
-  status CurtainWorkerLogStatus @default(PENDING)
 
-  curtainMeasurementId String
-  curtainMeasurement CurtainMeasurement  @relation(fields: [curtainMeasurementId], references: [id])
+model InventoryStock {
+  id          String       @id @default(uuid()) @map("_id") @db.Char(36)
 
-  // 🔗 relation to product variant
-  shopProductVariantId String? @db.Char(36)
-  shopProductVariant ShopProductVariant? @relation(fields: [shopProductVariantId], references: [id])
+  // 🔗 Material Relation
+  materialId  String        
+  material    Material      @relation(fields: [materialId], references: [id])
+
+  quantity    Int
+  status      StockStatus   @default(Available)
+
+    // 📍 Location
+  storeId     String?
+  store       Store?        @relation(fields: [storeId], references: [id])
+
+  showroomId  String?
+  showroom    Showroom?     @relation(fields: [showroomId], references: [id])
+
+  lastUpdated DateTime      @default(now()) @map("last_updated")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@unique([materialId, storeId, showroomId]) 
+  @@map("inventorystocks")
+}
 
 
-  workerId String? @db.Char(36)
-  worker   User?   @relation(fields: [workerId], references: [id])
+enum StockStatus {
+  Available
+  In_Use
+  Reserved
+  Broken
+  Lost
+  Disposed
+  Expired
+  DAMAGED
+  Sold  // Add this value
+}
 
-  workerType CurtainWorkerType
- 
-    extrawidthAssigned Float?      // for shatter vertical curtains
 
-  widthmeterAssigned Float?   // how many meters given
-  heightmeterAssigned Float?   // how many meters given
-  quantityAssigned  Int?
-  heightmeterCompleted Float?  // how many meters finished
-  widthmeterCompleted Float? 
-  extrawidthCompleted Float?      // for shatter vertical curtains
-  quantityCompleted  Int?
+model MaterialCategory {
+  id            String   @id @default(uuid())
+  name          String
 
-  note String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  
+  @@map("categories") // Add this line if your table is actually called 'categories'
+  materials Material[]
+}
+model Material {
+  id        String   @id @default(uuid())
+  name      String
+  color     String?
+  size      String?
+  plainMDF Boolean?
+  laminatedMDF Boolean?
+  wood  Boolean?
+  metal  Boolean?
+  accessory    Boolean?   // ✅ New
+  other        Boolean?   // ✅ New
+  imageUrl      String?
+  warningStockLevel Int?    @default(10) // ✅ New field for warning level
+  // 🔗 Relation to MaterialType
+    // 🔗 Relation to Unit Of Measure
+  unitOfMeasureId String?
+  unitOfMeasure   UnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id])
 
-  createdById String? @db.Char(36)
-  workerlogcreatedBy   User? @relation("CurtainWorkerLogCreator", fields: [createdById], references: [id])
+
+materialTypeId String
+materialType   MaterialCategory @relation(fields: [materialTypeId], references: [id])
+
+  items     ProformaItemMaterial[]
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@map("curtain_worker_logs")
-}
-enum CurtainWorkerType {
-  THICK
-  THIN
+  @@map("materials")
+  purchaseItems PurchaseItem[]
+  itemMaterials ItemMaterial[]
+  stockLedgers StockLedger[]
+  inventoryStocks InventoryStock[]
+  stockCorrectionItems StockCorrectionItem[]
+  transferItems TransferItem[]
 }
 model Purchase {
   id             String           @id @default(uuid()) @map("_id") @db.Char(36)
   invoiceNo      String           @unique                      // Invoice number
   supplierId     String           @db.Char(36)
   supplier       Supplier         @relation(fields: [supplierId], references: [id])
-  storeId        String           @db.Char(36)
+bankId String? @db.Char(36)
+bank   Bank?   @relation(fields: [bankId], references: [id])
+
+storeId        String           @db.Char(36)
   store          Store            @relation(fields: [storeId], references: [id])
 
   paymentStatus  PaymentStatus    @default(PENDING)               // Paid, Pending, Partial, Unpaid
@@ -795,25 +410,21 @@ updatedBy             User?     @relation("UpdatedCheckEntrance", fields: [updat
   items          PurchaseItem[]
 
   @@map("purchases")
-  StockCorrection StockCorrection[]
+  stockCorrections StockCorrection[]
 }
 model PurchaseItem {
   id          String             @id @default(uuid()) @map("_id") @db.Char(36)
   purchaseId  String          @db.Char(36)
   purchase    Purchase        @relation(fields: [purchaseId], references: [id])
 
-  productId   String          @db.Char(36)
-  product     Product         @relation(fields: [productId], references: [id])
+  materialId  String
+  material    Material @relation(fields: [materialId], references: [id])
 
+  unitOfMeasureId String?
+  unitOfMeasure   UnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id])
 
-  // ✅ Link directly to a single unit of measure
-  unitOfMeasureId String
-  unitOfMeasure   UnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
-    // ✅ Dimension-based quantity
-  height      Float?
-  width       Float?
+  // ✅ Link directly to a single unit of measure\
   quantity    Int
-
   unitPrice   Float           @default(0)
   totalPrice  Float           @default(0)
 
@@ -822,21 +433,244 @@ model PurchaseItem {
 
   @@map("purchase_items")
 }
-enum PaymentStatus {
-  PAID      
+model ItemMaterial {
+  id String @id @default(uuid())
+
+  // 🔗 Item relation
+  itemId String
+  item   Items @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  // 🔗 Material relation
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id])
+
+  quantity Int
+  note     String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // prevent same material twice for one item
+  @@unique([itemId, materialId])
+
+  @@map("item_materials")
+}
+model ProductCategory {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+
+  items Items[]
+
+  sizes Size[]
+}
+model Size {
+  id        String   @id @default(uuid())
+  name      String   // e.g. Small, Medium, Large OR numeric like 40, 41
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  categoryId  String?
+  category    ProductCategory? @relation(fields: [categoryId], references: [id]) // 👈 relation
+
+
+  items Items[]
+
+  productTypes ProductType[]
+}
+model ProductType {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sizeId    String?
+  size      Size?     @relation(fields: [sizeId], references: [id]) // 👈 Type belongs to Size
+
+
+
+  items Items[]
+}
+
+model Items {
+  id        String   @id @default(uuid())
+  name      String
+  price    Int              @default(0)  
+  imageUrl      String?
+  color    String?          
+                 // Relations
+  categoryId String?
+  category   ProductCategory? @relation(fields: [categoryId], references: [id])
+
+  typeId     String?
+  type       ProductType? @relation(fields: [typeId], references: [id])
+
+  sizeId     String?
+  size       Size? @relation(fields: [sizeId], references: [id])
+
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("items")
+  itemMaterials ItemMaterial[]
+  itemStocks ItemStock[]
+  itemStockLedgers ItemStockLedger[]
+  proformaInvoiceItems ProformaInvoiceItem[]
+  sellItems SellItem[]
+  transferItems TransferItem[]
+  stockCorrectionItems StockCorrectionItem[]
+}
+model ItemStock {
+  id        String   @id @default(uuid())
+
+  itemId    String
+  item      Items    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  quantity  Int
+
+  // 📍 Location
+  storeId     String?
+  store       Store?        @relation(fields: [storeId], references: [id])
+
+  showroomId  String?
+  showroom    Showroom?     @relation(fields: [showroomId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([itemId, storeId, showroomId])
+  @@map("item_stocks")
+}
+
+model ItemStockLedger {
+  id            String   @id @default(uuid())
+
+  itemId        String
+  item          Items    @relation(fields: [itemId], references: [id])
+
+  movementType  StockMovementType
+  quantity      Int
+
+  reference     String?
+  notes         String?
+
+  storeId     String?
+  store       Store?        @relation(fields: [storeId], references: [id])
+
+  showroomId  String?
+  showroom    Showroom?     @relation(fields: [showroomId], references: [id])
+  userId        String?
+  user          User? @relation(fields: [userId], references: [id])
+
+  createdAt     DateTime @default(now())
+}
+
+enum SaleStatus {
+  NOT_APPROVED
+  PARTIALLY_DELIVERED
+  APPROVED
+  DELIVERED
+  CANCELLED
+}
+enum SellPaymentStatus {
   PENDING
-APPROVED
+  PARTIAL
+  PAID
+  CANCELLED
+  NONE
+}
+model SellPayment {
+  id String @id @default(uuid()) @map("_id") @db.Char(36)
+
+  sellId String @db.Char(36)
+  sell   Sell   @relation(fields: [sellId], references: [id])
+
+  amount      Float
+  createdById String? @db.Char(36)
+  createdBy   User?   @relation(fields: [createdById], references: [id])
+
+  bankId             String
+  bank               Bank @relation(fields: [bankId], references: [id])
+
+  paidBy String? 
+
+
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sell_payments")
+}
+model Sell {
+  id            String            @id @default(uuid()) @map("_id") @db.Char(36)
+  invoiceNo     String            @unique
+
+    imageUrl      String?
+  documentUrl   String?
+  
+  paymentStatus SellPaymentStatus @default(PENDING) // Paid, Pending, Partial, Unpaid
+  grandTotal    Float             @default(0)
+  balance       Int               @default(0)
+  totalPaid     Int               @default(0)
+storeId        String           @db.Char(36)
+  store          Store            @relation(fields: [storeId], references: [id])
+
+  saleStatus SaleStatus @default(NOT_APPROVED)
+  locked     Boolean    @default(false)
+  lockedAt   DateTime?
+
+  customerId String?   @db.Char(36)
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  totalProducts Int   @default(0)
+  subTotal      Float @default(0)
+  discount      Float @default(0)
+  vat           Float @default(0)
+
+  notes    String?
+  saleDate DateTime @default(now())
+
+
+  createdById String? @db.Char(36)
+  createdBy   User?   @relation("CreatedSale", fields: [createdById], references: [id])
+  updatedById String? @db.Char(36)
+  updatedBy   User?   @relation("UpdatedSale", fields: [updatedById], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items               SellItem[]
+  sellPayments        SellPayment[]
+
+  @@map("sells")
+}
+model SellItem {
+  id     String @id @default(uuid()) @map("_id") @db.Char(36)
+  sellId String @db.Char(36)
+  sell   Sell   @relation(fields: [sellId], references: [id])
+
+  itemId String @db.Char(36)
+  item   Items  @relation(fields: [itemId], references: [id])
+
+  itemSaleStatus    ItemSaleStatus @default(PENDING)
+
+  quantity Int
+
+  unitPrice  Float @default(0)
+  totalPrice Float @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("sell_items")
+}   
+enum ItemSaleStatus {
+  PENDING
+  DELIVERED
   REJECTED
-}
-
-enum TaxType {
-  PERCENT
-  FIXED
-}
-
-enum DiscountType {
-  PERCENT
-  FIXED
+  PARTIALLY_DELIVERED
 }
 
 enum TransferStatus {
@@ -844,12 +678,10 @@ enum TransferStatus {
   COMPLETED
   CANCELLED
 }
-
 enum TransferEntityType {
   STORE
-  SHOP
+  SHOWROOM
 }
-
 model Transfer {
   id              String           @id @default(uuid()) @map("_id") @db.Char(36)
   shortCode      String          @unique                 // Invoice number
@@ -858,15 +690,15 @@ model Transfer {
   sourceType      TransferEntityType
   sourceStoreId   String? @db.Char(36)
   sourceStore     Store?  @relation("TransferSourceStore", fields: [sourceStoreId], references: [id])
-  sourceShopId    String? @db.Char(36)
-  sourceShop      Shop?   @relation("TransferSourceShop", fields: [sourceShopId], references: [id])
+  sourceShowroomId    String? @db.Char(36)
+  sourceShowroom      Showroom?   @relation("TransferSourceShowroom", fields: [sourceShowroomId], references: [id])
 
   // Destination
   destinationType TransferEntityType
   destStoreId     String? @db.Char(36)
   destStore       Store?  @relation("TransferDestinationStore", fields: [destStoreId], references: [id])
-  destShopId      String? @db.Char(36)
-  destShop        Shop?   @relation("TransferDestinationShop", fields: [destShopId], references: [id])
+  destShowroomId      String? @db.Char(36)
+  destShowroom        Showroom?   @relation("TransferDestinationShowroom", fields: [destShowroomId], references: [id])
 
   // Transfer details
   reference       String?       // optional transfer reference code
@@ -885,37 +717,721 @@ updatedBy             User?     @relation("UpdatedTransfer", fields: [updatedByI
   items           TransferItem[]
   
   @@map("transfers")
-  StockCorrection StockCorrection[]
 }
-
 model TransferItem {
   id            String        @id @default(uuid()) @map("_id") @db.Char(36)
   transferId    String        @db.Char(36)
   transfer      Transfer      @relation(fields: [transferId], references: [id])
 
-  productId     String        @db.Char(36)
-  product       Product       @relation(fields: [productId], references: [id])
+  ismaterial      Boolean       @default(false) // true if material, false if item
+
+itemId String? @db.Char(36)
+  item   Items?  @relation(fields: [itemId], references: [id])
+
+    materialId  String?
+  material    Material? @relation(fields: [materialId], references: [id])
 
 
-  // ✅ Link directly to a single unit of measure
-  unitOfMeasureId String
-  unitOfMeasure   UnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
-
- height      Float?
-  width       Float?
-  quantity    Int
+  quantity      Int
 
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@map("transfer_items")
 }
+model ProformaInvoiceBank {
+  id                 String   @id @default(uuid())
 
-// ======================= ENUMS ======================= //
+  proformaInvoiceId  String
+  proformaInvoice    ProformaInvoice @relation(fields: [proformaInvoiceId], references: [id])
 
+  bankId             String
+  bank               Bank @relation(fields: [bankId], references: [id])
+
+  paidBy String? 
+
+  createdBy User?          @relation(fields: [createdById], references: [id], name: "creator")
+  createdById          String?        @db.Char(36)
+  amount             Float?
+  createdAt          DateTime @default(now())
+
+  @@map("proforma_invoice_banks")
+}
+
+model ProformaInvoiceItem {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  invoice     ProformaInvoice @relation(fields: [invoiceId], references: [id])
+
+  description String
+  size        String?
+  quantity    Int
+  unitPrice   Float
+  amount      Float
+
+    itemId      String?  // Add this field
+  item        Items?   @relation(fields: [itemId], references: [id]) // Add this relation
+
+  additionalDescription String? @db.Text  // Also change this if it has long content
+  images ProformaInvoiceItemImage[]
+
+  @@map("proforma_invoice_items")
+  proformaItemMaterials ProformaItemMaterial[]
+}
+
+model PiLog {
+  id        String      @id @default(uuid()) @map("_id") @db.Char(36)
+  action    String          @db.VarChar(1000)                    // e.g., "Added 50", "Transferred 20", "Sold 5"
+  piuserId    String?      @db.Char(36)
+  piuser      User?        @relation(fields: [piuserId], references: [id])
+
+  proformaId String @db.Char(36)
+  proforma   ProformaInvoice @relation(fields: [proformaId], references: [id])
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("pi_logs")
+}
+model ProformaInvoice {
+  id          String   @id @default(uuid())
+  piNumber    String   @unique
+  customerId  String?
+  customer    Customer? @relation(fields: [customerId], references: [id])
+    paymentStatus SellPaymentStatus @default(PENDING) // Paid, Pending, Partial, Unpaid
+
+  store       Boolean @default(false)
+  status      PIStatus
+  subtotal    Float
+  vat         Float?  @default(0)
+  total       Float
+
+  amountPaid  Float    @default(0)
+  balance     Float
+  amountDate   DateTime?
+
+  preparedBy User?          @relation(fields: [preparedById], references: [id], name: "creator")
+  preparedById          String?        @db.Char(36)
+    approvedBy User?          @relation(fields: [approvedById], references: [id], name: "approver")
+ approvedById          String?        @db.Char(36)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items       ProformaInvoiceItem[]
+
+    banks       ProformaInvoiceBank[]
+
+  attachments Attachment[]
+  project     Project?
+
+  @@map("proforma_invoices")
+  piLogs PiLog[]
+}
+model ProformaItemMaterial {
+  id          String @id @default(uuid())
+
+  itemId      String
+  item        ProformaInvoiceItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  materialId  String
+  material    Material @relation(fields: [materialId], references: [id])
+
+  quantity    Int
+    additionalQuantity Int? @default(0)
+      givenquantity Int? @default(0)
+
+     // 👈 quantity of this material for this item
+  note        String? @db.Text
+
+    status      MaterialIssueStatus @default(PENDING) // 👈 Added Status
+
+
+
+
+
+  issuedAt    DateTime? // 👈 when issued
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  materials   ProformaItemMaterial[] @relation("ProformaItemMaterialToMaterial")  // 👈 one item → many materials
+
+  @@unique([itemId, materialId]) // prevent duplicate material per item
+  @@map("proforma_item_materials")
+  proformaItemMaterials ProformaItemMaterial[] @relation("ProformaItemMaterialToMaterial")
+  materialIssues MaterialIssue[]
+}
+enum MaterialIssueStatus {
+  PENDING
+  ISSUED
+  PARTIALLY
+  CANCELLED
+}
+model ProformaInvoiceItemImage {
+  id        String   @id @default(uuid())
+  itemId    String
+  item      ProformaInvoiceItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  imageUrl  String
+  createdAt DateTime @default(now())
+
+  @@map("proforma_invoice_item_images")
+}
+
+
+model MaterialIssue {
+  id        String @id @default(uuid())
+
+  proformaItemMaterialId String
+  proformaItemMaterial   ProformaItemMaterial  @relation(fields: [proformaItemMaterialId], references: [id], onDelete: Cascade)
+
+  issuedById String?
+  issuedBy   User? @relation("IssuedByUser", fields: [issuedById], references: [id])
+
+  givenToId  String?
+  givenTo    User? @relation("GivenToUser", fields: [givenToId], references: [id])
+
+  quantity   Int
+  note       String? @db.Text
+
+  issuedAt   DateTime @default(now())
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("material_issues")
+}
+model Attachment {
+  id               String           @id @default(uuid())
+  proformaInvoiceId String?
+  proformaInvoice  ProformaInvoice? @relation(fields: [proformaInvoiceId], references: [id])
+  
+  fileUrl          String
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@map("attachments")
+}
+enum PIStatus {
+  PENDING_ST
+  APPROVED_ST
+  SENT_TO_CLIENT
+  REVISION
+  APPROVED_CLIENT
+  CANCELLED
+  APPROVED_CREATE_PROJECT
+}
+
+
+
+// model ProjectStage {
+//   id        String   @id @default(uuid())
+//   projectId String
+//   project   Project @relation(fields: [projectId], references: [id])
+
+//   stage        ProjectStatus
+//   capacityDays Int
+//   workUnits    Float? // planned work unit
+
+//   finished Boolean @default(false)
+
+//   startDate DateTime?
+//   endDate   DateTime?
+
+//   // MORNING   => 2:30 - 6:30
+//   // AFTERNOON => 7:30 - 11:00
+//   // FULL_DAY  => both shifts
+//   // CUSTOM    => any custom range like 2:30 - 3:00
+//   shift WorkShift? @default(FULL_DAY)
+
+//   // used only when shift = CUSTOM
+//   customStartTime DateTime?
+//   customEndTime   DateTime?
+
+//   actualWorkUnits Float? // track actual completed work units
+
+//   autoSchedule Boolean     @default(true)
+//   status       StageStatus @default(ACTIVE)
+
+//   @@map("project_stages")
+
+//   projectStageWorkLogs            ProjectStageWorkLog[]
+//   projectStageCapacityAllocations ProjectStageCapacityAllocation[]
+// }
+
+model ProjectLog {
+  id        String   @id @default(uuid())
+
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  note      String   @db.Text
+
+  createdById String?
+  createdBy   User?  @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("project_logs")
+}
+
+enum DesignStatus  {
+  INITIATED
+  MODELING
+  DRAFTING
+  CUTLIST
+  BOQ
+  FINISHED
+}
+
+
+enum StageStatus {
+  ACTIVE
+  IN_PROGRESS
+  CANCELLED
+  COMPLETED
+}
+
+
+model ProjectStageWorkLog {
+  id            String   @id @default(uuid())
+
+  projectStageId String
+  projectStage   ProjectStage @relation(fields: [projectStageId], references: [id])
+
+  doneUnits      Float           // how many units completed in this entry
+  hours          Float?          // actual working hours logged for this entry
+  doneById       String?  @db.Char(36)
+  doneBy         User?    @relation(fields: [doneById], references: [id])
+
+  note           String?  // optional comment (e.g., issues, remarks)
+
+  createdAt      DateTime @default(now())
+
+  @@map("project_stage_work_logs")
+}
+model Project {
+  id                   String   @id @default(uuid())
+  customerId           String?
+  customer             Customer? @relation(fields: [customerId], references: [id])
+  deliveryEstimationcode String?
+  invoiceId            String   @unique
+  invoice              ProformaInvoice @relation(fields: [invoiceId], references: [id])
+  
+  createdBy             User?          @relation(fields: [createdById], references: [id], name: "creator")
+  createdById           String?        @db.Char(36)
+
+
+  updatedById           String?   @db.Char(36)
+  updatedBy             User?     @relation("Updatedproject", fields: [updatedById], references: [id])
+
+    designStatus               DesignStatus? 
+  designFinished         DateTime?
+
+  
+  designById           String?   @db.Char(36)
+  designBy             User?     @relation("designproject", fields: [designById], references: [id])
+
+
+  status               ProjectStatus?
+  difficulty            DifficultyLevel @default(EASY)
+
+  // Governs whether automatic jobs (nightly cron, completion-cascade,
+  // auto-schedule) may move this project's dates. See ScheduleMode.
+  scheduleMode         ScheduleMode @default(AUTO)
+
+  requestedDelivery    DateTime?
+  calculatedDelivery   DateTime?
+  manualDelivery   DateTime?
+
+  finalDelivery    DateTime?
+   totalFinishedPercent Int @default(0)
+  totalDays            Int?
+ totalProjectQuantity          Int?
+  completedAt          DateTime?
+  cancelledAt          DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  stages               ProjectStage[]
+
+  @@map("projects")
+  projectLogs ProjectLog[]
+  scheduleHistories ScheduleHistory[]
+}
+enum DifficultyLevel {
+  EASY
+  MEDIUM
+  HARD
+}
+
+// Governs how much the scheduler may move a project automatically.
+//   AUTO   - cron, completion-cascade and auto-schedule may all move it.
+//   MANUAL - automatic jobs skip it; only explicit user actions move it.
+//   LOCKED - nothing automatic touches it and an explicit auto-schedule
+//            refuses, until it is unlocked (e.g. a customer-confirmed date).
+// NOTE: capacity accounting (release on completion/cancel) ALWAYS runs
+// regardless of mode — only date movement is gated.
+enum ScheduleMode {
+  AUTO
+  MANUAL
+  LOCKED
+}
+
+// Audit trail of everything that changes a project's schedule/delivery date.
+enum ScheduleEventType {
+  CREATED
+  RESCHEDULED
+  STAGE_COMPLETED
+  STAGE_CANCELLED
+  PROJECT_CANCELLED
+  MANUAL_OVERRIDE
+  CAPACITY_RELEASED
+  DELIVERY_RECOMPUTED
+  MODE_CHANGED
+}
+
+// What initiated a schedule event.
+enum ScheduleTrigger {
+  USER
+  CRON
+  COMPLETION
+  CANCELLATION
+  SYSTEM
+}
+
+// Business-tunable scheduling knobs. Singleton (app-enforced: always the
+// first row). config.js constants are the fallback defaults when no row
+// exists. Editing this lets the business change the delivery formula
+// (contingency, difficulty %, working hours) without a deploy.
+model SchedulingSettings {
+  id                 String   @id @default(uuid())
+  contingencyDays    Int      @default(3)
+  easyPercent        Float    @default(0)
+  mediumPercent      Float    @default(0.4)
+  hardPercent        Float    @default(0.5)
+  workingHoursPerDay Float    @default(7.5)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("scheduling_settings")
+}
+
+model ScheduleHistory {
+  id          String            @id @default(uuid())
+  projectId   String
+  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  event       ScheduleEventType
+  trigger     ScheduleTrigger
+  stage       ProjectStatus?
+  oldDelivery DateTime?
+  newDelivery DateTime?
+  reason      String?           @db.Text
+  byUserId    String?           @db.Char(36)
+  byUser      User?             @relation(fields: [byUserId], references: [id])
+  createdAt   DateTime          @default(now())
+
+  @@index([projectId])
+  @@map("schedule_history")
+}
+
+enum WorkShift {
+  MORNING
+  AFTERNOON
+  FULL_DAY
+  CUSTOM
+}
+
+// Capacity-consuming stages only. The full workflow lives in `ProjectStatus`
+// (12 stages); INVOICE/PURCHASING/INSTALLATION are intentionally absent here
+// because they are scheduled by elapsed time, not by daily factory capacity.
+// Keep this list in sync with CAPACITY_STAGES in src/services/scheduling/config.js.
+enum CapacityStage {
+  DESIGN
+  METAL_WORKS
+  CNC
+  CUTTING
+  EDGE_BANDING
+  ASSEMBLY
+  PAINTING
+  FINISHING
+  DELIVERY
+}
+
+// Working-calendar exceptions. Combined with the weekly working-day set in
+// config.js (WORKING_DAYS) this is the single source of truth for which
+// calendar days are non-working. `recurring` = repeats yearly on month/day.
+model Holiday {
+  id        String   @id @default(uuid())
+  date      DateTime @unique
+  name      String
+  recurring Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("holidays")
+}
+
+enum ProjectStatus {
+  INVOICE
+  DESIGN
+  PURCHASING
+  METAL_WORKS
+  CNC
+  CUTTING
+  EDGE_BANDING
+  ASSEMBLY
+  PAINTING
+  FINISHING
+  DELIVERY
+  INSTALLATION
+
+  COMPLETED
+  CANCELLED
+}
+
+model CapacityLot {
+  id    String        @id @default(uuid())
+  stage CapacityStage @unique
+
+  // default stage duration capacity
+  days     Int
+  capacity Int?
+
+  // total working hours per day
+  // MORNING   => 2:30 - 6:30
+  // AFTERNOON => 7:30 - 11:00
+  // FULL_DAY  => both shifts
+  workingHours Float @default(7.5)
+ // NEW: allows scheduler to auto-balance workload
+  parallelSlots Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("capacity_lots")
+  capacityLotHistories CapacityLotHistory[]
+}
+model CapacityLotHistory {
+  id String @id @default(uuid())
+
+  capacityLotId String
+  capacityLot   CapacityLot @relation(fields: [capacityLotId], references: [id], onDelete: Cascade)
+
+  stage CapacityStage
+
+  oldDays Int?
+  newDays Int?
+
+  oldCapacity Int?
+  newCapacity Int?
+
+  action CapacityHistoryAction
+
+  changedById String?
+  changedBy   User? @relation(fields: [changedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([capacityLotId])
+  @@index([createdAt])
+}
+
+enum CapacityHistoryAction {
+  CREATED
+  UPDATED
+}
+model DailyStageCapacity {
+  id    String        @id @default(uuid())
+  stage CapacityStage
+
+  // specific working date
+  date DateTime
+
+  // allocated unit capacity (Float: the hours-based scheduler produces
+  // fractional per-day units, e.g. 1.5 units in a partial/overcapacity day —
+  // Int rounding caused counter↔allocation drift and false >125% violations)
+  usedCapacity Float @default(0)
+  maxCapacity  Float
+
+  // daily working hours
+  workingHours Float @default(7.5)
+
+  // used/remaining hours tracking
+  usedHours Float @default(0)
+  maxHours  Float
+
+  // shift tracking
+  // MORNING   => 2:30 - 6:30
+  // AFTERNOON => 7:30 - 11:00
+  // FULL_DAY  => both shifts
+  // CUSTOM    => any custom range like 2:30 - 3:00
+  shift WorkShift @default(FULL_DAY)
+
+  // used only when shift = CUSTOM
+  customStartTime DateTime?
+  customEndTime   DateTime?
+
+  // over-capacity support for urgent tasks
+  overCapacityUsed      Float @default(0)
+  overHoursCapacityUsed Float @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([stage, date])
+
+  @@map("daily_stage_capacities")
+
+  projectStageCapacityAllocations ProjectStageCapacityAllocation[]
+}
+
+model ProjectStage {
+  id        String   @id @default(uuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id])
+
+  stage        ProjectStatus
+  capacityDays Int
+  workUnits    Float?
+
+  finished Boolean @default(false)
+
+  startDate DateTime
+  endDate   DateTime
+
+  // MORNING   => 2:30 - 6:30
+  // AFTERNOON => 7:30 - 11:00
+  // FULL_DAY  => both shifts
+  // CUSTOM    => any custom range like 2:30 - 3:00
+  startDateTime  DateTime
+    endDateTime  DateTime
+
+  shift WorkShift? @default(FULL_DAY)
+  timeTaken Int?
+  // used only when allways add this
+  customStartTime DateTime?
+  customEndTime   DateTime?
+
+  actualWorkUnits Float?
+
+  autoSchedule Boolean     @default(true)
+  status       StageStatus @default(ACTIVE)
+
+  @@map("project_stages")
+
+  projectStageWorkLogs            ProjectStageWorkLog[]
+  projectStageCapacityAllocations ProjectStageCapacityAllocation[]
+}
+
+model ProjectStageCapacityAllocation {
+  id String @id @default(uuid())
+
+  // project stage
+  projectStageId String
+  projectStage   ProjectStage @relation(fields: [projectStageId], references: [id], onDelete: Cascade)
+
+  // daily capacity
+  dailyStageCapacityId String
+  dailyStageCapacity   DailyStageCapacity @relation(fields: [dailyStageCapacityId], references: [id], onDelete: Cascade)
+
+  // allocation details (Float units — match the daily counter so a day's
+  // usedCapacity always equals the sum of its allocation rows)
+  allocatedUnits Float
+  allocatedHours Float
+
+  // allocated shift
+  shift WorkShift @default(FULL_DAY)
+  startDateTime  DateTime
+    endDateTime  DateTime
+
+  // used only when allways add this
+  customStartTime DateTime?
+  customEndTime   DateTime?
+
+  isOverCapacity Boolean @default(false)
+
+  allocationDate DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([projectStageId])
+  @@index([dailyStageCapacityId])
+
+  @@map("project_stage_capacity_allocations")
+}
+
+model DeliveryEstimation {
+  id                 String   @id @default(uuid())
+  code               String   @unique
+  customerName       String?
+  phone              String?
+
+  difficulty         DifficultyLevel
+  totalQuantity      Int
+  estimatedDays      Int
+  estimatedDelivery  DateTime
+  holdUntil DateTime?
+  DESIGN Int?
+  METAL_WORKS Int?
+  CNC Int?
+  CUTTING Int?
+  EDGE_BANDING Int?
+  ASSEMBLY Int?
+  PAINTING Int?
+  FINISHING Int?
+  DELIVERY Int?
+
+
+  status             EstimationStatus @default(ESTIMATED)
+
+
+  createdBy          User?   @relation(fields: [createdById], references: [id], name: "creator")
+  createdById        String? @db.Char(36)
+  updatedById        String? @db.Char(36)
+  updatedBy          User?   @relation("Updatedproject", fields: [updatedById], references: [id])
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt   // ✅ recommended
+
+
+}
+
+enum EstimationStatus {
+  ESTIMATED
+  ON_HOLD
+  CONFIRMED
+  PROJECT_CREATED
+  EXPIRED
+}
+
+
+
+enum MaterialType {
+  LAMINATED_MDF
+  PLAIN_MDF
+  METAL
+  SOLID_WOOD
+}
+
+enum PaymentStatus {
+  PENDING
+APPROVED
+  REJECTED
+}
+
+enum TaxType {
+  PERCENT
+  FIXED
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
 enum StockCorrectionReason {
   PURCHASE_ERROR
-  TRANSFER_ERROR
   EXPIRED
   DAMAGED
   MANUAL_ADJUSTMENT
@@ -929,14 +1445,14 @@ enum StockCorrectionStatus {
 
 model StockCorrection {
   id            String              @id @default(uuid()) @map("_id") @db.Char(36)
-  shortCode      String          @unique                 // Invoice number
+  shortCode      String          @unique 
+    ismaterial      Boolean       @default(false) // true if material, false if item
+                // Invoice number
+  storeId     String?
+  store       Store?        @relation(fields: [storeId], references: [id])
 
-  storeId       String? @db.Char(36)
-  store         Store?  @relation(fields: [storeId], references: [id])
-
-  shopId        String? @db.Char(36)
-  shop          Shop?   @relation(fields: [shopId], references: [id])
-
+  showroomId  String?
+  showroom    Showroom?     @relation(fields: [showroomId], references: [id])
   // correction details
   reason           StockCorrectionReason
   status           StockCorrectionStatus @default(PENDING)
@@ -945,20 +1461,13 @@ model StockCorrection {
   purchaseId     String? @db.Char(36)
   purchase       Purchase? @relation(fields: [purchaseId], references: [id])
 
-  transferId     String? @db.Char(36)
-  transfer       Transfer? @relation(fields: [transferId], references: [id])
-
   reference        String?           // Optional reference number for tracking
   notes            String?
 
   createdById      String? @db.Char(36)
   createdBy        User?   @relation("createdStockCorrection", fields: [createdById], references: [id])
-  
-approvedById  String? @db.Char(36)
-approvedBy    User?   @relation("approvedStockCorrection", fields: [approvedById], references: [id])
-
-updatedById   String? @db.Char(36)
-updatedBy     User?   @relation("updatedStockCorrection", fields: [updatedById], references: [id])
+  updatedById      String? @db.Char(36)
+  updatedBy        User?   @relation("updatedStockCorrection", fields: [updatedById], references: [id])
 
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
@@ -973,15 +1482,14 @@ model StockCorrectionItem {
   correctionId   String        @db.Char(36)
   correction     StockCorrection @relation(fields: [correctionId], references: [id])
 
-  productId      String        @db.Char(36)
-  product        Product       @relation(fields: [productId], references: [id])
+  
+itemId String? @db.Char(36)
+  item   Items?  @relation(fields: [itemId], references: [id])
 
+    materialId  String?
+  material    Material? @relation(fields: [materialId], references: [id])
 
-  unitOfMeasureId String
-  unitOfMeasure   UnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
-  height      Float?
-  width       Float?
-  quantity    Int            // Allow both positive and negative values
+  quantity       Int            // Allow both positive and negative values
 
 
   createdAt      DateTime @default(now()) @map("created_at")
@@ -989,14 +1497,6 @@ model StockCorrectionItem {
 
   @@map("stock_correction_items")
 }
-
-
-
-
-
-
-
-
 
 
 model Notification {
@@ -1009,12 +1509,6 @@ model Notification {
   relatedEntityId   String?             @db.Char(36)
   createdAt         DateTime           @default(now()) @map("created_at")
   readAt            DateTime?          @map("read_at")
-   storeId     String?           @db.Char(36)
-  store       Store?            @relation(fields: [storeId], references: [id])
-
-  shopId      String?           @db.Char(36)
-  shop        Shop?             @relation(fields: [shopId], references: [id])
-
   @@index([ read])
   @@map("notifications")
 }

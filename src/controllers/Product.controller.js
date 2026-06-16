@@ -33,38 +33,6 @@ const createProduct = catchAsync(async (req, res) => {
     product,
   });
 });
-const updateProduct = catchAsync(async (req, res) => {
-  // Structure files by field name
-  const structuredFiles = {};
-
-  if (Array.isArray(req.files)) {
-    req.files.forEach((file) => {
-      if (!structuredFiles[file.fieldname]) {
-        structuredFiles[file.fieldname] = [];
-      }
-      structuredFiles[file.fieldname].push(file);
-    });
-  } else if (req.files) {
-    for (const [fieldname, files] of Object.entries(req.files)) {
-      structuredFiles[fieldname] = Array.isArray(files) ? files : [files];
-    }
-  }
-
-  // Ensure image field exists even if no file was uploaded
-  structuredFiles.image = structuredFiles.image || undefined;
-
-  const product = await productService.updateProduct(
-    req.params.id,
-    req.body,
-    structuredFiles,
-  );
-
-  res.status(httpStatus.OK).send({
-    success: true,
-    message: 'Product updated successfully',
-    product,
-  });
-});
 const createProductStock = catchAsync(async (req, res) => {
   const { productId } = req.params;
   const userId = req.user.id;
@@ -101,8 +69,39 @@ const createProductStock = catchAsync(async (req, res) => {
   }
 });
 // Update Product
+const updateProduct = catchAsync(async (req, res) => {
+  // Structure files by field name
+  const structuredFiles = {};
 
-// Get Product by ID
+  if (Array.isArray(req.files)) {
+    req.files.forEach((file) => {
+      if (!structuredFiles[file.fieldname]) {
+        structuredFiles[file.fieldname] = [];
+      }
+      structuredFiles[file.fieldname].push(file);
+    });
+  } else if (req.files) {
+    for (const [fieldname, files] of Object.entries(req.files)) {
+      structuredFiles[fieldname] = Array.isArray(files) ? files : [files];
+    }
+  }
+
+  // Ensure image field exists even if no file was uploaded
+  structuredFiles.image = structuredFiles.image || undefined;
+
+  const product = await productService.updateProduct(
+    req.params.id,
+    req.body,
+    structuredFiles,
+  );
+
+  res.status(httpStatus.OK).send({
+    success: true,
+    message: 'Product updated successfully',
+    product,
+  });
+});
+// Get Product by ID 
 const getProduct = catchAsync(async (req, res) => {
   const product = await productService.getProductById(req.params.id);
   if (!product) {
@@ -113,6 +112,7 @@ const getProduct = catchAsync(async (req, res) => {
     product,
   });
 });
+
 
 const getBatchesByProduct = catchAsync(async (req, res) => {
   const { productId } = req.params;

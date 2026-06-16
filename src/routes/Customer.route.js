@@ -27,7 +27,7 @@ router.get(
 router.get(
   '/api/customers',
   auth,
-  //   checkPermission('VIEW_CUSTOMER'), getCustomersWithFallback
+  // checkPermission('VIEW_CUSTOMER'),
   customerSupplierController.getCustomers,
 );
 router.get(
@@ -75,7 +75,7 @@ router.get(
 router.get(
   '/api/suppliers',
   auth,
-  //   checkPermission('VIEW_SUPPLIER'),
+  checkPermission('VIEW_SUPPLIER'),
   customerSupplierController.getSuppliers,
 );
 
@@ -83,7 +83,7 @@ router.get(
 router.put(
   '/api/suppliers/:id',
   auth,
-  checkPermission('UPDATE_SUPPLIER'),
+  //   checkPermission('UPDATE_SUPPLIER'),
   customerSupplierController.updateSupplier,
 );
 

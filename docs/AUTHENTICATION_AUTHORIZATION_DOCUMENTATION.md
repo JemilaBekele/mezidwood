@@ -16,7 +16,7 @@
 
 ## Overview
 
-This ikiz curtain
+This Rosewood curtain
  management system implements a comprehensive authentication and authorization system using **NextAuth.js** on the frontend and **JWT-based authentication** with **Role-Based Access Control (RBAC)** on the backend.
 
 ### Key Technologies

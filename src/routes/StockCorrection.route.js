@@ -17,7 +17,7 @@ router.post(
 router.get(
   '/api/stock-corrections/:id',
   auth,
-  //   checkPermission('VIEW_STOCK_CORRECTION'),
+  checkPermission('VIEW_STOCK_CORRECTION'),
   stockCorrectionController.getStockCorrection,
 );
 
@@ -40,7 +40,7 @@ router.get(
 router.get(
   '/api/stock-corrections',
   auth,
-  //   checkPermission('VIEW_ALL_STOCK_CORRECTIONS'),
+  // checkPermission('VIEW_ALL_STOCK_CORRECTIONS'),
   stockCorrectionController.getStockCorrections,
 );
 
@@ -74,6 +74,19 @@ router.delete(
   auth,
   checkPermission('DELETE_STOCK_CORRECTION'),
   stockCorrectionController.deleteStockCorrection,
+);
+
+router.get(
+  '/api/Material/Stock/all/:materialId',
+  auth,
+  // checkPermission('VIEW_MATERIAL_STOCK'),
+  stockCorrectionController.getMaterialStock,
+);
+router.get(
+  '/api/Material/Stock/all/only/reserve/:materialId',
+  auth,
+  // checkPermission('VIEW_MATERIAL_STOCK'),
+  stockCorrectionController.getMaterialStockQuantityreserve,
 );
 
 module.exports = router;

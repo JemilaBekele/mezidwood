@@ -9,28 +9,35 @@ const cors = require('cors');
 const path = require('path');
 const authRouter = require('../routes/auth.route');
 const companyRouter = require('../routes/company.route');
+const documentRouter = require('../routes/document.route');
 const rolesRouter = require('../routes/role.route');
 const permissionRouter = require('../routes/permission.route');
 const rolePermissionRouter = require('../routes/rolePermission.route');
-
-const curtainRouter = require('../routes/CurtainOrder.route');
-const curtaintypeRouter = require('../routes/CurtainType.route');
+const stageRouter = require('../routes/stage.route');
+const sellRouter = require('../routes/Sell.route');
+const StockCorrectionRouter = require('../routes/StockCorrection.route');
 const CategoryRouter = require('../routes/Category.route');
-const branchRouter = require('../routes/Branch.route');
 const customerRouter = require('../routes/Customer.route');
-const shopRouter = require('../routes/Shop.route');
-const storeRouter = require('../routes/Store.route');
-const curtainWorkerLogRouter = require('../routes/CurtainWorkerLog.route');
-const GeneralDashboardRouter = require('../routes/GeneralDashboard.route');
+const BankRouter = require('../routes/Bank.route');
+const ProformaInvoiceRouter = require('../routes/ProformaInvoice.route');
+const ItemRouter = require('../routes/Items.route');
+const MaterialCategoryRouter = require('../routes/MaterialCategory.route');
+const CapacitySlotRouter = require('../routes/CapacityLot.route');
+const materialRouter = require('../routes/Material.route');
+const ResetRouter = require('../routes/yearend.route');
+const projectRouter = require('../routes/Project.route');
+const DeliveryEstimationRouter = require('../routes/DeliveryEstimation.route');
+const ProjectStageWorkLogRouter = require('../routes/ProjectStageWorkLog.route');
 const purchaseRouter = require('../routes/purchase.route');
 const UnitOfMeasureRouter = require('../routes/UnitOfMeasure.route');
 const ProductRouter = require('../routes/Product.route');
-const productBatchRouter = require('../routes/ProductBatch.route');
-const transferRourer = require('../routes/transfer.route');
-const stockcorrectionRouter = require('../routes/StockCorrection.route');
-const ExpenseRouter = require('../routes/expence.route');
-
-const workercommissionsRouter = require('../routes/workerCommission.routes');
+const showroomRouter = require('../routes/Sowroom.route');
+const transferRourer = require('../routes/transferitem.route');
+const productcategoryRouter = require('../routes/producttype.route');
+const StoreRouter = require('../routes/Store.route');
+const reportsRouter = require('../routes/dashboard.route');
+const SchedulingSettingsRouter = require('../routes/SchedulingSettings.route');
+const HolidayRouter = require('../routes/Holiday.route');
 const { errorHandler, errorConverter } = require('../middlewares/error');
 const ApiError = require('../utils/ApiError');
 const morgan = require('../config/morgan');
@@ -51,20 +58,21 @@ module.exports = async (app) => {
   app.use(
     helmet({
       contentSecurityPolicy: cspOptions,
+      crossOriginResourcePolicy: { policy: 'cross-origin' }, // Add this line
     }),
   );
   app.use(mongoSanitize());
   if (env === 'production') {
     app.use(
       cors({
-        origin: ['https://ikiz.smartdent.online/', 'http://localhost:3000'],
+        origin: ['https://Rosewood.smartdent.online/', 'http://localhost:3000'],
         credentials: true,
       }),
     );
     app.options(
       '*',
       cors({
-        origin: ['https://ikiz.smartdent.online/', 'http://localhost:3000'],
+        origin: ['https://Rosewood.smartdent.online/', 'http://localhost:3000'],
         credentials: true,
       }),
     );
@@ -73,28 +81,40 @@ module.exports = async (app) => {
     app.use(cors());
     app.options('*', cors());
   }
+
+  app.use(ResetRouter);
+
+  app.use(reportsRouter);
+  app.use(transferRourer);
   app.use(authRouter);
   app.use(rolesRouter);
+  app.use(sellRouter);
+  app.use(ProjectStageWorkLogRouter);
   app.use(permissionRouter);
   app.use(rolePermissionRouter);
   app.use(companyRouter);
-  app.use(GeneralDashboardRouter);
-  app.use(curtaintypeRouter);
-  app.use(curtainRouter);
-  app.use(curtainWorkerLogRouter);
+  app.use(materialRouter);
+  app.use(documentRouter);
   app.use(CategoryRouter);
-  app.use(branchRouter);
+  app.use(MaterialCategoryRouter);
   app.use(customerRouter);
-  app.use(shopRouter);
-  app.use(storeRouter);
-  app.use(productBatchRouter);
-  app.use(ExpenseRouter);
+  app.use(ProformaInvoiceRouter);
   app.use(UnitOfMeasureRouter);
   app.use(ProductRouter);
   app.use(purchaseRouter);
-  app.use(transferRourer);
-  app.use(stockcorrectionRouter);
-  app.use(workercommissionsRouter);
+  app.use(showroomRouter);
+  app.use(StoreRouter);
+  app.use(StockCorrectionRouter);
+  app.use(projectRouter);
+  app.use(CapacitySlotRouter);
+  app.use(SchedulingSettingsRouter);
+  app.use(HolidayRouter);
+  app.use(BankRouter);
+  app.use(ItemRouter);
+  app.use(DeliveryEstimationRouter);
+  app.use(stageRouter);
+  app.use(productcategoryRouter);
+
   // Error handling middleware
   // Then your 404 handler
   // 404 handler - MODIFY THIS

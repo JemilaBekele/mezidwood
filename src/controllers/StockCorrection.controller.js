@@ -3,7 +3,7 @@ const catchAsync = require('../utils/catchAsync');
 const { stockCorrectionService } = require('../services');
 const ApiError = require('../utils/ApiError');
 
-// Create Stock Correction
+// Create StockCorrection
 const createStockCorrection = catchAsync(async (req, res) => {
   const stockCorrection = await stockCorrectionService.createStockCorrection(
     req.body,
@@ -117,7 +117,41 @@ const deleteStockCorrection = catchAsync(async (req, res) => {
   });
 });
 
+const getMaterialStock = catchAsync(async (req, res) => {
+  const { materialId } = req.params;
+
+  const stockInfo = await stockCorrectionService.getMaterialStockQuantity(
+    materialId,
+  );
+
+  if (!stockInfo) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Material not found');
+  }
+
+  res.status(httpStatus.OK).send({
+    success: true,
+    data: stockInfo,
+  });
+});
+const getMaterialStockQuantityreserve = catchAsync(async (req, res) => {
+  const { materialId } = req.params;
+
+  const stockInfo =
+    await stockCorrectionService.getMaterialStockQuantityreserve(materialId);
+
+  if (!stockInfo) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Material not found');
+  }
+
+  res.status(httpStatus.OK).send({
+    success: true,
+    data: stockInfo,
+  });
+});
+
 module.exports = {
+  getMaterialStockQuantityreserve,
+  getMaterialStock,
   createStockCorrection,
   getStockCorrection,
   getStockCorrectionByReference,

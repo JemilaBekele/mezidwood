@@ -27,40 +27,226 @@ const getCustomerByTin = async (tinNumber) => {
 
 const getAllCustomers = async (filter = {}) => {
   const customers = await prisma.customer.findMany({
-    where: filter,
-    orderBy: { name: 'asc' }, // ✅ updated since "first_name" is mapped to `name`
+    where: {
+      ...filter,
+      isdefault: false, // Exclude default customer
+    },
+    orderBy: { name: 'asc' },
   });
 
   return { customers, count: customers.length };
 };
 
-const createCustomer = async (customerBody) => {
-  // Check if customer with same email already exists
-  if (customerBody.email && (await getCustomerByEmail(customerBody.email))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
-  }
-
-  // Check if customer with same phone1 already exists
-  if (customerBody.phone1 && (await getCustomerByPhone(customerBody.phone1))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Phone1 already taken');
-  }
-
-  // Check if customer with same phone2 already exists
-  if (customerBody.phone2 && (await getCustomerByPhone(customerBody.phone2))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Phone2 already taken');
-  }
-
-  // Check if customer with same TIN already exists
-  if (
-    customerBody.tinNumber &&
-    (await getCustomerByTin(customerBody.tinNumber))
-  ) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'TIN already registered');
-  }
-
-  return prisma.customer.create({ data: customerBody });
+const DEFAULT_CUSTOMER = {
+  name: 'Stock',
+  companyName: '',
+  isdefault: true,
+  phone1: '0',
+  phone2: null,
+  tinNumber: null,
+  address: '',
 };
 
+const createCustomer = async (customerBody) => {
+  try {
+    // Clean the customer body - remove fields that don't exist in the model
+    // and combine address fields
+    const { city, state, postalCode, country, ...cleanBody } = customerBody;
+    
+    // Build a complete address from all address components
+    const addressParts = [];
+    if (cleanBody.address) addressParts.push(cleanBody.address);
+    if (city) addressParts.push(city);
+    if (state) addressParts.push(state);
+    if (country) addressParts.push(country);
+    if (postalCode) addressParts.push(postalCode);
+    
+    const combinedAddress = addressParts.filter(Boolean).join(', ');
+    
+    // Prepare the final customer data
+    const preparedBody = {
+      ...cleanBody,
+      address: combinedAddress || cleanBody.address || '',
+      // Convert empty strings to null for optional fields
+      phone2: cleanBody.phone2 || null,
+      tinNumber: cleanBody.tinNumber || null,
+    };
+
+    // Check if the requested customer already exists by email
+    if (preparedBody.email) {
+      try {
+        const existingCustomer = await getCustomerByEmail(preparedBody.email);
+        if (existingCustomer) {
+          console.log('❌ Email already exists:', preparedBody.email);
+          throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
+        }
+      } catch (error) {
+        if (error instanceof ApiError) throw error;
+        console.error('❌ Error checking email existence:', error);
+        throw error;
+      }
+    }
+
+    // Check if customer with same phone1 already exists
+    if (preparedBody.phone1) {
+      try {
+        const existingCustomer = await getCustomerByPhone(preparedBody.phone1);
+        if (existingCustomer) {
+          console.log('❌ Phone1 already exists:', preparedBody.phone1);
+          throw new ApiError(httpStatus.BAD_REQUEST, 'Phone1 already taken');
+        }
+      } catch (error) {
+        if (error instanceof ApiError) throw error;
+        console.error('❌ Error checking phone1 existence:', error);
+        throw error;
+      }
+    }
+
+    // Check if customer with same phone2 already exists
+    if (preparedBody.phone2) {
+      try {
+        const existingCustomer = await getCustomerByPhone(preparedBody.phone2);
+        if (existingCustomer) {
+          console.log('❌ Phone2 already exists:', preparedBody.phone2);
+          throw new ApiError(httpStatus.BAD_REQUEST, 'Phone2 already taken');
+        }
+      } catch (error) {
+        if (error instanceof ApiError) throw error;
+        console.error('❌ Error checking phone2 existence:', error);
+        throw error;
+      }
+    }
+
+    // Check if customer with same TIN already exists
+    if (preparedBody.tinNumber) {
+      try {
+        const existingCustomer = await getCustomerByTin(preparedBody.tinNumber);
+        if (existingCustomer) {
+          console.log('❌ TIN already exists:', preparedBody.tinNumber);
+          throw new ApiError(httpStatus.BAD_REQUEST, 'TIN already registered');
+        }
+      } catch (error) {
+        if (error instanceof ApiError) throw error;
+        console.error('❌ Error checking TIN existence:', error);
+        throw error;
+      }
+    }
+
+    // Prepare data for creation
+    const customerData = {
+      ...preparedBody,
+      isdefault: false,
+    };
+
+    // Create the requested customer
+    let newCustomer;
+    try {
+      console.log('ℹ️ Creating new customer with data:', JSON.stringify(customerData, null, 2));
+      newCustomer = await prisma.customer.create({
+        data: customerData,
+      });
+      console.log('✅ Customer created successfully:', newCustomer.id);
+    } catch (error) {
+      console.error('❌ Failed to create requested customer:');
+      console.error('  - Error message:', error.message);
+      console.error('  - Error code:', error.code);
+      console.error('  - Error meta:', error.meta);
+      console.error('  - Full error:', error);
+      throw error;
+    }
+
+    // Check for existing default customer
+    let existingDefaultCustomer;
+    try {
+      existingDefaultCustomer = await prisma.customer.findFirst({
+        where: {
+          isdefault: true,
+        },
+      });
+    } catch (error) {
+      console.error('❌ Error finding default customer:', error);
+      // Continue execution - we can proceed without default customer check
+    }
+
+    // If default customer exists but has wrong name/phone, update it
+    if (existingDefaultCustomer) {
+      if (
+        existingDefaultCustomer.name !== DEFAULT_CUSTOMER.name ||
+        existingDefaultCustomer.phone1 !== DEFAULT_CUSTOMER.phone1
+      ) {
+        try {
+          console.log('ℹ️ Updating default customer to match DEFAULT_CUSTOMER');
+          existingDefaultCustomer = await prisma.customer.update({
+            where: { id: existingDefaultCustomer.id },
+            data: {
+              name: DEFAULT_CUSTOMER.name,
+              companyName: DEFAULT_CUSTOMER.companyName,
+              phone1: DEFAULT_CUSTOMER.phone1,
+              address: DEFAULT_CUSTOMER.address,
+              tinNumber: DEFAULT_CUSTOMER.tinNumber,
+            },
+          });
+          console.log('✅ Default customer updated successfully');
+        } catch (error) {
+          console.error('❌ Failed to update default customer:');
+          console.error('  - Error message:', error.message);
+          console.error('  - Full error:', error);
+          // Don't throw - we already created the new customer
+        }
+      } else {
+        console.log('ℹ️ Default customer already exists and is correct');
+      }
+    } else {
+      // Create default customer only if it doesn't exist
+      try {
+        console.log('ℹ️ Creating default customer');
+        const defaultCustomer = await prisma.customer.create({
+          data: DEFAULT_CUSTOMER,
+        });
+        console.log('✅ Default customer created successfully:', defaultCustomer.id);
+      } catch (error) {
+        console.error('❌ Failed to create default customer:');
+        console.error('  - Error message:', error.message);
+        console.error('  - Error code:', error.code);
+        console.error('  - Error meta:', error.meta);
+        console.error('  - Full error:', error);
+        // Don't throw - we already created the new customer
+      }
+    }
+
+    return newCustomer;
+  } catch (error) {
+    // Catch any unhandled errors at the top level
+    console.error('❌ Unhandled error in createCustomer:');
+    console.error('  - Error name:', error.name);
+    console.error('  - Error message:', error.message);
+    console.error('  - Error stack:', error.stack);
+    console.error('  - Full error:', error);
+    throw error;
+  }
+};
+
+// === AUTO-RUN when this file is imported/required ===
+(async () => {
+  try {
+    // Check if default customer exists
+    const existingDefaultCustomer = await prisma.customer.findFirst({
+      where: {
+        isdefault: true,
+      },
+    });
+
+    // If not, create it automatically WITHOUT needing createCustomer
+    if (!existingDefaultCustomer) {
+      await prisma.customer.create({
+        data: DEFAULT_CUSTOMER,
+      });
+      console.log('✅ Default customer created automatically on file load');
+    }
+  } catch (error) {
+    console.error('Error creating default customer:', error);
+  }
+})();
 const updateCustomer = async (id, updateBody) => {
   const existingCustomer = await getCustomerById(id);
   if (!existingCustomer) {

@@ -6,6 +6,7 @@ const ApiError = require('../utils/ApiError');
 // Customer Controllers
 
 const createCustomer = catchAsync(async (req, res) => {
+  console.log('Request body:', req.body); // Log the request body for debugging
   const customer = await customerService.createCustomer(req.body);
   res.status(httpStatus.CREATED).send({
     success: true,

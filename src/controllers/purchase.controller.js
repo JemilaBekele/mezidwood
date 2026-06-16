@@ -17,7 +17,6 @@ const createPurchase = catchAsync(async (req, res) => {
 
 // Get Purchase by ID
 const getPurchase = catchAsync(async (req, res) => {
-  console.log('Fetching purchase by ID:', req.params.id);
   const purchase = await purchaseService.getPurchaseById(req.params.id);
   if (!purchase) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Purchase not found');

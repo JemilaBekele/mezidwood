@@ -3,19 +3,19 @@ const express = require('express');
 const router = express.Router();
 const { companyController } = require('../controllers');
 const auth = require('../middlewares/auth');
-// const checkPermission = require('../middlewares/permission.middleware');
+const checkPermission = require('../middlewares/permission.middleware');
 const { uploadImacamp } = require('../utils/multer');
 
 router.post(
   '/api/companies',
   auth,
   uploadImacamp,
+  checkPermission('CREATE_COMPANY'),
   companyController.createCompany,
 );
 router.get(
   '/api/companies/:id',
   // auth,
-  // checkPermission('VIEW_COMPANY'),
   companyController.getCompany,
 );
 
@@ -33,7 +33,7 @@ router.put(
   auth,
   uploadImacamp,
 
-  // checkPermission('UPDATE_COMPANY'),
+  checkPermission('UPDATE_COMPANY'),
   companyController.updateCompany,
 );
 
@@ -41,7 +41,7 @@ router.put(
 router.delete(
   '/api/companies/:id',
   auth,
-  // checkPermission('DELETE_COMPANY'),
+  checkPermission('DELETE_COMPANY'),
   companyController.deleteCompany,
 );
 router.get(

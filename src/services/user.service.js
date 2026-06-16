@@ -25,6 +25,85 @@ const generateUserCode = async (prefix = 'U') => {
   return `${prefix}-${nextNumber.toString().padStart(4, '0')}`;
 };
 
+// Helper function to validate store and showroom assignments
+// Helper function to validate store and showroom assignments
+const validateStoreAndShowroom = async (storeId, showroomId) => {
+  console.log('Validating store and showroom:', { storeId, showroomId });
+
+  // If both are provided, check if showroom exists
+  if (storeId && showroomId) {
+    try {
+      // Check if showroom exists
+      const showroom = await prisma.showroom.findUnique({
+        where: { id: showroomId },
+        select: { id: true, name: true }, // Only select fields that exist
+      });
+
+      if (!showroom) {
+        console.error('Showroom not found:', showroomId);
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Showroom not found');
+      }
+      console.log('Showroom found:', showroom);
+
+      // Check if store exists
+      const store = await prisma.store.findUnique({
+        where: { id: storeId },
+        select: { id: true, name: true },
+      });
+
+      if (!store) {
+        console.error('Store not found:', storeId);
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Store not found');
+      }
+      console.log('Store found:', store);
+
+      // Note: Since Showroom and Store have no direct relationship in the schema,
+      // we just validate that both exist independently
+    } catch (error) {
+      console.error('Error validating store and showroom:', error);
+      throw error;
+    }
+  }
+
+  // If only showroom is provided, verify it exists
+  if (showroomId && !storeId) {
+    try {
+      const showroom = await prisma.showroom.findUnique({
+        where: { id: showroomId },
+        select: { id: true, name: true },
+      });
+
+      if (!showroom) {
+        console.error('Showroom not found:', showroomId);
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Showroom not found');
+      }
+      console.log('Showroom found:', showroom);
+    } catch (error) {
+      console.error('Error validating showroom:', error);
+      throw error;
+    }
+  }
+
+  // If only store is provided, verify it exists
+  if (storeId && !showroomId) {
+    try {
+      const store = await prisma.store.findUnique({
+        where: { id: storeId },
+        select: { id: true, name: true },
+      });
+
+      if (!store) {
+        console.error('Store not found:', storeId);
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Store not found');
+      }
+      console.log('Store found:', store);
+    } catch (error) {
+      console.error('Error validating store:', error);
+      throw error;
+    }
+  }
+};
+
 const createUser = async (userData) => {
   const {
     email,
@@ -32,9 +111,8 @@ const createUser = async (userData) => {
     name,
     phone,
     roleId,
-    branchId,
-    shopIds = [], // ✅ accept shop ids
-    storeIds = [], // ✅ accept store ids
+    storeId,
+    showroomId,
     status = Status.Active,
     ...rest
   } = userData;
@@ -43,6 +121,9 @@ const createUser = async (userData) => {
   if (await isEmailTaken(email)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
   }
+
+  // Validate store and showroom relationships
+  await validateStoreAndShowroom(storeId, showroomId);
 
   // Generate user code
   const userCode = await generateUserCode();
@@ -62,23 +143,13 @@ const createUser = async (userData) => {
     role: { connect: { id: roleId } },
   };
 
-  // Add branch connection if provided
-  if (branchId) {
-    userCreateData.branch = { connect: { id: branchId } };
+  // Add store and showroom relations if provided
+  if (storeId) {
+    userCreateData.store = { connect: { id: storeId } };
   }
 
-  // ✅ Add shop relations if provided
-  if (shopIds.length > 0) {
-    userCreateData.shops = {
-      connect: shopIds.map((id) => ({ id })),
-    };
-  }
-
-  // ✅ Add store relations if provided
-  if (storeIds.length > 0) {
-    userCreateData.stores = {
-      connect: storeIds.map((id) => ({ id })),
-    };
+  if (showroomId) {
+    userCreateData.showroom = { connect: { id: showroomId } };
   }
 
   // Create user
@@ -86,17 +157,17 @@ const createUser = async (userData) => {
     data: userCreateData,
     include: {
       role: true,
-      branch: true,
-      shops: true, // ✅ return assigned shops
-      stores: true, // ✅ return assigned stores
+      store: true,
+      showroom: true,
     },
   });
 
   return user;
 };
 
-const getUsers = async ({ startDate, endDate } = {}) => {
+const getUsers = async ({ startDate, endDate, storeId, showroomId } = {}) => {
   const whereClause = {};
+
   // Convert string dates to Date objects if they exist
   const startDateObj = startDate ? new Date(startDate) : undefined;
   const endDateObj = endDate ? new Date(endDate) : undefined;
@@ -117,19 +188,31 @@ const getUsers = async ({ startDate, endDate } = {}) => {
     };
   }
 
-  // Get total count (with date filters applied)
+  // Add store filter if provided
+  if (storeId) {
+    whereClause.storeId = storeId;
+  }
+
+  // Add showroom filter if provided
+  if (showroomId) {
+    whereClause.showroomId = showroomId;
+  }
+
+  // Get total count (with filters applied)
   const totalUsers = await prisma.user.count({
     where: whereClause,
   });
 
-  // Get users (with date filters applied)
+  // Get users (with filters applied)
   const users = await prisma.user.findMany({
     where: whereClause,
     include: {
       role: true,
-      shops: true, // <-- This includes the related shops data
-      stores: true, // <-- This includes the related stores data
-      branch: true, // <-- This includes the related branch data
+      store: true,
+      showroom: true,
+    },
+    orderBy: {
+      createdAt: 'desc',
     },
   });
 
@@ -141,14 +224,14 @@ const getUsers = async ({ startDate, endDate } = {}) => {
     users,
   };
 };
+
 const getUserById = async (id) => {
   const user = await prisma.user.findUnique({
     where: { id },
     include: {
       role: true,
-      branch: true,
-      shops: true, // Include all shops assigned to the user
-      stores: true, // Include all stores assigned to the user
+      store: true,
+      showroom: true,
     },
   });
 
@@ -172,9 +255,8 @@ const getUserByIdWithPermissions = async (id) => {
           },
         },
       },
-      branch: true,
-      shops: true,
-      stores: true,
+      store: true,
+      showroom: true,
     },
   });
 
@@ -190,6 +272,8 @@ const getUserByEmail = async (email) => {
     where: { email },
     include: {
       role: true,
+      store: true,
+      showroom: true,
     },
   });
 
@@ -197,62 +281,128 @@ const getUserByEmail = async (email) => {
   return user;
 };
 const updateUserById = async (userId, updateBody) => {
-  const user = await getUserById(userId);
+  try {
+    console.log('Updating user with ID:', userId);
+    console.log('Update data received:', JSON.stringify(updateBody, null, 2));
 
-  // Check if email is being updated and if it's already taken
-  if (updateBody.email && user.email !== updateBody.email) {
-    if (await isEmailTaken(updateBody.email)) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
+    const user = await getUserById(userId);
+    console.log('Current user data:', {
+      id: user.id,
+      email: user.email,
+      storeId: user.storeId,
+      showroomId: user.showroomId,
+      roleId: user.roleId,
+    });
+
+    // Check if email is being updated and if it's already taken
+    if (updateBody.email && user.email !== updateBody.email) {
+      console.log('Checking if email is taken:', updateBody.email);
+      if (await isEmailTaken(updateBody.email)) {
+        console.error('Email already taken:', updateBody.email);
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
+      }
+      console.log('Email is available');
     }
+
+    // Remove password field from update (silently ignore)
+    const { roleId, storeId, showroomId, password, ...rest } = updateBody;
+
+    // Log warning but continue (optional)
+    if (password) {
+      console.warn('⚠️ Password update attempt ignored for user:', userId);
+      console.warn('Password field was provided but will not be updated');
+    }
+
+    // Validate store and showroom relationships if being updated
+    if (storeId !== undefined || showroomId !== undefined) {
+      const newStoreId = storeId !== undefined ? storeId : user.storeId;
+      const newShowroomId =
+        showroomId !== undefined ? showroomId : user.showroomId;
+
+      console.log('Validating store and showroom relationship:', {
+        storeId: newStoreId,
+        showroomId: newShowroomId,
+      });
+
+      await validateStoreAndShowroom(newStoreId, newShowroomId);
+      console.log('Store and showroom validation passed');
+    }
+
+    const updateData = { ...rest };
+    console.log(
+      'Base update data (without relations):',
+      JSON.stringify(updateData, null, 2),
+    );
+
+    // Handle role update if provided
+    if (roleId) {
+      console.log('Updating role to:', roleId);
+      updateData.role = { connect: { id: roleId } };
+    }
+
+    // Handle store update
+    if (storeId !== undefined) {
+      if (storeId) {
+        console.log('Connecting store:', storeId);
+        updateData.store = { connect: { id: storeId } };
+      } else {
+        console.log('Disconnecting store');
+        updateData.store = { disconnect: true };
+      }
+    }
+
+    // Handle showroom update
+    if (showroomId !== undefined) {
+      if (showroomId) {
+        console.log('Connecting showroom:', showroomId);
+        updateData.showroom = { connect: { id: showroomId } };
+      } else {
+        console.log('Disconnecting showroom');
+        updateData.showroom = { disconnect: true };
+      }
+    }
+
+    console.log('Final update data:', JSON.stringify(updateData, null, 2));
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      include: {
+        role: true,
+        store: true,
+        showroom: true,
+      },
+    });
+
+    console.log('User updated successfully:', {
+      id: updatedUser.id,
+      name: updatedUser.name,
+      email: updatedUser.email,
+      storeId: updatedUser.storeId,
+      showroomId: updatedUser.showroomId,
+      roleId: updatedUser.roleId,
+    });
+
+    return updatedUser;
+  } catch (error) {
+    console.error('❌ Error updating user:');
+    console.error('Error details:', {
+      userId,
+      updateBody: JSON.stringify(updateBody, null, 2),
+      errorMessage: error.message,
+      errorStack: error.stack,
+      errorName: error.name,
+      errorCode: error.code,
+    });
+
+    // Log the full error object for debugging
+    console.error(
+      'Full error object:',
+      JSON.stringify(error, Object.getOwnPropertyNames(error), 2),
+    );
+
+    throw error;
   }
-
-  const { roleId, branchId, shopIds, storeIds, ...rest } = updateBody;
-
-  const updateData = {
-    ...rest,
-    ...(updateBody.password && {
-      password: await bcrypt.hash(updateBody.password, 8),
-    }),
-  };
-
-  // Handle role update if provided
-  if (roleId) {
-    updateData.role = { connect: { id: roleId } };
-  }
-
-  // Handle branch update if provided
-  if (branchId) {
-    updateData.branch = { connect: { id: branchId } };
-  }
-
-  // ✅ Handle shop update if provided
-  if (Array.isArray(shopIds)) {
-    updateData.shops = {
-      set: [], // clear existing shops
-      connect: shopIds.map((id) => ({ id })), // add new ones
-    };
-  }
-
-  // ✅ Handle store update if provided
-  if (Array.isArray(storeIds)) {
-    updateData.stores = {
-      set: [], // clear existing stores
-      connect: storeIds.map((id) => ({ id })), // add new ones
-    };
-  }
-
-  const updatedUser = await prisma.user.update({
-    where: { id: userId },
-    data: updateData,
-    include: {
-      role: true,
-      branch: true,
-      shops: true, // ✅ return updated shops
-      stores: true, // ✅ return updated stores
-    },
-  });
-
-  return updatedUser;
 };
 
 const deleteUserById = async (userId) => {
@@ -269,7 +419,6 @@ const changeUserStatus = async (userId, status) => {
     data: { status },
     include: {
       role: true,
-      branch: true,
     },
   });
 
@@ -309,7 +458,6 @@ const changePassword = async (userId, currentPassword, newPassword) => {
     data: { password: hashedNewPassword },
     include: {
       role: true,
-      branch: true,
     },
   });
 
@@ -342,7 +490,6 @@ const resetPassword = async (userId, resetBody) => {
     data: { password: hashedNewPassword },
     include: {
       role: true,
-      branch: true,
     },
   });
 

@@ -128,9 +128,10 @@ exports.Prisma.UserScalarFieldEnum = {
   email: 'email',
   admin: 'admin',
   password: 'password',
-  branchId: 'branchId',
   roleId: 'roleId',
   status: 'status',
+  storeId: 'storeId',
+  showroomId: 'showroomId',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   lastLoginAt: 'lastLoginAt'
@@ -166,94 +167,13 @@ exports.Prisma.CompanyScalarFieldEnum = {
   email: 'email',
   phone: 'phone',
   address: 'address',
+  addressTow: 'addressTow',
+  tiktok: 'tiktok',
   description: 'description',
   tinAddress: 'tinAddress',
   TIN: 'TIN',
   From: 'From',
   logo: 'logo',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.BranchScalarFieldEnum = {
-  id: 'id',
-  name: 'name',
-  address: 'address',
-  phone: 'phone',
-  email: 'email',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.ShopScalarFieldEnum = {
-  id: 'id',
-  name: 'name',
-  branchId: 'branchId',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.StoreScalarFieldEnum = {
-  id: 'id',
-  name: 'name',
-  branchId: 'branchId',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.StoreStockScalarFieldEnum = {
-  id: 'id',
-  storeId: 'storeId',
-  productId: 'productId',
-  quantity: 'quantity',
-  status: 'status',
-  unitOfMeasureId: 'unitOfMeasureId',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.StoreProductVariantScalarFieldEnum = {
-  id: 'id',
-  storeStockId: 'storeStockId',
-  height: 'height',
-  width: 'width',
-  quantity: 'quantity'
-};
-
-exports.Prisma.ShopStockScalarFieldEnum = {
-  id: 'id',
-  shopId: 'shopId',
-  productId: 'productId',
-  unitOfMeasureId: 'unitOfMeasureId',
-  quantity: 'quantity',
-  status: 'status',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.ShopProductVariantScalarFieldEnum = {
-  id: 'id',
-  shopStockId: 'shopStockId',
-  height: 'height',
-  width: 'width',
-  quantity: 'quantity'
-};
-
-exports.Prisma.StockLedgerScalarFieldEnum = {
-  id: 'id',
-  invoiceNo: 'invoiceNo',
-  productId: 'productId',
-  storeId: 'storeId',
-  shopId: 'shopId',
-  movementType: 'movementType',
-  height: 'height',
-  width: 'width',
-  quantity: 'quantity',
-  unitOfMeasureId: 'unitOfMeasureId',
-  reference: 'reference',
-  userId: 'userId',
-  notes: 'notes',
-  movementDate: 'movementDate',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
@@ -270,12 +190,14 @@ exports.Prisma.CustomerScalarFieldEnum = {
   id: 'id',
   name: 'name',
   companyName: 'companyName',
+  isdefault: 'isdefault',
   phone1: 'phone1',
   phone2: 'phone2',
   tinNumber: 'tinNumber',
   address: 'address',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  email: 'email'
 };
 
 exports.Prisma.SupplierScalarFieldEnum = {
@@ -293,76 +215,10 @@ exports.Prisma.SupplierScalarFieldEnum = {
   updatedAt: 'updatedAt'
 };
 
-exports.Prisma.CategoryScalarFieldEnum = {
+exports.Prisma.BankScalarFieldEnum = {
   id: 'id',
-  name: 'name',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.ColourScalarFieldEnum = {
-  id: 'id',
-  name: 'name',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.CurtainTypeScalarFieldEnum = {
-  id: 'id',
-  name: 'name',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.MovementTypeScalarFieldEnum = {
-  id: 'id',
-  name: 'name',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.ExpenseScalarFieldEnum = {
-  id: 'id',
-  title: 'title',
-  description: 'description',
-  amount: 'amount',
-  expenseDate: 'expenseDate',
-  createdById: 'createdById',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.ProductScalarFieldEnum = {
-  id: 'id',
-  productCode: 'productCode',
-  name: 'name',
-  description: 'description',
-  fabricName: 'fabricName',
-  thickCurtain: 'thickCurtain',
-  thinCurtain: 'thinCurtain',
-  pullsCurtain: 'pullsCurtain',
-  poleCurtain: 'poleCurtain',
-  bracketsCurtain: 'bracketsCurtain',
-  shatterVertical: 'shatterVertical',
-  categoryId: 'categoryId',
-  colourId: 'colourId',
-  curtainTypeId: 'curtainTypeId',
-  sellPrice: 'sellPrice',
-  pricePerMeter: 'pricePerMeter',
-  warningQuantity: 'warningQuantity',
-  imageUrl: 'imageUrl',
-  unitOfMeasureId: 'unitOfMeasureId',
-  isActive: 'isActive',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.AdditionalPriceScalarFieldEnum = {
-  id: 'id',
-  label: 'label',
-  price: 'price',
-  productId: 'productId',
-  shopId: 'shopId',
+  bankName: 'bankName',
+  accountNumber: 'accountNumber',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
@@ -371,117 +227,82 @@ exports.Prisma.UnitOfMeasureScalarFieldEnum = {
   id: 'id',
   name: 'name',
   symbol: 'symbol',
-  base: 'base'
-};
-
-exports.Prisma.CurtainOrderScalarFieldEnum = {
-  id: 'id',
-  code: 'code',
-  customerId: 'customerId',
-  movementTypeId: 'movementTypeId',
-  curtainStatus: 'curtainStatus',
-  curtainstatusnote: 'curtainstatusnote',
-  paymentStatus: 'paymentStatus',
-  deliveredById: 'deliveredById',
-  deliveredAt: 'deliveredAt',
-  isSiteMeasured: 'isSiteMeasured',
-  siteMeasurePrice: 'siteMeasurePrice',
-  remark: 'remark',
-  issueDate: 'issueDate',
-  createdById: 'createdById',
-  updatedById: 'updatedById',
-  deliveryDeadline: 'deliveryDeadline',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt',
-  totalAmount: 'totalAmount',
-  balance: 'balance',
-  totalPaid: 'totalPaid',
-  ShopId: 'ShopId'
-};
-
-exports.Prisma.CurtainPaymentScalarFieldEnum = {
-  id: 'id',
-  curtainOrderId: 'curtainOrderId',
-  amount: 'amount',
-  paymentMethod: 'paymentMethod',
-  note: 'note',
-  paymentDate: 'paymentDate',
-  createdById: 'createdById',
+  base: 'base',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
 
-exports.Prisma.CurtainMeasurementScalarFieldEnum = {
+exports.Prisma.ShowroomScalarFieldEnum = {
   id: 'id',
-  orderId: 'orderId',
-  roomName: 'roomName',
-  width: 'width',
-  height: 'height',
-  extrawidth: 'extrawidth',
-  quantity: 'quantity',
-  pricePerUnit: 'pricePerUnit',
-  unitprice: 'unitprice',
-  price: 'price',
-  remark: 'remark',
-  size: 'size',
-  createdById: 'createdById',
-  shatterVerticalProductId: 'shatterVerticalProductId',
-  curtainSize: 'curtainSize',
-  thickProductId: 'thickProductId',
-  thickVariant: 'thickVariant',
-  thickMeter: 'thickMeter',
-  thickPrice: 'thickPrice',
-  thinProductId: 'thinProductId',
-  thinVariant: 'thinVariant',
-  thinMeter: 'thinMeter',
-  thinPrice: 'thinPrice',
-  curtainPoleId: 'curtainPoleId',
-  curtainPoleQuantity: 'curtainPoleQuantity',
-  curtainPolePrice: 'curtainPolePrice',
-  curtainPullsId: 'curtainPullsId',
-  curtainPullsQuantity: 'curtainPullsQuantity',
-  curtainBracketsId: 'curtainBracketsId',
-  curtainBracketsQuantity: 'curtainBracketsQuantity',
-  curtainPullsBracketsPrice: 'curtainPullsBracketsPrice',
-  thickWorkerId: 'thickWorkerId',
-  thickWorkerPaid: 'thickWorkerPaid',
-  thickWorkerPaidDate: 'thickWorkerPaidDate',
-  thickWorkerPaidAmount: 'thickWorkerPaidAmount',
-  thinWorkerId: 'thinWorkerId',
-  thinWorkerPaid: 'thinWorkerPaid',
-  thinWorkerPaidDate: 'thinWorkerPaidDate',
-  thinWorkerPaidAmount: 'thinWorkerPaidAmount',
-  workerPrice: 'workerPrice',
-  totalWorkerMeter: 'totalWorkerMeter',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt',
-  updatedById: 'updatedById'
+  name: 'name',
+  isMain: 'isMain'
 };
 
-exports.Prisma.CurtainWorkerLogScalarFieldEnum = {
+exports.Prisma.StoreScalarFieldEnum = {
   id: 'id',
+  name: 'name',
+  isMain: 'isMain'
+};
+
+exports.Prisma.StockLedgerScalarFieldEnum = {
+  id: 'id',
+  movementType: 'movementType',
+  quantity: 'quantity',
+  materialId: 'materialId',
+  storeId: 'storeId',
+  showroomId: 'showroomId',
+  unitId: 'unitId',
+  reference: 'reference',
+  movementDate: 'movementDate',
+  userId: 'userId',
+  notes: 'notes',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.InventoryStockScalarFieldEnum = {
+  id: 'id',
+  materialId: 'materialId',
+  quantity: 'quantity',
   status: 'status',
-  curtainMeasurementId: 'curtainMeasurementId',
-  shopProductVariantId: 'shopProductVariantId',
-  workerId: 'workerId',
-  workerType: 'workerType',
-  extrawidthAssigned: 'extrawidthAssigned',
-  widthmeterAssigned: 'widthmeterAssigned',
-  heightmeterAssigned: 'heightmeterAssigned',
-  quantityAssigned: 'quantityAssigned',
-  heightmeterCompleted: 'heightmeterCompleted',
-  widthmeterCompleted: 'widthmeterCompleted',
-  extrawidthCompleted: 'extrawidthCompleted',
-  quantityCompleted: 'quantityCompleted',
-  note: 'note',
-  createdById: 'createdById',
-  createdAt: 'createdAt'
+  storeId: 'storeId',
+  showroomId: 'showroomId',
+  lastUpdated: 'lastUpdated',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.MaterialCategoryScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.MaterialScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  color: 'color',
+  size: 'size',
+  plainMDF: 'plainMDF',
+  laminatedMDF: 'laminatedMDF',
+  wood: 'wood',
+  metal: 'metal',
+  accessory: 'accessory',
+  other: 'other',
+  imageUrl: 'imageUrl',
+  warningStockLevel: 'warningStockLevel',
+  unitOfMeasureId: 'unitOfMeasureId',
+  materialTypeId: 'materialTypeId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
 };
 
 exports.Prisma.PurchaseScalarFieldEnum = {
   id: 'id',
   invoiceNo: 'invoiceNo',
   supplierId: 'supplierId',
+  bankId: 'bankId',
   storeId: 'storeId',
   paymentStatus: 'paymentStatus',
   totalProducts: 'totalProducts',
@@ -498,10 +319,126 @@ exports.Prisma.PurchaseScalarFieldEnum = {
 exports.Prisma.PurchaseItemScalarFieldEnum = {
   id: 'id',
   purchaseId: 'purchaseId',
-  productId: 'productId',
+  materialId: 'materialId',
   unitOfMeasureId: 'unitOfMeasureId',
-  height: 'height',
-  width: 'width',
+  quantity: 'quantity',
+  unitPrice: 'unitPrice',
+  totalPrice: 'totalPrice',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ItemMaterialScalarFieldEnum = {
+  id: 'id',
+  itemId: 'itemId',
+  materialId: 'materialId',
+  quantity: 'quantity',
+  note: 'note',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ProductCategoryScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.SizeScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  categoryId: 'categoryId'
+};
+
+exports.Prisma.ProductTypeScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  sizeId: 'sizeId'
+};
+
+exports.Prisma.ItemsScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  price: 'price',
+  imageUrl: 'imageUrl',
+  color: 'color',
+  categoryId: 'categoryId',
+  typeId: 'typeId',
+  sizeId: 'sizeId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ItemStockScalarFieldEnum = {
+  id: 'id',
+  itemId: 'itemId',
+  quantity: 'quantity',
+  storeId: 'storeId',
+  showroomId: 'showroomId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ItemStockLedgerScalarFieldEnum = {
+  id: 'id',
+  itemId: 'itemId',
+  movementType: 'movementType',
+  quantity: 'quantity',
+  reference: 'reference',
+  notes: 'notes',
+  storeId: 'storeId',
+  showroomId: 'showroomId',
+  userId: 'userId',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.SellPaymentScalarFieldEnum = {
+  id: 'id',
+  sellId: 'sellId',
+  amount: 'amount',
+  createdById: 'createdById',
+  bankId: 'bankId',
+  paidBy: 'paidBy',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.SellScalarFieldEnum = {
+  id: 'id',
+  invoiceNo: 'invoiceNo',
+  imageUrl: 'imageUrl',
+  documentUrl: 'documentUrl',
+  paymentStatus: 'paymentStatus',
+  grandTotal: 'grandTotal',
+  balance: 'balance',
+  totalPaid: 'totalPaid',
+  storeId: 'storeId',
+  saleStatus: 'saleStatus',
+  locked: 'locked',
+  lockedAt: 'lockedAt',
+  customerId: 'customerId',
+  totalProducts: 'totalProducts',
+  subTotal: 'subTotal',
+  discount: 'discount',
+  vat: 'vat',
+  notes: 'notes',
+  saleDate: 'saleDate',
+  createdById: 'createdById',
+  updatedById: 'updatedById',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.SellItemScalarFieldEnum = {
+  id: 'id',
+  sellId: 'sellId',
+  itemId: 'itemId',
+  itemSaleStatus: 'itemSaleStatus',
   quantity: 'quantity',
   unitPrice: 'unitPrice',
   totalPrice: 'totalPrice',
@@ -514,10 +451,10 @@ exports.Prisma.TransferScalarFieldEnum = {
   shortCode: 'shortCode',
   sourceType: 'sourceType',
   sourceStoreId: 'sourceStoreId',
-  sourceShopId: 'sourceShopId',
+  sourceShowroomId: 'sourceShowroomId',
   destinationType: 'destinationType',
   destStoreId: 'destStoreId',
-  destShopId: 'destShopId',
+  destShowroomId: 'destShowroomId',
   reference: 'reference',
   notes: 'notes',
   status: 'status',
@@ -531,11 +468,282 @@ exports.Prisma.TransferScalarFieldEnum = {
 exports.Prisma.TransferItemScalarFieldEnum = {
   id: 'id',
   transferId: 'transferId',
-  productId: 'productId',
-  unitOfMeasureId: 'unitOfMeasureId',
-  height: 'height',
-  width: 'width',
+  ismaterial: 'ismaterial',
+  itemId: 'itemId',
+  materialId: 'materialId',
   quantity: 'quantity',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ProformaInvoiceBankScalarFieldEnum = {
+  id: 'id',
+  proformaInvoiceId: 'proformaInvoiceId',
+  bankId: 'bankId',
+  paidBy: 'paidBy',
+  createdById: 'createdById',
+  amount: 'amount',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.ProformaInvoiceItemScalarFieldEnum = {
+  id: 'id',
+  invoiceId: 'invoiceId',
+  description: 'description',
+  size: 'size',
+  quantity: 'quantity',
+  unitPrice: 'unitPrice',
+  amount: 'amount',
+  itemId: 'itemId',
+  additionalDescription: 'additionalDescription'
+};
+
+exports.Prisma.PiLogScalarFieldEnum = {
+  id: 'id',
+  action: 'action',
+  piuserId: 'piuserId',
+  proformaId: 'proformaId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ProformaInvoiceScalarFieldEnum = {
+  id: 'id',
+  piNumber: 'piNumber',
+  customerId: 'customerId',
+  paymentStatus: 'paymentStatus',
+  store: 'store',
+  status: 'status',
+  subtotal: 'subtotal',
+  vat: 'vat',
+  total: 'total',
+  amountPaid: 'amountPaid',
+  balance: 'balance',
+  amountDate: 'amountDate',
+  preparedById: 'preparedById',
+  approvedById: 'approvedById',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ProformaItemMaterialScalarFieldEnum = {
+  id: 'id',
+  itemId: 'itemId',
+  materialId: 'materialId',
+  quantity: 'quantity',
+  additionalQuantity: 'additionalQuantity',
+  givenquantity: 'givenquantity',
+  note: 'note',
+  status: 'status',
+  issuedAt: 'issuedAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ProformaInvoiceItemImageScalarFieldEnum = {
+  id: 'id',
+  itemId: 'itemId',
+  imageUrl: 'imageUrl',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.MaterialIssueScalarFieldEnum = {
+  id: 'id',
+  proformaItemMaterialId: 'proformaItemMaterialId',
+  issuedById: 'issuedById',
+  givenToId: 'givenToId',
+  quantity: 'quantity',
+  note: 'note',
+  issuedAt: 'issuedAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.AttachmentScalarFieldEnum = {
+  id: 'id',
+  proformaInvoiceId: 'proformaInvoiceId',
+  fileUrl: 'fileUrl',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ProjectLogScalarFieldEnum = {
+  id: 'id',
+  projectId: 'projectId',
+  note: 'note',
+  createdById: 'createdById',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.ProjectStageWorkLogScalarFieldEnum = {
+  id: 'id',
+  projectStageId: 'projectStageId',
+  doneUnits: 'doneUnits',
+  hours: 'hours',
+  doneById: 'doneById',
+  note: 'note',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.ProjectScalarFieldEnum = {
+  id: 'id',
+  customerId: 'customerId',
+  deliveryEstimationcode: 'deliveryEstimationcode',
+  invoiceId: 'invoiceId',
+  createdById: 'createdById',
+  updatedById: 'updatedById',
+  designStatus: 'designStatus',
+  designFinished: 'designFinished',
+  designById: 'designById',
+  status: 'status',
+  difficulty: 'difficulty',
+  scheduleMode: 'scheduleMode',
+  requestedDelivery: 'requestedDelivery',
+  calculatedDelivery: 'calculatedDelivery',
+  manualDelivery: 'manualDelivery',
+  finalDelivery: 'finalDelivery',
+  totalFinishedPercent: 'totalFinishedPercent',
+  totalDays: 'totalDays',
+  totalProjectQuantity: 'totalProjectQuantity',
+  completedAt: 'completedAt',
+  cancelledAt: 'cancelledAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.SchedulingSettingsScalarFieldEnum = {
+  id: 'id',
+  contingencyDays: 'contingencyDays',
+  easyPercent: 'easyPercent',
+  mediumPercent: 'mediumPercent',
+  hardPercent: 'hardPercent',
+  workingHoursPerDay: 'workingHoursPerDay',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ScheduleHistoryScalarFieldEnum = {
+  id: 'id',
+  projectId: 'projectId',
+  event: 'event',
+  trigger: 'trigger',
+  stage: 'stage',
+  oldDelivery: 'oldDelivery',
+  newDelivery: 'newDelivery',
+  reason: 'reason',
+  byUserId: 'byUserId',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.HolidayScalarFieldEnum = {
+  id: 'id',
+  date: 'date',
+  name: 'name',
+  recurring: 'recurring',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.CapacityLotScalarFieldEnum = {
+  id: 'id',
+  stage: 'stage',
+  days: 'days',
+  capacity: 'capacity',
+  workingHours: 'workingHours',
+  parallelSlots: 'parallelSlots',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.CapacityLotHistoryScalarFieldEnum = {
+  id: 'id',
+  capacityLotId: 'capacityLotId',
+  stage: 'stage',
+  oldDays: 'oldDays',
+  newDays: 'newDays',
+  oldCapacity: 'oldCapacity',
+  newCapacity: 'newCapacity',
+  action: 'action',
+  changedById: 'changedById',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.DailyStageCapacityScalarFieldEnum = {
+  id: 'id',
+  stage: 'stage',
+  date: 'date',
+  usedCapacity: 'usedCapacity',
+  maxCapacity: 'maxCapacity',
+  workingHours: 'workingHours',
+  usedHours: 'usedHours',
+  maxHours: 'maxHours',
+  shift: 'shift',
+  customStartTime: 'customStartTime',
+  customEndTime: 'customEndTime',
+  overCapacityUsed: 'overCapacityUsed',
+  overHoursCapacityUsed: 'overHoursCapacityUsed',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ProjectStageScalarFieldEnum = {
+  id: 'id',
+  projectId: 'projectId',
+  stage: 'stage',
+  capacityDays: 'capacityDays',
+  workUnits: 'workUnits',
+  finished: 'finished',
+  startDate: 'startDate',
+  endDate: 'endDate',
+  startDateTime: 'startDateTime',
+  endDateTime: 'endDateTime',
+  shift: 'shift',
+  timeTaken: 'timeTaken',
+  customStartTime: 'customStartTime',
+  customEndTime: 'customEndTime',
+  actualWorkUnits: 'actualWorkUnits',
+  autoSchedule: 'autoSchedule',
+  status: 'status'
+};
+
+exports.Prisma.ProjectStageCapacityAllocationScalarFieldEnum = {
+  id: 'id',
+  projectStageId: 'projectStageId',
+  dailyStageCapacityId: 'dailyStageCapacityId',
+  allocatedUnits: 'allocatedUnits',
+  allocatedHours: 'allocatedHours',
+  shift: 'shift',
+  startDateTime: 'startDateTime',
+  endDateTime: 'endDateTime',
+  customStartTime: 'customStartTime',
+  customEndTime: 'customEndTime',
+  isOverCapacity: 'isOverCapacity',
+  allocationDate: 'allocationDate',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.DeliveryEstimationScalarFieldEnum = {
+  id: 'id',
+  code: 'code',
+  customerName: 'customerName',
+  phone: 'phone',
+  difficulty: 'difficulty',
+  totalQuantity: 'totalQuantity',
+  estimatedDays: 'estimatedDays',
+  estimatedDelivery: 'estimatedDelivery',
+  holdUntil: 'holdUntil',
+  DESIGN: 'DESIGN',
+  METAL_WORKS: 'METAL_WORKS',
+  CNC: 'CNC',
+  CUTTING: 'CUTTING',
+  EDGE_BANDING: 'EDGE_BANDING',
+  ASSEMBLY: 'ASSEMBLY',
+  PAINTING: 'PAINTING',
+  FINISHING: 'FINISHING',
+  DELIVERY: 'DELIVERY',
+  status: 'status',
+  createdById: 'createdById',
+  updatedById: 'updatedById',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
@@ -543,16 +751,15 @@ exports.Prisma.TransferItemScalarFieldEnum = {
 exports.Prisma.StockCorrectionScalarFieldEnum = {
   id: 'id',
   shortCode: 'shortCode',
+  ismaterial: 'ismaterial',
   storeId: 'storeId',
-  shopId: 'shopId',
+  showroomId: 'showroomId',
   reason: 'reason',
   status: 'status',
   purchaseId: 'purchaseId',
-  transferId: 'transferId',
   reference: 'reference',
   notes: 'notes',
   createdById: 'createdById',
-  approvedById: 'approvedById',
   updatedById: 'updatedById',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -561,10 +768,8 @@ exports.Prisma.StockCorrectionScalarFieldEnum = {
 exports.Prisma.StockCorrectionItemScalarFieldEnum = {
   id: 'id',
   correctionId: 'correctionId',
-  productId: 'productId',
-  unitOfMeasureId: 'unitOfMeasureId',
-  height: 'height',
-  width: 'width',
+  itemId: 'itemId',
+  materialId: 'materialId',
   quantity: 'quantity',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -579,9 +784,7 @@ exports.Prisma.NotificationScalarFieldEnum = {
   relatedEntityType: 'relatedEntityType',
   relatedEntityId: 'relatedEntityId',
   createdAt: 'createdAt',
-  readAt: 'readAt',
-  storeId: 'storeId',
-  shopId: 'shopId'
+  readAt: 'readAt'
 };
 
 exports.Prisma.SortOrder = {
@@ -601,8 +804,9 @@ exports.Prisma.UserOrderByRelevanceFieldEnum = {
   userCode: 'userCode',
   email: 'email',
   password: 'password',
-  branchId: 'branchId',
-  roleId: 'roleId'
+  roleId: 'roleId',
+  storeId: 'storeId',
+  showroomId: 'showroomId'
 };
 
 exports.Prisma.RoleOrderByRelevanceFieldEnum = {
@@ -629,67 +833,13 @@ exports.Prisma.CompanyOrderByRelevanceFieldEnum = {
   email: 'email',
   phone: 'phone',
   address: 'address',
+  addressTow: 'addressTow',
+  tiktok: 'tiktok',
   description: 'description',
   tinAddress: 'tinAddress',
   TIN: 'TIN',
   From: 'From',
   logo: 'logo'
-};
-
-exports.Prisma.BranchOrderByRelevanceFieldEnum = {
-  id: 'id',
-  name: 'name',
-  address: 'address',
-  phone: 'phone',
-  email: 'email'
-};
-
-exports.Prisma.ShopOrderByRelevanceFieldEnum = {
-  id: 'id',
-  name: 'name',
-  branchId: 'branchId'
-};
-
-exports.Prisma.StoreOrderByRelevanceFieldEnum = {
-  id: 'id',
-  name: 'name',
-  branchId: 'branchId'
-};
-
-exports.Prisma.StoreStockOrderByRelevanceFieldEnum = {
-  id: 'id',
-  storeId: 'storeId',
-  productId: 'productId',
-  unitOfMeasureId: 'unitOfMeasureId'
-};
-
-exports.Prisma.StoreProductVariantOrderByRelevanceFieldEnum = {
-  id: 'id',
-  storeStockId: 'storeStockId'
-};
-
-exports.Prisma.ShopStockOrderByRelevanceFieldEnum = {
-  id: 'id',
-  shopId: 'shopId',
-  productId: 'productId',
-  unitOfMeasureId: 'unitOfMeasureId'
-};
-
-exports.Prisma.ShopProductVariantOrderByRelevanceFieldEnum = {
-  id: 'id',
-  shopStockId: 'shopStockId'
-};
-
-exports.Prisma.StockLedgerOrderByRelevanceFieldEnum = {
-  id: 'id',
-  invoiceNo: 'invoiceNo',
-  productId: 'productId',
-  storeId: 'storeId',
-  shopId: 'shopId',
-  unitOfMeasureId: 'unitOfMeasureId',
-  reference: 'reference',
-  userId: 'userId',
-  notes: 'notes'
 };
 
 exports.Prisma.LogOrderByRelevanceFieldEnum = {
@@ -705,7 +855,8 @@ exports.Prisma.CustomerOrderByRelevanceFieldEnum = {
   phone1: 'phone1',
   phone2: 'phone2',
   tinNumber: 'tinNumber',
-  address: 'address'
+  address: 'address',
+  email: 'email'
 };
 
 exports.Prisma.SupplierOrderByRelevanceFieldEnum = {
@@ -721,51 +872,10 @@ exports.Prisma.SupplierOrderByRelevanceFieldEnum = {
   notes: 'notes'
 };
 
-exports.Prisma.CategoryOrderByRelevanceFieldEnum = {
+exports.Prisma.BankOrderByRelevanceFieldEnum = {
   id: 'id',
-  name: 'name'
-};
-
-exports.Prisma.ColourOrderByRelevanceFieldEnum = {
-  id: 'id',
-  name: 'name'
-};
-
-exports.Prisma.CurtainTypeOrderByRelevanceFieldEnum = {
-  id: 'id',
-  name: 'name'
-};
-
-exports.Prisma.MovementTypeOrderByRelevanceFieldEnum = {
-  id: 'id',
-  name: 'name'
-};
-
-exports.Prisma.ExpenseOrderByRelevanceFieldEnum = {
-  id: 'id',
-  title: 'title',
-  description: 'description',
-  createdById: 'createdById'
-};
-
-exports.Prisma.ProductOrderByRelevanceFieldEnum = {
-  id: 'id',
-  productCode: 'productCode',
-  name: 'name',
-  description: 'description',
-  fabricName: 'fabricName',
-  categoryId: 'categoryId',
-  colourId: 'colourId',
-  curtainTypeId: 'curtainTypeId',
-  imageUrl: 'imageUrl',
-  unitOfMeasureId: 'unitOfMeasureId'
-};
-
-exports.Prisma.AdditionalPriceOrderByRelevanceFieldEnum = {
-  id: 'id',
-  label: 'label',
-  productId: 'productId',
-  shopId: 'shopId'
+  bankName: 'bankName',
+  accountNumber: 'accountNumber'
 };
 
 exports.Prisma.UnitOfMeasureOrderByRelevanceFieldEnum = {
@@ -774,58 +884,54 @@ exports.Prisma.UnitOfMeasureOrderByRelevanceFieldEnum = {
   symbol: 'symbol'
 };
 
-exports.Prisma.CurtainOrderOrderByRelevanceFieldEnum = {
+exports.Prisma.ShowroomOrderByRelevanceFieldEnum = {
   id: 'id',
-  code: 'code',
-  customerId: 'customerId',
-  movementTypeId: 'movementTypeId',
-  curtainstatusnote: 'curtainstatusnote',
-  deliveredById: 'deliveredById',
-  remark: 'remark',
-  createdById: 'createdById',
-  updatedById: 'updatedById',
-  ShopId: 'ShopId'
+  name: 'name'
 };
 
-exports.Prisma.CurtainPaymentOrderByRelevanceFieldEnum = {
+exports.Prisma.StoreOrderByRelevanceFieldEnum = {
   id: 'id',
-  curtainOrderId: 'curtainOrderId',
-  note: 'note',
-  createdById: 'createdById'
+  name: 'name'
 };
 
-exports.Prisma.CurtainMeasurementOrderByRelevanceFieldEnum = {
+exports.Prisma.StockLedgerOrderByRelevanceFieldEnum = {
   id: 'id',
-  orderId: 'orderId',
-  roomName: 'roomName',
-  remark: 'remark',
-  createdById: 'createdById',
-  shatterVerticalProductId: 'shatterVerticalProductId',
-  thickProductId: 'thickProductId',
-  thickVariant: 'thickVariant',
-  thinProductId: 'thinProductId',
-  thinVariant: 'thinVariant',
-  curtainPoleId: 'curtainPoleId',
-  curtainPullsId: 'curtainPullsId',
-  curtainBracketsId: 'curtainBracketsId',
-  thickWorkerId: 'thickWorkerId',
-  thinWorkerId: 'thinWorkerId',
-  updatedById: 'updatedById'
+  materialId: 'materialId',
+  storeId: 'storeId',
+  showroomId: 'showroomId',
+  unitId: 'unitId',
+  reference: 'reference',
+  userId: 'userId',
+  notes: 'notes'
 };
 
-exports.Prisma.CurtainWorkerLogOrderByRelevanceFieldEnum = {
+exports.Prisma.InventoryStockOrderByRelevanceFieldEnum = {
   id: 'id',
-  curtainMeasurementId: 'curtainMeasurementId',
-  shopProductVariantId: 'shopProductVariantId',
-  workerId: 'workerId',
-  note: 'note',
-  createdById: 'createdById'
+  materialId: 'materialId',
+  storeId: 'storeId',
+  showroomId: 'showroomId'
+};
+
+exports.Prisma.MaterialCategoryOrderByRelevanceFieldEnum = {
+  id: 'id',
+  name: 'name'
+};
+
+exports.Prisma.MaterialOrderByRelevanceFieldEnum = {
+  id: 'id',
+  name: 'name',
+  color: 'color',
+  size: 'size',
+  imageUrl: 'imageUrl',
+  unitOfMeasureId: 'unitOfMeasureId',
+  materialTypeId: 'materialTypeId'
 };
 
 exports.Prisma.PurchaseOrderByRelevanceFieldEnum = {
   id: 'id',
   invoiceNo: 'invoiceNo',
   supplierId: 'supplierId',
+  bankId: 'bankId',
   storeId: 'storeId',
   notes: 'notes',
   createdById: 'createdById',
@@ -835,17 +941,94 @@ exports.Prisma.PurchaseOrderByRelevanceFieldEnum = {
 exports.Prisma.PurchaseItemOrderByRelevanceFieldEnum = {
   id: 'id',
   purchaseId: 'purchaseId',
-  productId: 'productId',
+  materialId: 'materialId',
   unitOfMeasureId: 'unitOfMeasureId'
+};
+
+exports.Prisma.ItemMaterialOrderByRelevanceFieldEnum = {
+  id: 'id',
+  itemId: 'itemId',
+  materialId: 'materialId',
+  note: 'note'
+};
+
+exports.Prisma.ProductCategoryOrderByRelevanceFieldEnum = {
+  id: 'id',
+  name: 'name'
+};
+
+exports.Prisma.SizeOrderByRelevanceFieldEnum = {
+  id: 'id',
+  name: 'name',
+  categoryId: 'categoryId'
+};
+
+exports.Prisma.ProductTypeOrderByRelevanceFieldEnum = {
+  id: 'id',
+  name: 'name',
+  sizeId: 'sizeId'
+};
+
+exports.Prisma.ItemsOrderByRelevanceFieldEnum = {
+  id: 'id',
+  name: 'name',
+  imageUrl: 'imageUrl',
+  color: 'color',
+  categoryId: 'categoryId',
+  typeId: 'typeId',
+  sizeId: 'sizeId'
+};
+
+exports.Prisma.ItemStockOrderByRelevanceFieldEnum = {
+  id: 'id',
+  itemId: 'itemId',
+  storeId: 'storeId',
+  showroomId: 'showroomId'
+};
+
+exports.Prisma.ItemStockLedgerOrderByRelevanceFieldEnum = {
+  id: 'id',
+  itemId: 'itemId',
+  reference: 'reference',
+  notes: 'notes',
+  storeId: 'storeId',
+  showroomId: 'showroomId',
+  userId: 'userId'
+};
+
+exports.Prisma.SellPaymentOrderByRelevanceFieldEnum = {
+  id: 'id',
+  sellId: 'sellId',
+  createdById: 'createdById',
+  bankId: 'bankId',
+  paidBy: 'paidBy'
+};
+
+exports.Prisma.SellOrderByRelevanceFieldEnum = {
+  id: 'id',
+  invoiceNo: 'invoiceNo',
+  imageUrl: 'imageUrl',
+  documentUrl: 'documentUrl',
+  storeId: 'storeId',
+  customerId: 'customerId',
+  notes: 'notes',
+  createdById: 'createdById',
+  updatedById: 'updatedById'
+};
+
+exports.Prisma.SellItemOrderByRelevanceFieldEnum = {
+  id: 'id',
+  sellId: 'sellId',
+  itemId: 'itemId'
 };
 
 exports.Prisma.TransferOrderByRelevanceFieldEnum = {
   id: 'id',
   shortCode: 'shortCode',
   sourceStoreId: 'sourceStoreId',
-  sourceShopId: 'sourceShopId',
+  sourceShowroomId: 'sourceShowroomId',
   destStoreId: 'destStoreId',
-  destShopId: 'destShopId',
+  destShowroomId: 'destShowroomId',
   reference: 'reference',
   notes: 'notes',
   createdById: 'createdById',
@@ -855,38 +1038,167 @@ exports.Prisma.TransferOrderByRelevanceFieldEnum = {
 exports.Prisma.TransferItemOrderByRelevanceFieldEnum = {
   id: 'id',
   transferId: 'transferId',
-  productId: 'productId',
-  unitOfMeasureId: 'unitOfMeasureId'
+  itemId: 'itemId',
+  materialId: 'materialId'
+};
+
+exports.Prisma.ProformaInvoiceBankOrderByRelevanceFieldEnum = {
+  id: 'id',
+  proformaInvoiceId: 'proformaInvoiceId',
+  bankId: 'bankId',
+  paidBy: 'paidBy',
+  createdById: 'createdById'
+};
+
+exports.Prisma.ProformaInvoiceItemOrderByRelevanceFieldEnum = {
+  id: 'id',
+  invoiceId: 'invoiceId',
+  description: 'description',
+  size: 'size',
+  itemId: 'itemId',
+  additionalDescription: 'additionalDescription'
+};
+
+exports.Prisma.PiLogOrderByRelevanceFieldEnum = {
+  id: 'id',
+  action: 'action',
+  piuserId: 'piuserId',
+  proformaId: 'proformaId'
+};
+
+exports.Prisma.ProformaInvoiceOrderByRelevanceFieldEnum = {
+  id: 'id',
+  piNumber: 'piNumber',
+  customerId: 'customerId',
+  preparedById: 'preparedById',
+  approvedById: 'approvedById'
+};
+
+exports.Prisma.ProformaItemMaterialOrderByRelevanceFieldEnum = {
+  id: 'id',
+  itemId: 'itemId',
+  materialId: 'materialId',
+  note: 'note'
+};
+
+exports.Prisma.ProformaInvoiceItemImageOrderByRelevanceFieldEnum = {
+  id: 'id',
+  itemId: 'itemId',
+  imageUrl: 'imageUrl'
+};
+
+exports.Prisma.MaterialIssueOrderByRelevanceFieldEnum = {
+  id: 'id',
+  proformaItemMaterialId: 'proformaItemMaterialId',
+  issuedById: 'issuedById',
+  givenToId: 'givenToId',
+  note: 'note'
+};
+
+exports.Prisma.AttachmentOrderByRelevanceFieldEnum = {
+  id: 'id',
+  proformaInvoiceId: 'proformaInvoiceId',
+  fileUrl: 'fileUrl'
+};
+
+exports.Prisma.ProjectLogOrderByRelevanceFieldEnum = {
+  id: 'id',
+  projectId: 'projectId',
+  note: 'note',
+  createdById: 'createdById'
+};
+
+exports.Prisma.ProjectStageWorkLogOrderByRelevanceFieldEnum = {
+  id: 'id',
+  projectStageId: 'projectStageId',
+  doneById: 'doneById',
+  note: 'note'
+};
+
+exports.Prisma.ProjectOrderByRelevanceFieldEnum = {
+  id: 'id',
+  customerId: 'customerId',
+  deliveryEstimationcode: 'deliveryEstimationcode',
+  invoiceId: 'invoiceId',
+  createdById: 'createdById',
+  updatedById: 'updatedById',
+  designById: 'designById'
+};
+
+exports.Prisma.SchedulingSettingsOrderByRelevanceFieldEnum = {
+  id: 'id'
+};
+
+exports.Prisma.ScheduleHistoryOrderByRelevanceFieldEnum = {
+  id: 'id',
+  projectId: 'projectId',
+  reason: 'reason',
+  byUserId: 'byUserId'
+};
+
+exports.Prisma.HolidayOrderByRelevanceFieldEnum = {
+  id: 'id',
+  name: 'name'
+};
+
+exports.Prisma.CapacityLotOrderByRelevanceFieldEnum = {
+  id: 'id'
+};
+
+exports.Prisma.CapacityLotHistoryOrderByRelevanceFieldEnum = {
+  id: 'id',
+  capacityLotId: 'capacityLotId',
+  changedById: 'changedById'
+};
+
+exports.Prisma.DailyStageCapacityOrderByRelevanceFieldEnum = {
+  id: 'id'
+};
+
+exports.Prisma.ProjectStageOrderByRelevanceFieldEnum = {
+  id: 'id',
+  projectId: 'projectId'
+};
+
+exports.Prisma.ProjectStageCapacityAllocationOrderByRelevanceFieldEnum = {
+  id: 'id',
+  projectStageId: 'projectStageId',
+  dailyStageCapacityId: 'dailyStageCapacityId'
+};
+
+exports.Prisma.DeliveryEstimationOrderByRelevanceFieldEnum = {
+  id: 'id',
+  code: 'code',
+  customerName: 'customerName',
+  phone: 'phone',
+  createdById: 'createdById',
+  updatedById: 'updatedById'
 };
 
 exports.Prisma.StockCorrectionOrderByRelevanceFieldEnum = {
   id: 'id',
   shortCode: 'shortCode',
   storeId: 'storeId',
-  shopId: 'shopId',
+  showroomId: 'showroomId',
   purchaseId: 'purchaseId',
-  transferId: 'transferId',
   reference: 'reference',
   notes: 'notes',
   createdById: 'createdById',
-  approvedById: 'approvedById',
   updatedById: 'updatedById'
 };
 
 exports.Prisma.StockCorrectionItemOrderByRelevanceFieldEnum = {
   id: 'id',
   correctionId: 'correctionId',
-  productId: 'productId',
-  unitOfMeasureId: 'unitOfMeasureId'
+  itemId: 'itemId',
+  materialId: 'materialId'
 };
 
 exports.Prisma.NotificationOrderByRelevanceFieldEnum = {
   id: 'id',
   title: 'title',
   message: 'message',
-  relatedEntityId: 'relatedEntityId',
-  storeId: 'storeId',
-  shopId: 'shopId'
+  relatedEntityId: 'relatedEntityId'
 };
 exports.Status = exports.$Enums.Status = {
   Active: 'Active',
@@ -894,90 +1206,60 @@ exports.Status = exports.$Enums.Status = {
   Suspended: 'Suspended'
 };
 
-exports.StockStatus = exports.$Enums.StockStatus = {
-  Available: 'Available',
-  Reserved: 'Reserved',
-  Sold: 'Sold',
-  Damaged: 'Damaged',
-  Returned: 'Returned',
-  Disposed: 'Disposed'
-};
-
 exports.StockMovementType = exports.$Enums.StockMovementType = {
   IN: 'IN',
   OUT: 'OUT',
-  TRANSFER: 'TRANSFER',
   ADJUSTMENT: 'ADJUSTMENT',
-  RETERN: 'RETERN',
-  TRANSFORM: 'TRANSFORM'
+  TRANSFER: 'TRANSFER',
+  RETURN: 'RETURN',
+  DAMAGE: 'DAMAGE',
+  EXPIRE: 'EXPIRE'
 };
 
-exports.CurtainStatus = exports.$Enums.CurtainStatus = {
-  PENDING: 'PENDING',
-  FINISHED: 'FINISHED',
-  RETURNED: 'RETURNED',
-  COMPLETED: 'COMPLETED',
-  CANCELLED: 'CANCELLED',
-  DELIVERED: 'DELIVERED'
+exports.StockStatus = exports.$Enums.StockStatus = {
+  Available: 'Available',
+  In_Use: 'In_Use',
+  Reserved: 'Reserved',
+  Broken: 'Broken',
+  Lost: 'Lost',
+  Disposed: 'Disposed',
+  Expired: 'Expired',
+  DAMAGED: 'DAMAGED',
+  Sold: 'Sold'
 };
 
 exports.PaymentStatus = exports.$Enums.PaymentStatus = {
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED'
+};
+
+exports.SellPaymentStatus = exports.$Enums.SellPaymentStatus = {
+  PENDING: 'PENDING',
+  PARTIAL: 'PARTIAL',
   PAID: 'PAID',
-  PENDING: 'PENDING',
+  CANCELLED: 'CANCELLED',
+  NONE: 'NONE'
+};
+
+exports.SaleStatus = exports.$Enums.SaleStatus = {
+  NOT_APPROVED: 'NOT_APPROVED',
+  PARTIALLY_DELIVERED: 'PARTIALLY_DELIVERED',
   APPROVED: 'APPROVED',
-  REJECTED: 'REJECTED'
+  DELIVERED: 'DELIVERED',
+  CANCELLED: 'CANCELLED'
 };
 
-exports.PaymentMethod = exports.$Enums.PaymentMethod = {
-  CASH: 'CASH',
-  TELEBIRR: 'TELEBIRR',
-  TRANSFER: 'TRANSFER',
-  CBE: 'CBE',
-  AWASH: 'AWASH',
-  DASHEN: 'DASHEN',
-  ABYSSINIA: 'ABYSSINIA',
-  HIBRET: 'HIBRET',
-  NIB: 'NIB',
-  OROMIA: 'OROMIA',
-  BERHAN: 'BERHAN',
-  BUNNA: 'BUNNA',
-  ZEMEN: 'ZEMEN',
-  ENAT: 'ENAT',
-  COOP: 'COOP',
-  WEGAGEN: 'WEGAGEN',
-  AMHARA: 'AMHARA',
-  TSEHAY: 'TSEHAY',
-  GOH: 'GOH',
-  HIJRA: 'HIJRA',
-  SIINQEE: 'SIINQEE',
-  SHABELLE: 'SHABELLE',
-  AHMAD: 'AHMAD',
-  ADDIS: 'ADDIS',
-  LION: 'LION',
-  GADA: 'GADA',
-  RAYA: 'RAYA'
-};
-
-exports.ProductSize = exports.$Enums.ProductSize = {
-  TWO_POINT_FIVE: 'TWO_POINT_FIVE',
-  THREE: 'THREE',
-  NORMAL: 'NORMAL'
-};
-
-exports.CurtainWorkerLogStatus = exports.$Enums.CurtainWorkerLogStatus = {
+exports.ItemSaleStatus = exports.$Enums.ItemSaleStatus = {
   PENDING: 'PENDING',
-  APPROVED: 'APPROVED',
-  REJECTED: 'REJECTED'
-};
-
-exports.CurtainWorkerType = exports.$Enums.CurtainWorkerType = {
-  THICK: 'THICK',
-  THIN: 'THIN'
+  DELIVERED: 'DELIVERED',
+  REJECTED: 'REJECTED',
+  PARTIALLY_DELIVERED: 'PARTIALLY_DELIVERED'
 };
 
 exports.TransferEntityType = exports.$Enums.TransferEntityType = {
   STORE: 'STORE',
-  SHOP: 'SHOP'
+  SHOWROOM: 'SHOWROOM'
 };
 
 exports.TransferStatus = exports.$Enums.TransferStatus = {
@@ -986,9 +1268,122 @@ exports.TransferStatus = exports.$Enums.TransferStatus = {
   CANCELLED: 'CANCELLED'
 };
 
+exports.PIStatus = exports.$Enums.PIStatus = {
+  PENDING_ST: 'PENDING_ST',
+  APPROVED_ST: 'APPROVED_ST',
+  SENT_TO_CLIENT: 'SENT_TO_CLIENT',
+  REVISION: 'REVISION',
+  APPROVED_CLIENT: 'APPROVED_CLIENT',
+  CANCELLED: 'CANCELLED',
+  APPROVED_CREATE_PROJECT: 'APPROVED_CREATE_PROJECT'
+};
+
+exports.MaterialIssueStatus = exports.$Enums.MaterialIssueStatus = {
+  PENDING: 'PENDING',
+  ISSUED: 'ISSUED',
+  PARTIALLY: 'PARTIALLY',
+  CANCELLED: 'CANCELLED'
+};
+
+exports.DesignStatus = exports.$Enums.DesignStatus = {
+  INITIATED: 'INITIATED',
+  MODELING: 'MODELING',
+  DRAFTING: 'DRAFTING',
+  CUTLIST: 'CUTLIST',
+  BOQ: 'BOQ',
+  FINISHED: 'FINISHED'
+};
+
+exports.ProjectStatus = exports.$Enums.ProjectStatus = {
+  INVOICE: 'INVOICE',
+  DESIGN: 'DESIGN',
+  PURCHASING: 'PURCHASING',
+  METAL_WORKS: 'METAL_WORKS',
+  CNC: 'CNC',
+  CUTTING: 'CUTTING',
+  EDGE_BANDING: 'EDGE_BANDING',
+  ASSEMBLY: 'ASSEMBLY',
+  PAINTING: 'PAINTING',
+  FINISHING: 'FINISHING',
+  DELIVERY: 'DELIVERY',
+  INSTALLATION: 'INSTALLATION',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED'
+};
+
+exports.DifficultyLevel = exports.$Enums.DifficultyLevel = {
+  EASY: 'EASY',
+  MEDIUM: 'MEDIUM',
+  HARD: 'HARD'
+};
+
+exports.ScheduleMode = exports.$Enums.ScheduleMode = {
+  AUTO: 'AUTO',
+  MANUAL: 'MANUAL',
+  LOCKED: 'LOCKED'
+};
+
+exports.ScheduleEventType = exports.$Enums.ScheduleEventType = {
+  CREATED: 'CREATED',
+  RESCHEDULED: 'RESCHEDULED',
+  STAGE_COMPLETED: 'STAGE_COMPLETED',
+  STAGE_CANCELLED: 'STAGE_CANCELLED',
+  PROJECT_CANCELLED: 'PROJECT_CANCELLED',
+  MANUAL_OVERRIDE: 'MANUAL_OVERRIDE',
+  CAPACITY_RELEASED: 'CAPACITY_RELEASED',
+  DELIVERY_RECOMPUTED: 'DELIVERY_RECOMPUTED',
+  MODE_CHANGED: 'MODE_CHANGED'
+};
+
+exports.ScheduleTrigger = exports.$Enums.ScheduleTrigger = {
+  USER: 'USER',
+  CRON: 'CRON',
+  COMPLETION: 'COMPLETION',
+  CANCELLATION: 'CANCELLATION',
+  SYSTEM: 'SYSTEM'
+};
+
+exports.CapacityStage = exports.$Enums.CapacityStage = {
+  DESIGN: 'DESIGN',
+  METAL_WORKS: 'METAL_WORKS',
+  CNC: 'CNC',
+  CUTTING: 'CUTTING',
+  EDGE_BANDING: 'EDGE_BANDING',
+  ASSEMBLY: 'ASSEMBLY',
+  PAINTING: 'PAINTING',
+  FINISHING: 'FINISHING',
+  DELIVERY: 'DELIVERY'
+};
+
+exports.CapacityHistoryAction = exports.$Enums.CapacityHistoryAction = {
+  CREATED: 'CREATED',
+  UPDATED: 'UPDATED'
+};
+
+exports.WorkShift = exports.$Enums.WorkShift = {
+  MORNING: 'MORNING',
+  AFTERNOON: 'AFTERNOON',
+  FULL_DAY: 'FULL_DAY',
+  CUSTOM: 'CUSTOM'
+};
+
+exports.StageStatus = exports.$Enums.StageStatus = {
+  ACTIVE: 'ACTIVE',
+  IN_PROGRESS: 'IN_PROGRESS',
+  CANCELLED: 'CANCELLED',
+  COMPLETED: 'COMPLETED'
+};
+
+exports.EstimationStatus = exports.$Enums.EstimationStatus = {
+  ESTIMATED: 'ESTIMATED',
+  ON_HOLD: 'ON_HOLD',
+  CONFIRMED: 'CONFIRMED',
+  PROJECT_CREATED: 'PROJECT_CREATED',
+  EXPIRED: 'EXPIRED'
+};
+
 exports.StockCorrectionReason = exports.$Enums.StockCorrectionReason = {
   PURCHASE_ERROR: 'PURCHASE_ERROR',
-  TRANSFER_ERROR: 'TRANSFER_ERROR',
   EXPIRED: 'EXPIRED',
   DAMAGED: 'DAMAGED',
   MANUAL_ADJUSTMENT: 'MANUAL_ADJUSTMENT'
@@ -1024,33 +1419,51 @@ exports.Prisma.ModelName = {
   Permission: 'Permission',
   RolePermission: 'RolePermission',
   Company: 'Company',
-  Branch: 'Branch',
-  Shop: 'Shop',
-  Store: 'Store',
-  StoreStock: 'StoreStock',
-  StoreProductVariant: 'StoreProductVariant',
-  ShopStock: 'ShopStock',
-  ShopProductVariant: 'ShopProductVariant',
-  StockLedger: 'StockLedger',
   Log: 'Log',
   Customer: 'Customer',
   Supplier: 'Supplier',
-  Category: 'Category',
-  Colour: 'Colour',
-  CurtainType: 'CurtainType',
-  MovementType: 'MovementType',
-  Expense: 'Expense',
-  Product: 'Product',
-  AdditionalPrice: 'AdditionalPrice',
+  Bank: 'Bank',
   UnitOfMeasure: 'UnitOfMeasure',
-  CurtainOrder: 'CurtainOrder',
-  CurtainPayment: 'CurtainPayment',
-  CurtainMeasurement: 'CurtainMeasurement',
-  CurtainWorkerLog: 'CurtainWorkerLog',
+  Showroom: 'Showroom',
+  Store: 'Store',
+  StockLedger: 'StockLedger',
+  InventoryStock: 'InventoryStock',
+  MaterialCategory: 'MaterialCategory',
+  Material: 'Material',
   Purchase: 'Purchase',
   PurchaseItem: 'PurchaseItem',
+  ItemMaterial: 'ItemMaterial',
+  ProductCategory: 'ProductCategory',
+  Size: 'Size',
+  ProductType: 'ProductType',
+  Items: 'Items',
+  ItemStock: 'ItemStock',
+  ItemStockLedger: 'ItemStockLedger',
+  SellPayment: 'SellPayment',
+  Sell: 'Sell',
+  SellItem: 'SellItem',
   Transfer: 'Transfer',
   TransferItem: 'TransferItem',
+  ProformaInvoiceBank: 'ProformaInvoiceBank',
+  ProformaInvoiceItem: 'ProformaInvoiceItem',
+  PiLog: 'PiLog',
+  ProformaInvoice: 'ProformaInvoice',
+  ProformaItemMaterial: 'ProformaItemMaterial',
+  ProformaInvoiceItemImage: 'ProformaInvoiceItemImage',
+  MaterialIssue: 'MaterialIssue',
+  Attachment: 'Attachment',
+  ProjectLog: 'ProjectLog',
+  ProjectStageWorkLog: 'ProjectStageWorkLog',
+  Project: 'Project',
+  SchedulingSettings: 'SchedulingSettings',
+  ScheduleHistory: 'ScheduleHistory',
+  Holiday: 'Holiday',
+  CapacityLot: 'CapacityLot',
+  CapacityLotHistory: 'CapacityLotHistory',
+  DailyStageCapacity: 'DailyStageCapacity',
+  ProjectStage: 'ProjectStage',
+  ProjectStageCapacityAllocation: 'ProjectStageCapacityAllocation',
+  DeliveryEstimation: 'DeliveryEstimation',
   StockCorrection: 'StockCorrection',
   StockCorrectionItem: 'StockCorrectionItem',
   Notification: 'Notification'

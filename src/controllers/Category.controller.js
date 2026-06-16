@@ -24,6 +24,82 @@ const getCategory = catchAsync(async (req, res) => {
     category,
   });
 });
+const getAllDailyStageCapacities = catchAsync(async (req, res) => {
+  const category = await categoryService.getAllDailyStageCapacities(
+    req.params.id,
+  );
+  if (!category) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Category not found');
+  }
+  res.status(httpStatus.OK).send({
+    success: true,
+    category,
+  });
+});
+const resetDailyStageCapacities = catchAsync(async (req, res) => {
+  const result = await categoryService.resetDailyStageCapacities();
+
+  res.status(httpStatus.OK).send({
+    success: true,
+    message: 'All daily stage capacities and allocations deleted successfully.',
+    result,
+  });
+});
+
+// Rebuild the capacity ledger from current projects (non-destructive: re-reserves
+// capacity for every in-flight project instead of just deleting it). rebuildCapacityLedger
+const rebuildCapacityLedger = catchAsync(async (req, res) => {
+  const { mode } = req.body; // "FULL" | "WEEK_ONLY"
+
+  const result = await categoryService.rebuildCapacityLedger();
+
+  const modeLabel =  'WEEK_ONLY' ;
+
+  res.status(httpStatus.OK).send({
+    success: true,
+    message: `Capacity rebuilt (${modeLabel}) from ${result.rebuilt} project(s).`,
+    result,
+  });
+});
+const rebuildCapacityLedgerweek = catchAsync(async (req, res) => {
+  const { mode } = req.body; // "FULL" | "WEEK_ONLY"
+
+  const result = await categoryService.rebuildCapacityLedger();
+
+  const modeLabel =  'WEEK_ONLY' ;
+
+  res.status(httpStatus.OK).send({
+    success: true,
+    message: `Capacity rebuilt (${modeLabel}) from ${result.rebuilt} project(s).`,
+    result,
+  });
+});
+
+// Telemetry stats for a date range
+const getCapacityTelemetry = catchAsync(async (req, res) => {
+  const { from, to, stage } = req.query;
+  if (!from || !to) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'from and to query params are required (YYYY-MM-DD)',
+    );
+  }
+  const result = await categoryService.getCapacityTelemetry(from, to, stage);
+  res.status(httpStatus.OK).send({ success: true, ...result });
+});
+
+// Per-stage load rail for a date range
+const getStageLoadRail = catchAsync(async (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'from and to query params are required (YYYY-MM-DD)',
+    );
+  }
+  const result = await categoryService.getStageLoadRail(from, to);
+  res.status(httpStatus.OK).send({ success: true, ...result });
+});
 
 // Get all Categories
 const getCategories = catchAsync(async (req, res) => {
@@ -93,6 +169,7 @@ const getColours = catchAsync(async (req, res) => {
   };
 
   const result = await categoryService.getAllColours(filter, options);
+  console.log('Fetched colour:', result.colours); // Debug log
 
   res.status(httpStatus.OK).send({
     success: true,
@@ -122,67 +199,13 @@ const deleteColour = catchAsync(async (req, res) => {
   });
 });
 
-const getTopSellingProductsController = catchAsync(async (req, res) => {
-  const { startDate, endDate } = req.query;
-
-  const result = await categoryService.getTopSellingProducts({
-    startDate,
-    endDate,
-  });
-
-  res.status(httpStatus.OK).json({
-    success: true,
-    message: 'Top selling products retrieved successfully',
-    data: result,
-  });
-});
-
-const getTopTailorsByMetersController = catchAsync(async (req, res) => {
-  const { startDate, endDate } = req.query;
-
-  const result = await categoryService.getTopTailorsByMeters({
-    startDate,
-    endDate,
-  });
-
-  res.status(httpStatus.OK).json({
-    success: true,
-    message: 'Top tailors by meters retrieved successfully',
-    data: result,
-  });
-});
-
-const getWorkerLogPerformanceController = catchAsync(async (req, res) => {
-  const { startDate, endDate } = req.query;
-
-  const result = await categoryService.getWorkerLogPerformance({
-    startDate,
-    endDate,
-  });
-
-  res.status(httpStatus.OK).json({
-    success: true,
-    message: 'Worker log performance retrieved successfully',
-    data: result,
-  });
-});
-
-const getTopPerformersDashboardController = catchAsync(async (req, res) => {
-  const { startDate, endDate } = req.query;
-
-  const result = await categoryService.getTopPerformersDashboard({
-    startDate,
-    endDate,
-  });
-
-  res.status(httpStatus.OK).json({
-    success: true,
-    message: 'Top performers dashboard retrieved successfully',
-    data: result,
-  });
-});
-
 module.exports = {
+  rebuildCapacityLedgerweek,
+  resetDailyStageCapacities,
+  rebuildCapacityLedger,
+  getCapacityTelemetry,
+  getStageLoadRail,
+  getAllDailyStageCapacities,
   createCategory,
   getCategory,
   getCategories,
@@ -193,8 +216,4 @@ module.exports = {
   getColours,
   updateColour,
   deleteColour,
-   getTopSellingProductsController,
-  getTopTailorsByMetersController,
-  getWorkerLogPerformanceController,
-  getTopPerformersDashboardController,
 };

@@ -9,7 +9,9 @@ const getStoreById = async (id) => {
   const store = await prisma.store.findUnique({
     where: { id },
     include: {
-      branch: true,
+      inventoryStocks: true,
+      itemStocks: true,
+      purchases: true,
     },
   });
   return store;
@@ -22,14 +24,21 @@ const getStoreByName = async (name) => {
   });
   return store;
 };
+
 const getAllStore = async () => {
-  const stores = await prisma.store.findMany();
+  const stores = await prisma.store.findMany({
+    include: {
+      inventoryStocks: true,
+      itemStocks: true,
+    },
+  });
 
   return {
     stores,
     count: stores.length,
   };
 };
+
 // Get all Stores
 const getAllStores = async (userId, filter = {}) => {
   // Get the user with their accessible stores
@@ -52,7 +61,9 @@ const getAllStores = async (userId, filter = {}) => {
         name: 'asc',
       },
       include: {
-        branch: true,
+        inventoryStocks: true,
+        itemStocks: true,
+        purchases: true,
       },
     });
 
@@ -76,13 +87,15 @@ const getAllStores = async (userId, filter = {}) => {
   const stores = await prisma.store.findMany({
     where: {
       ...filter,
-      id: { in: accessibleStoreIds }, // Filter by accessible stores
+      id: { in: accessibleStoreIds },
     },
     orderBy: {
       name: 'asc',
     },
     include: {
-      branch: true,
+      inventoryStocks: true,
+      itemStocks: true,
+      purchases: true,
     },
   });
 
@@ -99,18 +112,26 @@ const createStore = async (storeBody) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Store name already taken');
   }
 
-  // Validate branch exists
-  const branchExists = await prisma.branch.findUnique({
-    where: { id: storeBody.branchId },
-  });
-  if (!branchExists) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Branch not found');
+  // If trying to create a main store, ensure no other main store exists
+  if (storeBody.isMain) {
+    const existingMainStore = await prisma.store.findFirst({
+      where: { isMain: true },
+    });
+
+    if (existingMainStore) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Only one main store is allowed',
+      );
+    }
   }
 
   const store = await prisma.store.create({
     data: storeBody,
     include: {
-      branch: true,
+      inventoryStocks: true,
+      itemStocks: true,
+      purchases: true,
     },
   });
   return store;
@@ -130,13 +151,20 @@ const updateStore = async (id, updateBody) => {
     }
   }
 
-  // Validate branch exists if being updated
-  if (updateBody.branchId) {
-    const branchExists = await prisma.branch.findUnique({
-      where: { id: updateBody.branchId },
+  // If trying to set isMain to true, ensure no other main store exists
+  if (updateBody.isMain === true && !existingStore.isMain) {
+    const existingMainStore = await prisma.store.findFirst({
+      where: {
+        isMain: true,
+        id: { not: id },
+      },
     });
-    if (!branchExists) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Branch not found');
+
+    if (existingMainStore) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Only one main store is allowed',
+      );
     }
   }
 
@@ -144,7 +172,9 @@ const updateStore = async (id, updateBody) => {
     where: { id },
     data: updateBody,
     include: {
-      branch: true,
+      inventoryStocks: true,
+      itemStocks: true,
+      purchases: true,
     },
   });
 
@@ -158,11 +188,72 @@ const deleteStore = async (id) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Store not found');
   }
 
+  // Prevent deletion of main store if it's the only one
+  if (existingStore.isMain) {
+    const storeCount = await prisma.store.count();
+    if (storeCount === 1) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Cannot delete the only main store',
+      );
+    }
+  }
+
   await prisma.store.delete({
     where: { id },
   });
 
   return { message: 'Store deleted successfully' };
+};
+
+// Set a store as main (ensuring only one main exists)
+const setMainStore = async (id) => {
+  const existingStore = await getStoreById(id);
+  if (!existingStore) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Store not found');
+  }
+
+  // Use transaction to ensure atomic operation
+  const result = await prisma.$transaction(async (tx) => {
+    // Set all stores to isMain: false
+    await tx.store.updateMany({
+      where: { isMain: true },
+      data: { isMain: false },
+    });
+
+    // Set the selected store as main
+    const updatedStore = await tx.store.update({
+      where: { id },
+      data: { isMain: true },
+      include: {
+        inventoryStocks: true,
+        itemStocks: true,
+        purchases: true,
+      },
+    });
+
+    return updatedStore;
+  });
+
+  return result;
+};
+
+// Get main store
+const getMainStore = async () => {
+  const mainStore = await prisma.store.findFirst({
+    where: { isMain: true },
+    include: {
+      inventoryStocks: true,
+      itemStocks: true,
+      purchases: true,
+    },
+  });
+
+  if (!mainStore) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'No main store found');
+  }
+
+  return mainStore;
 };
 
 const getAllStockLedgers = async ({ startDate, endDate } = {}) => {
@@ -205,13 +296,12 @@ const getAllStockLedgers = async ({ startDate, endDate } = {}) => {
           product: {
             select: {
               name: true,
-              productCode: true, // Changed from 'code' to 'productCode'
+              productCode: true,
             },
           },
         },
       },
-      unitOfMeasure: true, // ✅ Added unit of measure
-
+      unitOfMeasure: true,
       store: {
         select: {
           name: true,
@@ -236,6 +326,7 @@ const getAllStockLedgers = async ({ startDate, endDate } = {}) => {
     count: stockLedgers.length,
   };
 };
+
 const getAllShopStocks = async ({ startDate, endDate } = {}) => {
   const whereClause = {};
 
@@ -277,11 +368,10 @@ const getAllShopStocks = async ({ startDate, endDate } = {}) => {
           name: true,
         },
       },
-      unitOfMeasure: true, // ✅ Added unit of measure
+      unitOfMeasure: true,
       batch: {
         select: {
           batchNumber: true,
-
           product: {
             select: {
               name: true,
@@ -297,6 +387,7 @@ const getAllShopStocks = async ({ startDate, endDate } = {}) => {
     count: shopStocks.length,
   };
 };
+
 const getAllStoresStocks = async ({ startDate, endDate } = {}) => {
   const whereClause = {};
   const oneYearAgo = subMonths(new Date(), 12); // Default time range
@@ -329,7 +420,7 @@ const getAllStoresStocks = async ({ startDate, endDate } = {}) => {
 
   const storeStocks = await prisma.storeStock.findMany({
     where: {
-      store: whereClause, // Apply date filter to the store's creation date
+      store: whereClause,
     },
     orderBy: { createdAt: 'desc' },
     include: {
@@ -355,7 +446,7 @@ const getAllStoresStocks = async ({ startDate, endDate } = {}) => {
           },
         },
       },
-      unitOfMeasure: true, // ✅ Added unit of measure
+      unitOfMeasure: true,
     },
   });
 
@@ -389,6 +480,304 @@ const getAllStoresStocks = async ({ startDate, endDate } = {}) => {
     count: storeStocks.length,
   };
 };
+// services/itemService.js
+const getItemsByStoreId = async (storeId) => {
+  try {
+    // Validate storeId
+    if (!storeId) {
+      throw new Error('Store ID is required');
+    }
+
+    // LOG 1: Check input
+    console.log('Fetching items for storeId:', storeId);
+
+    // Get items with stock > 1 for the specified store
+    const items = await prisma.items.findMany({
+      where: {
+        itemStocks: {
+          some: {
+            storeId,
+            quantity: {
+              gt: 0, // stock greater than zero
+            },
+          },
+        },
+      },
+      include: {
+        itemStocks: {
+          where: {
+            storeId,
+            quantity: {
+              gt: 0,
+            },
+          },
+          select: {
+            quantity: true,
+            storeId: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+        category: true,
+        type: true,
+        size: true,
+      },
+    });
+
+    // LOG 2: Check raw results
+    console.log('Raw items found:', items.length);
+    console.log('First item sample:', JSON.stringify(items[0], null, 2));
+    
+    // LOG 3: Check itemStocks for each item
+    items.forEach((item, index) => {
+      console.log(`Item ${index + 1} (${item.name}):`, {
+        itemId: item.id,
+        stocksCount: item.itemStocks.length,
+        stocks: item.itemStocks
+      });
+    });
+
+    // Format the response
+    const formattedItems = items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      imageUrl: item.imageUrl,
+      color: item.color,
+      category: item.category?.name || null,
+      type: item.type?.typeName || null,
+      size: item.size?.name || null,
+      stockQuantity: item.itemStocks[0]?.quantity || 0,
+      storeId,
+    }));
+
+    // LOG 4: Check formatted results
+    console.log('Formatted items count:', formattedItems.length);
+    console.log('First formatted item:', formattedItems[0]);
+
+    return {
+      success: true,
+      storeId,
+      productType: 'items',
+      count: formattedItems.length,
+      products: formattedItems,
+    };
+  } catch (error) {
+    console.error('Error fetching items by store ID:', error);
+    throw error;
+  }
+};
+const getMaterialsByStoreId = async (storeId) => {
+  try {
+    // Validate storeId
+    if (!storeId) {
+      throw new Error('Store ID is required');
+    }
+
+    // Get materials with stock > 1 for the specified store
+    const materials = await prisma.material.findMany({
+      where: {
+        inventoryStocks: {
+          some: {
+            storeId,
+            quantity: {
+              gt: 0, // stock greater than one
+            },
+          },
+        },
+      },
+      include: {
+        inventoryStocks: {
+          where: {
+            storeId,
+            quantity: {
+              gt: 0,
+            },
+          },
+          select: {
+            quantity: true,
+            status: true,
+            storeId: true,
+            lastUpdated: true,
+          },
+        },
+        materialType: true,
+        unitOfMeasure: true,
+      },
+    });
+
+    // Format the response
+    const formattedMaterials = materials.map((material) => ({
+      id: material.id,
+      name: material.name,
+      color: material.color,
+      size: material.size,
+      plainMDF: material.plainMDF,
+      laminatedMDF: material.laminatedMDF,
+      wood: material.wood,
+      metal: material.metal,
+      accessory: material.accessory,
+      other: material.other,
+      imageUrl: material.imageUrl,
+      materialType: material.materialType?.name || null,
+      unitOfMeasure: material.unitOfMeasure?.name || null,
+      stockQuantity: material.inventoryStocks[0]?.quantity || 0,
+      stockStatus: material.inventoryStocks[0]?.status || null,
+      storeId,
+    }));
+
+    return {
+      success: true,
+      storeId,
+      productType: 'materials',
+      count: formattedMaterials.length,
+      products: formattedMaterials,
+    };
+  } catch (error) {
+    console.error('Error fetching materials by store ID:', error);
+    throw error;
+  }
+};
+// services/showroomMaterialService.js
+const getMaterialsByShowroomId = async (showroomId) => {
+  try {
+    // Validate showroomId
+    if (!showroomId) {
+      throw new Error('Showroom ID is required');
+    }
+
+    // Get materials with stock > 1 for the specified showroom
+    const materials = await prisma.material.findMany({
+      where: {
+        inventoryStocks: {
+          some: {
+            showroomId,
+            quantity: {
+              gt: 0, // stock greater than one
+            },
+          },
+        },
+      },
+      include: {
+        inventoryStocks: {
+          where: {
+            showroomId,
+            quantity: {
+              gt: 0,
+            },
+          },
+          select: {
+            quantity: true,
+            status: true,
+            showroomId: true,
+            lastUpdated: true,
+          },
+        },
+        materialType: true,
+        unitOfMeasure: true,
+      },
+    });
+
+    // Format the response
+    const formattedMaterials = materials.map((material) => ({
+      id: material.id,
+      name: material.name,
+      color: material.color,
+      size: material.size,
+      plainMDF: material.plainMDF,
+      laminatedMDF: material.laminatedMDF,
+      wood: material.wood,
+      metal: material.metal,
+      accessory: material.accessory,
+      other: material.other,
+      imageUrl: material.imageUrl,
+      materialType: material.materialType?.name || null,
+      unitOfMeasure: material.unitOfMeasure?.name || null,
+      stockQuantity: material.inventoryStocks[0]?.quantity || 0,
+      stockStatus: material.inventoryStocks[0]?.status || null,
+      showroomId,
+    }));
+
+    return {
+      success: true,
+      showroomId,
+      productType: 'materials',
+      count: formattedMaterials.length,
+      products: formattedMaterials,
+    };
+  } catch (error) {
+    console.error('Error fetching materials by showroom ID:', error);
+    throw error;
+  }
+};
+// services/showroomItemService.js
+const getItemsByShowroomId = async (showroomId) => {
+  try {
+    // Validate showroomId
+    if (!showroomId) {
+      throw new Error('Showroom ID is required');
+    }
+
+    // Get items with stock > 1 for the specified showroom
+    const items = await prisma.items.findMany({
+      where: {
+        itemStocks: {
+          some: {
+            showroomId,
+            quantity: {
+              gt: 0, // stock greater than zero
+            },
+          },
+        },
+      },
+      include: {
+        itemStocks: {
+          where: {
+            showroomId,
+            quantity: {
+              gt: 0,
+            },
+          },
+          select: {
+            quantity: true,
+            showroomId: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+        category: true,
+        type: true,
+        size: true,
+      },
+    });
+
+    // Format the response
+    const formattedItems = items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      imageUrl: item.imageUrl,
+      color: item.color,
+      category: item.category?.name || null,
+      type: item.type?.typeName || null,
+      size: item.size?.name || null,
+      stockQuantity: item.itemStocks[0]?.quantity || 0,
+      showroomId,
+    }));
+
+    return {
+      success: true,
+      showroomId,
+      productType: 'items',
+      count: formattedItems.length,
+      products: formattedItems,
+    };
+  } catch (error) {
+    console.error('Error fetching items by showroom ID:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   getAllStore,
   getStoreById,
@@ -400,4 +789,10 @@ module.exports = {
   getAllStockLedgers,
   getAllShopStocks,
   getAllStoresStocks,
+  setMainStore,
+  getMainStore,
+  getItemsByStoreId,
+  getMaterialsByStoreId,
+  getMaterialsByShowroomId,
+  getItemsByShowroomId,
 };

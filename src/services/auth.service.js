@@ -49,7 +49,7 @@ const login = async (email, password, ipAddr) => {
 
     const promises = [slowerBruteLimiter.consume(normalizedIp)];
 
-    // Find user
+    // Find user - corrected include
     const user = await prisma.user.findUnique({
       where: { email },
       include: {
@@ -62,9 +62,8 @@ const login = async (email, password, ipAddr) => {
             },
           },
         },
-        branch: true,
-        shops: true,
-        stores: true,
+        showroom: true,  // Single showroom (singular)
+        store: true,     // Single store (singular) - changed from stores to store
       },
     });
 
@@ -115,9 +114,8 @@ const login = async (email, password, ipAddr) => {
       lastLoginAt: user.lastLoginAt,
       status: user.status,
       phone: user.phone,
-      branch: user?.branch,
-      shops: user.shops,
-      stores: user.stores,
+      showroom: user.showroom,  // Single showroom
+      store: user.store,        // Single store - changed from stores to store
       permissions:
         user.role?.permissions?.map((rp) => rp.permission.name) || [],
     };

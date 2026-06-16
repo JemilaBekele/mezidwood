@@ -19,11 +19,39 @@ router.get(
   //   checkPermission('VIEW_CATEGORY'),
   categoryController.getCategory,
 );
-
+router.delete(
+  '/api/daily-stage-capacities/reset',
+  auth,
+  categoryController.resetDailyStageCapacities,
+);
+// Non-destructive: rebuild the capacity ledger from current projects.
+router.post(
+  '/api/daily-stage-capacities/rebuild',
+  auth,
+  categoryController.rebuildCapacityLedger,
+);
+router.post(
+  '/api/daily-stage-capacities/rebuild/week',
+  // auth,
+  categoryController.rebuildCapacityLedgerweek,
+);
 router.get(
   '/api/categories',
-  //   checkPermission('VIEW_CATEGORY'),
+  checkPermission('VIEW_CATEGORY'),
   categoryController.getCategories,
+);
+router.get(
+  '/api/daily/all/capacity',
+  //   checkPermission('VIEW_CATEGORY'),
+  categoryController.getAllDailyStageCapacities,
+);
+router.get(
+  '/api/capacity/telemetry',
+  categoryController.getCapacityTelemetry,
+);
+router.get(
+  '/api/capacity/stage-load',
+  categoryController.getStageLoadRail,
 );
 
 router.put(
@@ -39,70 +67,4 @@ router.delete(
   checkPermission('DELETE_CATEGORY'),
   categoryController.deleteCategory,
 );
-
-router.post(
-  '/api/colours',
-  auth,
-  checkPermission('CREATE_COLOUR'),
-  categoryController.createColour,
-);
-
-// Get all Colours
-router.get(
-  '/api/colours',
-  // checkPermission('VIEW_COLOUR'),
-  categoryController.getColours,
-);
-
-// Get Colour by ID
-router.get(
-  '/api/colours/:id',
-  auth,
-  // checkPermission('VIEW_COLOUR'),
-  categoryController.getColour,
-);
-
-// Update Colour
-router.patch(
-  '/api/colours/:id',
-  auth,
-  checkPermission('UPDATE_COLOUR'),
-  categoryController.updateColour,
-);
-
-// Delete Colour
-router.delete(
-  '/api/colours/:id',
-  auth,
-  checkPermission('DELETE_COLOUR'),
-  categoryController.deleteColour,
-);
-
-router.get(
-  '/api/reports/top-products',
-  auth,
-  categoryController.getTopSellingProductsController,
-);
-
-// Get top tailors by meters
-router.get(
-  '/api/reports/top-tailors',
-  auth,
-  categoryController.getTopTailorsByMetersController,
-);
-
-// Get worker log performance
-router.get(
-  '/api/reports/worker-performance',
-  auth,
-  categoryController.getWorkerLogPerformanceController,
-);
-
-// Get complete top performers dashboard
-router.get(
-  '/api/reports/top-performers-dashboard',
-  auth,
-  categoryController.getTopPerformersDashboardController,
-);
-
 module.exports = router;

@@ -12,10 +12,26 @@ const getCompanyByEmail = async (email) => {
   });
   return company;
 };
+const getCompanyById = async (id) => {
+  const company = await prisma.company.findUnique({
+    where: { id },
+  });
+  return company;
+};
 // Create Company
 const createCompany = async (companyData, files) => {
-  const { name, email, phone, address, description, tinAddress, TIN, From } =
-    companyData;
+  const {
+    name,
+    email,
+    phone,
+    address,
+    addressTow,
+    description,
+    tinAddress,
+    TIN,
+    From,
+    tiktok,
+  } = companyData;
 
   let logoPath = null;
 
@@ -39,10 +55,12 @@ const createCompany = async (companyData, files) => {
       email,
       phone,
       address,
+      addressTow,
       description,
       tinAddress,
       TIN,
       From,
+      tiktok,
       logo: logoPath,
     },
   });
@@ -50,36 +68,16 @@ const createCompany = async (companyData, files) => {
   return company;
 };
 
-// Get Company by ID
-const getCompanyById = async (id) => {
-  const company = await prisma.company.findUnique({
-    where: { id },
-  });
-  return company;
-};
-
-// Get all Companies
-const getAllCompanies = async () => {
-  const companies = await prisma.company.findMany({
-    orderBy: {
-      name: 'asc',
-    },
-  });
-
-  return {
-    companies,
-    count: companies.length,
-  };
-};
-
 const updateCompany = async (id, updateBody, files) => {
   const existingCompany = await getCompanyById(id);
+
   if (!existingCompany) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Company not found');
   }
 
   // Clean the updateBody to remove any weird field names
   const cleanedUpdateBody = {};
+
   for (const [key, value] of Object.entries(updateBody)) {
     // Remove any non-alphanumeric characters from field names
     const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '');
@@ -96,7 +94,7 @@ const updateCompany = async (id, updateBody, files) => {
     }
   }
 
-  let logoPath = existingCompany.logo; // Keep existing logo by default
+  let logoPath = existingCompany.logo;
 
   // Process new logo if provided
   const logoFile = files?.logo
@@ -119,12 +117,27 @@ const updateCompany = async (id, updateBody, files) => {
   const updatedCompany = await prisma.company.update({
     where: { id },
     data: {
-      ...cleanedUpdateBody, // Use the cleaned body
+      ...cleanedUpdateBody,
+      addressTow: cleanedUpdateBody.addressTow,
+      tiktok: cleanedUpdateBody.tiktok,
       logo: logoPath,
     },
   });
 
   return updatedCompany;
+};
+// Get all Companies
+const getAllCompanies = async () => {
+  const companies = await prisma.company.findMany({
+    orderBy: {
+      name: 'asc',
+    },
+  });
+
+  return {
+    companies,
+    count: companies.length,
+  };
 };
 
 // Delete Company

@@ -16,7 +16,8 @@ router.post(
 // Get a purchase by ID
 router.get(
   '/api/purchases/:id',
-  //   checkPermission('VIEW_PURCHASE'),
+  auth,
+  // checkPermission('VIEW_PURCHASE'),
   purchaseController.getPurchase,
 );
 
@@ -32,7 +33,7 @@ router.get(
 router.get(
   '/api/purchases',
   auth,
-  //   checkPermission('VIEW_ALL_PURCHASES'),
+  checkPermission('VIEW_ALL_PURCHASES'),
   purchaseController.getPurchases,
 );
 
@@ -46,7 +47,7 @@ router.put(
 router.put(
   '/api/purchases/accept/:id',
   auth,
-  //   checkPermission('UPDATE_PURCHASE'),
+  checkPermission('ACCEPT_PURCHASE'),
   purchaseController.acceptPurchase,
 );
 

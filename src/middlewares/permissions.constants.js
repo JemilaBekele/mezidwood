@@ -11,13 +11,43 @@ module.exports = {
     },
   },
   ROLE: {
-    CREATE: { name: 'CREATE_ROLE', description: 'Create new role' },
-    VIEW_ALL: { name: 'VIEW_ALL_ROLES', description: 'View all roles' },
-    VIEW: { name: 'VIEW_ROLE', description: 'View role by ID' },
-    UPDATE: { name: 'UPDATE_ROLE', description: 'Update role' },
-    DELETE: { name: 'DELETE_ROLE', description: 'Delete role' },
+    CREATE: { name: 'CREATE_ROLE' },
+    VIEW_ALL: { name: 'VIEW_ALL_ROLES' },
+    VIEW: { name: 'VIEW_ROLE' },
+    UPDATE: { name: 'UPDATE_ROLE' },
+    DELETE: { name: 'DELETE_ROLE' },
   },
-
+  DASHBOARDS: {
+    MAIN_DASHBOARD: {
+      name: 'VIEW_MAIN_DASHBOARD',
+      description: 'View main dashboard',
+    },
+    VIEW_REPORT: {
+      name: 'VIEW_SALES_REPORT_VIEW_DASHBOARD',
+      description: 'View sales report',
+    },
+    VIEW_PROJECT_DASHBOARD: {
+      name: 'VIEW_PROJECT_DASHBOARD',
+    },
+    VIEW_PROJECT_STAGES_DASHBOARD: {
+      name: 'VIEW_PROJECT_STAGES_DASHBOARD',
+    },
+    VIEW_POS_DASHBOARD: {
+      name: 'VIEW_POS_DASHBOARD',
+    },
+    VIEW_PRODUCT_DASHBOARD: {
+      name: 'VIEW_PRODUCT_DASHBOARD',
+    },
+    VIEW_Users_DASHBOARD: {
+      name: 'VIEW_Users_DASHBOARD',
+    },
+    VIEW_INVENTORY_DASHBOARD: {
+      name: 'VIEW_INVENTORY_DASHBOARD',
+    },
+    VIEW_SYSTEM_DASHBOARD: {
+      name: 'VIEW_SYSTEM_DASHBOARD',
+    },
+  },
   ROLE_PERMISSION: {
     CREATE: {
       name: 'CREATE_ROLE_PERMISSION',
@@ -32,10 +62,8 @@ module.exports = {
       name: 'DELETE_ROLE_PERMISSION',
     },
   },
+
   Employee: {
-    VIEW_MAIN_DASHBOARD: {
-      name: 'VIEW_MAIN_DASHBOARD',
-    },
     VIEW_DASHBOARD: {
       name: 'VIEW_Users_DASHBOARD',
     },
@@ -58,130 +86,21 @@ module.exports = {
       name: 'CHANGE_USER_PASSWORD',
     },
   },
-  BRANCH: {
-    VIEW_DASHBOARD: {
-      name: 'VIEW_SYSTEM_DASHBOARD',
-    },
-    CREATE: { name: 'CREATE_BRANCH', description: 'Create new branches' },
-    VIEW_ALL: { name: 'VIEW_ALL_BRANCHES', description: 'View all branches' },
-    UPDATE: { name: 'UPDATE_BRANCH', description: 'Update branch information' },
-    DELETE: { name: 'DELETE_BRANCH', description: 'Delete branches' },
-  },
-  CATEGORY: {
-    CREATE: { name: 'CREATE_CATEGORY' },
-    VIEW_ALL: {
-      name: 'VIEW_ALL_CATEGORIES',
-    },
-    UPDATE: {
-      name: 'UPDATE_CATEGORY',
-    },
-    DELETE: { name: 'DELETE_CATEGORY' },
-  },
-  COLOUR: {
-    CREATE: {
-      name: 'CREATE_COLOUR',
-    },
-    VIEW_ALL: {
-      name: 'VIEW_ALL_COLOURS',
-    },
-    UPDATE: {
-      name: 'UPDATE_COLOUR',
-    },
-    DELETE: {
-      name: 'DELETE_COLOUR',
-    },
-  },
-  CURTAIN_ORDER: {
-    CREATE: { name: 'CREATE_CURTAIN_ORDER' },
-    VIEW_ALL: { name: 'VIEW_ALL_CURTAIN_ORDERS' },
-    VIEW: { name: 'VIEW_CURTAIN_ORDER' },
-    UPDATE: { name: 'UPDATE_CURTAIN_ORDER' },
-    DELETE: { name: 'DELETE_CURTAIN_ORDER' },
 
-    UPDATE_STATUS: { name: 'UPDATE_CURTAIN_ORDER_STATUS' },
-    UPDATE_PAYMENT: { name: 'UPDATE_CURTAIN_ORDER_PAYMENT' },
-    UPDATE_DELIVERY_DEADLINE: { name: 'UPDATE_CURTAIN_DELIVERY_DEADLINE' },
-    ASSIGN_WORKER: { name: 'ASSIGN_CURTAIN_ORDER_WORKER' },
-    GIVE_WORKER_PAYMENT: { name: 'GIVE_WORKER_PAYMENT' },
-    VIEW_WORKER_PAYMENT_REPORT: { name: 'VIEW_WORKER_PAYMENT_REPORT' },
-    VIEW_REPORT_DASHBOARD: { name: 'VIEW_REPORT_DASHBOARD' },
-  },
-  CURTAIN_TYPE: {
-    CREATE: { name: 'CREATE_CURTAIN_TYPE' },
-    VIEW_ALL: { name: 'VIEW_ALL_CURTAIN_TYPES' },
-    UPDATE: { name: 'UPDATE_CURTAIN_TYPE' },
-    DELETE: { name: 'DELETE_CURTAIN_TYPE' },
-  },
-  DASHBOARDS: {
-    MAIN_DASHBOARD: {
-      name: 'VIEW_MAIN_DASHBOARD',
-      description: 'View main dashboard',
-    },
-    VIEW_REPORT: {
-      name: 'VIEW_SALES_REPORT_VIEW_DASHBOARD',
-      description: 'View sales report',
-    },
-    VIEW_SELL_DASHBOARD: {
-      name: 'VIEW_SELL_DASHBOARD',
-      description: 'View comprehensive sell dashboard data',
-    },
-    VIEW_PRODUCT_DASHBOARD: {
-      name: 'VIEW_PRODUCT_DASHBOARD',
-      description: 'View comprehensive product dashboard data',
-    },
-    VIEW_USERS_DASHBOARD: {
-      name: 'VIEW_Users_DASHBOARD',
-      description: 'View comprehensive inventory dashboard data',
-    },
-    VIEW_SYSTEM_DASHBOARD: {
-      name: 'VIEW_SYSTEM_DASHBOARD',
-      description: 'View comprehensive system dashboard data',
-    },
-  },
-  REPORT: {
-    VIEW_TOTAL_SOLD: {
-      name: 'VIEW_TOTAL_SOLD',
-      description: 'View total sold products report',
-    },
-    VIEW_ALL_TRENDS: {
-      name: 'VIEW_ALL_SELLS_TREND',
-      description: 'View sales trends across all sells',
-    },
-    VIEW_SALES_RANK: {
-      name: 'VIEW_SALES_RANK',
-      description: 'View ranked sales report',
-    },
-    VIEW_REPORT: {
-      name: 'VIEW_SALES_REPORT_VIEW_DASHBOARD',
-      description: 'View sales report',
-    },
-    RESET: {
-      name: 'RESET_VIEW_DASHBOARD',
-      description: 'Reset page',
-    },
-    MAIN_DASHBOARD: {
-      name: 'VIEW_MAIN_DASHBOARD',
-      description: 'View main dashboard',
-    },
-  },
-  MOVEMENT_TYPE: {
-    CREATE: { name: 'CREATE_MOVEMENT_TYPE' },
-    VIEW_ALL: { name: 'VIEW_ALL_MOVEMENT_TYPES' },
-    UPDATE: { name: 'UPDATE_MOVEMENT_TYPE' },
-    DELETE: { name: 'DELETE_MOVEMENT_TYPE' },
-  },
-  CUSTOMER: {
-    CREATE: { name: 'CREATE_CUSTOMER' },
-    VIEW_ALL: { name: 'VIEW_ALL_CUSTOMERS' },
+  COMPANY: {
+    CREATE: { name: 'CREATE_COMPANY' },
+    VIEW: { name: 'VIEW_COMPANY' },
     UPDATE: {
-      name: 'UPDATE_CUSTOMER',
+      name: 'UPDATE_COMPANY',
     },
-    DELETE: { name: 'DELETE_CUSTOMER' },
+    DELETE: { name: 'DELETE_COMPANY' },
   },
-
   SUPPLIER: {
     CREATE: {
       name: 'CREATE_SUPPLIER',
+    },
+    VIEW: {
+      name: 'VIEW_SUPPLIER',
     },
     VIEW_ALL: {
       name: 'VIEW_ALL_SUPPLIERS',
@@ -193,78 +112,19 @@ module.exports = {
       name: 'DELETE_SUPPLIER',
     },
   },
-  PRODUCT: {
-    VIEW_DASHBOARD: {
-      name: 'VIEW_PRODUCT_DASHBOARD',
-    },
-    CREATE: {
-      name: 'CREATE_PRODUCT',
-    },
-    VIEW_ALL: {
-      name: 'VIEW_PRODUCT_ALL',
-    },
+  CUSTOMER: {
+    CREATE: { name: 'CREATE_CUSTOMER' },
+    VIEW_ALL: { name: 'VIEW_ALL_CUSTOMERS' },
     UPDATE: {
-      name: 'UPDATE_PRODUCT',
+      name: 'UPDATE_CUSTOMER',
     },
-    DELETE: {
-      name: 'DELETE_PRODUCT',
-    },
-    VIEW: {
-      name: 'VIEW',
-    },
-  },
-  PURCHASE: {
-    CREATE: {
-      name: 'CREATE_PURCHASE',
-    },
-    VIEW_ALL: {
-      name: 'VIEW_ALL_PURCHASES',
-    },
-    UPDATE: {
-      name: 'UPDATE_PURCHASE',
-    },
-    ACCEPT: {
-      name: 'ACCEPT_PURCHASE',
-    },
-    DELETE: {
-      name: 'DELETE_PURCHASE',
-    },
-  },
-
-  SHOP: {
-    CREATE: { name: 'CREATE_SHOP' },
-    VIEW_ALL: { name: 'VIEW_ALL_SHOPS' },
-    UPDATE: { name: 'UPDATE_SHOP' },
-    DELETE: { name: 'DELETE_SHOP' },
+    DELETE: { name: 'DELETE_CUSTOMER' },
   },
   STORE: {
     CREATE: { name: 'CREATE_STORE' },
     VIEW_ALL: { name: 'VIEW_ALL_STORES' },
     UPDATE: { name: 'UPDATE_STORE' },
     DELETE: { name: 'DELETE_STORE' },
-  },
-  STOCK_CORRECTION: {
-    CREATE: {
-      name: 'CREATE_STOCK_CORRECTION',
-    },
-    VIEW: {
-      name: 'VIEW_STOCK_CORRECTION',
-    },
-    VIEW_ALL: {
-      name: 'VIEW_ALL_STOCK_CORRECTIONS',
-    },
-    UPDATE: {
-      name: 'UPDATE_STOCK_CORRECTION',
-    },
-    APPROVE: {
-      name: 'APPROVE_STOCK_CORRECTION',
-    },
-    REJECT: {
-      name: 'REJECT_STOCK_CORRECTION',
-    },
-    DELETE: {
-      name: 'DELETE_STOCK_CORRECTION',
-    },
   },
 
   UNIT_OF_MEASURE: {
@@ -302,6 +162,373 @@ module.exports = {
     },
     DELETE: {
       name: 'DELETE_TRANSFER',
+    },
+  },
+  STOCK_CORRECTION: {
+    CREATE: {
+      name: 'CREATE_STOCK_CORRECTION',
+    },
+    VIEW: {
+      name: 'VIEW_STOCK_CORRECTION',
+    },
+    VIEW_ALL: {
+      name: 'VIEW_ALL_STOCK_CORRECTIONS',
+    },
+    UPDATE: {
+      name: 'UPDATE_STOCK_CORRECTION',
+    },
+    APPROVE: {
+      name: 'APPROVE_STOCK_CORRECTION',
+    },
+    REJECT: {
+      name: 'REJECT_STOCK_CORRECTION',
+    },
+    DELETE: {
+      name: 'DELETE_STOCK_CORRECTION',
+    },
+  },
+  SELL: {
+    VIEW_DASHBOARD: {
+      name: 'VIEW_SELL_DASHBOARD',
+    },
+
+    CREATE: {
+      name: 'CREATE_SELL',
+    },
+
+    VIEW: {
+      name: 'VIEW_SELL',
+    },
+
+    VIEW_ALL: {
+      name: 'VIEW_ALL_SELLS',
+    },
+
+    UPDATE: {
+      name: 'UPDATE_SELL',
+    },
+
+    DELETE: {
+      name: 'DELETE_SELL',
+    },
+
+    DELIVER_ALL: {
+      name: 'DELIVER_ALL_SALE_ITEMS',
+    },
+
+    UPDATE_STATUS: {
+      name: 'UPDATE_SELL_STATUS',
+    },
+
+    ADD_PAYMENT: {
+      name: 'ADD_SELL_PAYMENT',
+    },
+  },
+
+  PURCHASE: {
+    CREATE: {
+      name: 'CREATE_PURCHASE',
+    },
+    VIEW_ALL: {
+      name: 'VIEW_ALL_PURCHASES',
+    },
+    UPDATE: {
+      name: 'UPDATE_PURCHASE',
+    },
+    ACCEPT: {
+      name: 'ACCEPT_PURCHASE',
+    },
+    DELETE: {
+      name: 'DELETE_PURCHASE',
+    },
+  },
+  REPORT: {
+    VIEW_COMPLETE_STATISTICS_REPORT: {
+      name: 'VIEW_COMPLETE_STATISTICS_REPORT',
+    },
+    VIEW_DETAILED_FINISHED_PRODUCTS: {
+      name: 'VIEW_DETAILED_FINISHED_PRODUCTS',
+    },
+    VIEW_MONTHLY_BREAKDOWN: {
+      name: 'VIEW_MONTHLY_BREAKDOWN_REPORT',
+    },
+    VIEW_COMBINED: {
+      name: 'VIEW_COMBINED_REPORT',
+    },
+    VIEW_DASHBOARD_COUNTS: {
+      name: 'VIEW_DASHBOARD_COUNTS',
+    },
+    VIEW_ALL_SELLS_TREND: {
+      name: 'VIEW_ALL_SELLS_TREND',
+    },
+  },
+
+  BANK: {
+    CREATE: {
+      name: 'CREATE_BANK',
+    },
+    VIEW: {
+      name: 'VIEW_BANK',
+    },
+    UPDATE: {
+      name: 'UPDATE_BANK',
+    },
+    DELETE: {
+      name: 'DELETE_BANK',
+    },
+  },
+  CAPACITY_SLOT: {
+    CREATE: {
+      name: 'CREATE_CAPACITY_SLOT',
+    },
+    VIEW: {
+      name: 'VIEW_CAPACITY_SLOT',
+    },
+    UPDATE: {
+      name: 'UPDATE_CAPACITY_SLOT',
+    },
+    DELETE: {
+      name: 'DELETE_CAPACITY_SLOT',
+    },
+  },
+  DELIVERY_ESTIMATION: {
+    CREATE: {
+      name: 'CREATE_DELIVERY_ESTIMATION',
+    },
+    VIEW: {
+      name: 'VIEW_DELIVERY_ESTIMATION',
+    },
+
+    DELETE: {
+      name: 'DELETE_DELIVERY_ESTIMATION',
+    },
+  },
+  PRODUCT: {
+    VIEW_DASHBOARD: {
+      name: 'VIEW_PRODUCT_DASHBOARD',
+    },
+    CREATE: {
+      name: 'CREATE_PRODUCT',
+    },
+    VIEW_ALL: {
+      name: 'VIEW_PRODUCT_ALL',
+    },
+    UPDATE: {
+      name: 'UPDATE_PRODUCT',
+    },
+    DELETE: {
+      name: 'DELETE_PRODUCT',
+    },
+    VIEW: {
+      name: 'VIEW_PRODUCT',
+    },
+  },
+  MATERIAL: {
+    CREATE: {
+      name: 'CREATE_MATERIAL',
+    },
+    VIEW_ALL: {
+      name: 'VIEW_MATERIAL_ALL',
+    },
+    VIEW: {
+      name: 'VIEW_MATERIAL',
+    },
+    VIEW_STOCK: {
+      name: 'VIEW_MATERIAL_STOCK',
+    },
+    UPDATE: {
+      name: 'UPDATE_MATERIAL',
+    },
+    DELETE: {
+      name: 'DELETE_MATERIAL',
+    },
+  },
+  MATERIAL_CATEGORY: {
+    CREATE: {
+      name: 'CREATE_MATERIAL_CATEGORY',
+    },
+    VIEW_ALL: {
+      name: 'VIEW_MATERIAL_CATEGORY_ALL',
+    },
+    UPDATE: {
+      name: 'UPDATE_MATERIAL_CATEGORY',
+    },
+    DELETE: {
+      name: 'DELETE_MATERIAL_CATEGORY',
+    },
+  },
+  PRODUCT_CATEGORY: {
+    CREATE: {
+      name: 'CREATE_PRODUCT_CATEGORY',
+    },
+    VIEW_ALL: {
+      name: 'VIEW_PRODUCT_CATEGORIES',
+    },
+    UPDATE: {
+      name: 'UPDATE_PRODUCT_CATEGORY',
+    },
+    DELETE: {
+      name: 'DELETE_PRODUCT_CATEGORY',
+    },
+  },
+
+  PRODUCT_TYPE: {
+    CREATE: {
+      name: 'CREATE_PRODUCT_TYPE',
+    },
+    VIEW_ALL: {
+      name: 'VIEW_PRODUCT_TYPES',
+    },
+    UPDATE: {
+      name: 'UPDATE_PRODUCT_TYPE',
+    },
+    DELETE: {
+      name: 'DELETE_PRODUCT_TYPE',
+    },
+  },
+
+  SIZE: {
+    CREATE: {
+      name: 'CREATE_SIZE',
+    },
+    VIEW_ALL: {
+      name: 'VIEW_SIZES',
+    },
+    UPDATE: {
+      name: 'UPDATE_SIZE',
+    },
+    DELETE: {
+      name: 'DELETE_SIZE',
+    },
+  },
+  PROFORMA_INVOICE: {
+    CREATE: {
+      name: 'CREATE_PROFORMA',
+    },
+    VIEW_ALL: {
+      name: 'VIEW_ALL_PROFORMA',
+    },
+    VIEW: {
+      name: 'VIEW_PROFORMA',
+    },
+    UPDATE: {
+      name: 'UPDATE_PROFORMA',
+    },
+    DELETE: {
+      name: 'DELETE_PROFORMA',
+    },
+    UPDATE_STATUS: {
+      name: 'UPDATE_PROFORMA_STATUS',
+    },
+    UPDATE_ADDITIONAL_QUANTITY: {
+      name: 'UPDATE_PROFORMA_ADDITIONAL_QUANTITY',
+    },
+    ADD_PAYMENT: {
+      name: 'ADD_PAYMENT_TO_PROFORMA_INVOICE',
+    },
+  },
+  PROJECT: {
+    CREATE: {
+      name: 'CREATE_PROJECT',
+    },
+    VIEW_ALL: {
+      name: 'VIEW_PROJECTS',
+    },
+    VIEW: {
+      name: 'VIEW_PROJECT',
+    },
+    VIEW_BY_CUSTOMER: {
+      name: 'VIEW_PROJECTS_BY_CUSTOMER',
+    },
+    UPDATE: {
+      name: 'UPDATE_PROJECT',
+    },
+
+    DELETE: {
+      name: 'DELETE_PROJECT',
+    },
+
+    UPDATE_STAGE: {
+      name: 'UPDATE_PROJECT_STAGE',
+    },
+  },
+  PROJECT_STAGE_WORK_LOG: {
+    CREATE: {
+      name: 'CREATE_PROJECT_STAGE_WORK_LOG',
+    },
+    DELETE: {
+      name: 'DELETE_PROJECT_STAGE_WORK_LOG',
+    },
+  },
+  SHOWROOM: {
+    CREATE: {
+      name: 'CREATE_SHOWROOM',
+    },
+    VIEW_ALL: {
+      name: 'VIEW_SHOWROOMS',
+    },
+    UPDATE: {
+      name: 'UPDATE_SHOWROOM',
+    },
+    DELETE: {
+      name: 'DELETE_SHOWROOM',
+    },
+  },
+  STAGE: {
+    VIEW_METAL_WORK_PROJECTS: {
+      name: 'VIEW_METAL_WORK_PROJECTS',
+    },
+
+    VIEW_DESIGN_PROJECTS: {
+      name: 'VIEW_DESIGN_PROJECTS',
+    },
+
+    VIEW_DESIGN_PROJECTS_BY_DESIGNER: {
+      name: 'VIEW_DESIGN_PROJECTS_BY_DESIGNER',
+    },
+
+    VIEW_UNASSIGNED_DESIGN_PROJECTS: {
+      name: 'VIEW_UNASSIGNED_DESIGN_PROJECTS',
+    },
+
+    VIEW_PURCHASING_PROJECTS: {
+      name: 'VIEW_PURCHASING_PROJECTS',
+    },
+
+    VIEW_MATERIAL_USAGE_REPORT: {
+      name: 'VIEW_MATERIAL_USAGE_REPORT',
+    },
+
+    VIEW_CNC_PROJECTS: {
+      name: 'VIEW_CNC_PROJECTS',
+    },
+
+    VIEW_CUTTING_PROJECTS: {
+      name: 'VIEW_CUTTING_PROJECTS',
+    },
+
+    VIEW_EDGE_BANDING_PROJECTS: {
+      name: 'VIEW_EDGE_BANDING_PROJECTS',
+    },
+
+    VIEW_ASSEMBLY_PROJECTS: {
+      name: 'VIEW_ASSEMBLY_PROJECTS',
+    },
+
+    VIEW_PAINTING_PROJECTS: {
+      name: 'VIEW_PAINTING_PROJECTS',
+    },
+
+    VIEW_FINISHED_PROJECTS: {
+      name: 'VIEW_FINISHED_PROJECTS',
+    },
+
+    VIEW_DELIVERY_PROJECTS: {
+      name: 'VIEW_DELIVERY_PROJECTS',
+    },
+
+    VIEW_INSTALLATION_PROJECTS: {
+      name: 'VIEW_INSTALLATION_PROJECTS',
     },
   },
 };

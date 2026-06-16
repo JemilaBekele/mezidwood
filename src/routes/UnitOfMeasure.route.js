@@ -8,8 +8,8 @@ const checkPermission = require('../middlewares/permission.middleware');
 // Create a UnitOfMeasure
 router.post(
   '/api/units-of-measure',
-  //   auth,
-  // checkPermission('CREATE_UNIT_OF_MEASURE'),
+    auth,
+  checkPermission('CREATE_UNIT_OF_MEASURE'),
   unitOfMeasureController.createUnitOfMeasure,
 );
 

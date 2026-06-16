@@ -27,19 +27,38 @@ const getStore = catchAsync(async (req, res) => {
 
 // Get all Stores
 const getStores = catchAsync(async (req, res) => {
-  const userId = req.user.id; // ✅ extract userId
-
+  const userId = req.user.id;
   const result = await storeService.getAllStores(userId);
   res.status(httpStatus.OK).send({
     success: true,
     ...result,
   });
 });
+
 const getAllStore = catchAsync(async (req, res) => {
   const result = await storeService.getAllStore();
   res.status(httpStatus.OK).send({
     success: true,
     ...result,
+  });
+});
+
+// Set Main Store
+const setMainStore = catchAsync(async (req, res) => {
+  const store = await storeService.setMainStore(req.params.id);
+  res.status(httpStatus.OK).send({
+    success: true,
+    message: 'Main store set successfully',
+    store,
+  });
+});
+
+// Get Main Store
+const getMainStore = catchAsync(async (req, res) => {
+  const store = await storeService.getMainStore();
+  res.status(httpStatus.OK).send({
+    success: true,
+    store,
   });
 });
 
@@ -61,6 +80,7 @@ const deleteStore = catchAsync(async (req, res) => {
     message: 'Store deleted successfully',
   });
 });
+
 const getAllStockLedgers = catchAsync(async (req, res) => {
   const { startDate, endDate } = req.query;
 
@@ -68,7 +88,7 @@ const getAllStockLedgers = catchAsync(async (req, res) => {
     startDate,
     endDate,
   });
-  res.status(httpStatus.OK).send(result); // { stockLedgers, count }
+  res.status(httpStatus.OK).send(result);
 });
 
 const getAllShopStocks = catchAsync(async (req, res) => {
@@ -78,7 +98,7 @@ const getAllShopStocks = catchAsync(async (req, res) => {
     startDate,
     endDate,
   });
-  res.status(httpStatus.OK).send(result); // { shopStocks, count }
+  res.status(httpStatus.OK).send(result);
 });
 
 const getAllStoresStocks = catchAsync(async (req, res) => {
@@ -88,7 +108,75 @@ const getAllStoresStocks = catchAsync(async (req, res) => {
     startDate,
     endDate,
   });
-  res.status(httpStatus.OK).send(result); // { stores, count }
+  res.status(httpStatus.OK).send(result);
+});
+const getItemsByStore = catchAsync(async (req, res) => {
+  const { storeId } = req.params;
+
+  if (!storeId) {
+    return res.status(httpStatus.BAD_REQUEST).send({
+      success: false,
+      message: 'Store ID is required',
+    });
+  }
+
+  const result = await storeService.getItemsByStoreId(storeId);
+
+  res.status(httpStatus.OK).send(result);
+});
+
+/**
+ * GET Materials by Store ID
+ */
+const getMaterialsByStore = catchAsync(async (req, res) => {
+  const { storeId } = req.params;
+
+  if (!storeId) {
+    return res.status(httpStatus.BAD_REQUEST).send({
+      success: false,
+      message: 'Store ID is required',
+    });
+  }
+
+  const result = await storeService.getMaterialsByStoreId(storeId);
+
+  res.status(httpStatus.OK).send(result);
+});
+
+/**
+ * GET Items by Showroom ID
+ */
+const getItemsByShowroom = catchAsync(async (req, res) => {
+  const { showroomId } = req.params;
+
+  if (!showroomId) {
+    return res.status(httpStatus.BAD_REQUEST).send({
+      success: false,
+      message: 'Showroom ID is required',
+    });
+  }
+
+  const result = await storeService.getItemsByShowroomId(showroomId);
+
+  res.status(httpStatus.OK).send(result);
+});
+
+/**
+ * GET Materials by Showroom ID
+ */
+const getMaterialsByShowroom = catchAsync(async (req, res) => {
+  const { showroomId } = req.params;
+
+  if (!showroomId) {
+    return res.status(httpStatus.BAD_REQUEST).send({
+      success: false,
+      message: 'Showroom ID is required',
+    });
+  }
+
+  const result = await storeService.getMaterialsByShowroomId(showroomId);
+
+  res.status(httpStatus.OK).send(result);
 });
 
 module.exports = {
@@ -101,4 +189,10 @@ module.exports = {
   getAllShopStocks,
   getAllStoresStocks,
   getAllStore,
+  setMainStore,
+  getMainStore,
+  getItemsByStore,
+  getMaterialsByStore,
+  getItemsByShowroom,
+  getMaterialsByShowroom,
 };
