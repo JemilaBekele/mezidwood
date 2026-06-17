@@ -65,14 +65,14 @@ module.exports = async (app) => {
   if (env === 'production') {
     app.use(
       cors({
-        origin: ['https://Rosewood.smartdent.online/', 'http://localhost:3000'],
+        origin: ['https://rcf.ordere.net/', 'http://localhost:3030'],
         credentials: true,
       }),
     );
     app.options(
       '*',
       cors({
-        origin: ['https://Rosewood.smartdent.online/', 'http://localhost:3000'],
+        origin: ['https://rcf.ordere.net/', 'http://localhost:3030'],
         credentials: true,
       }),
     );
