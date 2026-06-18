@@ -130,8 +130,6 @@ exports.Prisma.UserScalarFieldEnum = {
   password: 'password',
   roleId: 'roleId',
   status: 'status',
-  storeId: 'storeId',
-  showroomId: 'showroomId',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   lastLoginAt: 'lastLoginAt'
@@ -804,9 +802,7 @@ exports.Prisma.UserOrderByRelevanceFieldEnum = {
   userCode: 'userCode',
   email: 'email',
   password: 'password',
-  roleId: 'roleId',
-  storeId: 'storeId',
-  showroomId: 'showroomId'
+  roleId: 'roleId'
 };
 
 exports.Prisma.RoleOrderByRelevanceFieldEnum = {

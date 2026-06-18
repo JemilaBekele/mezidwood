@@ -25,85 +25,6 @@ const generateUserCode = async (prefix = 'U') => {
   return `${prefix}-${nextNumber.toString().padStart(4, '0')}`;
 };
 
-// Helper function to validate store and showroom assignments
-// Helper function to validate store and showroom assignments
-const validateStoreAndShowroom = async (storeId, showroomId) => {
-  console.log('Validating store and showroom:', { storeId, showroomId });
-
-  // If both are provided, check if showroom exists
-  if (storeId && showroomId) {
-    try {
-      // Check if showroom exists
-      const showroom = await prisma.showroom.findUnique({
-        where: { id: showroomId },
-        select: { id: true, name: true }, // Only select fields that exist
-      });
-
-      if (!showroom) {
-        console.error('Showroom not found:', showroomId);
-        throw new ApiError(httpStatus.BAD_REQUEST, 'Showroom not found');
-      }
-      console.log('Showroom found:', showroom);
-
-      // Check if store exists
-      const store = await prisma.store.findUnique({
-        where: { id: storeId },
-        select: { id: true, name: true },
-      });
-
-      if (!store) {
-        console.error('Store not found:', storeId);
-        throw new ApiError(httpStatus.BAD_REQUEST, 'Store not found');
-      }
-      console.log('Store found:', store);
-
-      // Note: Since Showroom and Store have no direct relationship in the schema,
-      // we just validate that both exist independently
-    } catch (error) {
-      console.error('Error validating store and showroom:', error);
-      throw error;
-    }
-  }
-
-  // If only showroom is provided, verify it exists
-  if (showroomId && !storeId) {
-    try {
-      const showroom = await prisma.showroom.findUnique({
-        where: { id: showroomId },
-        select: { id: true, name: true },
-      });
-
-      if (!showroom) {
-        console.error('Showroom not found:', showroomId);
-        throw new ApiError(httpStatus.BAD_REQUEST, 'Showroom not found');
-      }
-      console.log('Showroom found:', showroom);
-    } catch (error) {
-      console.error('Error validating showroom:', error);
-      throw error;
-    }
-  }
-
-  // If only store is provided, verify it exists
-  if (storeId && !showroomId) {
-    try {
-      const store = await prisma.store.findUnique({
-        where: { id: storeId },
-        select: { id: true, name: true },
-      });
-
-      if (!store) {
-        console.error('Store not found:', storeId);
-        throw new ApiError(httpStatus.BAD_REQUEST, 'Store not found');
-      }
-      console.log('Store found:', store);
-    } catch (error) {
-      console.error('Error validating store:', error);
-      throw error;
-    }
-  }
-};
-
 const createUser = async (userData) => {
   const {
     email,
@@ -111,8 +32,8 @@ const createUser = async (userData) => {
     name,
     phone,
     roleId,
-    storeId,
-    showroomId,
+    storeIds = [],
+    showroomIds = [],
     status = Status.Active,
     ...rest
   } = userData;
@@ -121,9 +42,6 @@ const createUser = async (userData) => {
   if (await isEmailTaken(email)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
   }
-
-  // Validate store and showroom relationships
-  await validateStoreAndShowroom(storeId, showroomId);
 
   // Generate user code
   const userCode = await generateUserCode();
@@ -144,12 +62,16 @@ const createUser = async (userData) => {
   };
 
   // Add store and showroom relations if provided
-  if (storeId) {
-    userCreateData.store = { connect: { id: storeId } };
+  if (storeIds && storeIds.length > 0) {
+    userCreateData.stores = {
+      connect: storeIds.map((id) => ({ id })),
+    };
   }
 
-  if (showroomId) {
-    userCreateData.showroom = { connect: { id: showroomId } };
+  if (showroomIds && showroomIds.length > 0) {
+    userCreateData.showrooms = {
+      connect: showroomIds.map((id) => ({ id })),
+    };
   }
 
   // Create user
@@ -157,8 +79,8 @@ const createUser = async (userData) => {
     data: userCreateData,
     include: {
       role: true,
-      store: true,
-      showroom: true,
+      stores: true,
+      showrooms: true,
     },
   });
 
@@ -188,14 +110,22 @@ const getUsers = async ({ startDate, endDate, storeId, showroomId } = {}) => {
     };
   }
 
-  // Add store filter if provided
+  // Add store filter if provided (many-to-many)
   if (storeId) {
-    whereClause.storeId = storeId;
+    whereClause.stores = {
+      some: {
+        id: storeId,
+      },
+    };
   }
 
-  // Add showroom filter if provided
+  // Add showroom filter if provided (many-to-many)
   if (showroomId) {
-    whereClause.showroomId = showroomId;
+    whereClause.showrooms = {
+      some: {
+        id: showroomId,
+      },
+    };
   }
 
   // Get total count (with filters applied)
@@ -208,8 +138,8 @@ const getUsers = async ({ startDate, endDate, storeId, showroomId } = {}) => {
     where: whereClause,
     include: {
       role: true,
-      store: true,
-      showroom: true,
+      stores: true,
+      showrooms: true,
     },
     orderBy: {
       createdAt: 'desc',
@@ -230,8 +160,8 @@ const getUserById = async (id) => {
     where: { id },
     include: {
       role: true,
-      store: true,
-      showroom: true,
+      stores: true,
+      showrooms: true,
     },
   });
 
@@ -255,8 +185,8 @@ const getUserByIdWithPermissions = async (id) => {
           },
         },
       },
-      store: true,
-      showroom: true,
+      stores: true,
+      showrooms: true,
     },
   });
 
@@ -272,14 +202,15 @@ const getUserByEmail = async (email) => {
     where: { email },
     include: {
       role: true,
-      store: true,
-      showroom: true,
+      stores: true,
+      showrooms: true,
     },
   });
 
   // Return null instead of throwing error when not found
   return user;
 };
+
 const updateUserById = async (userId, updateBody) => {
   try {
     console.log('Updating user with ID:', userId);
@@ -289,8 +220,8 @@ const updateUserById = async (userId, updateBody) => {
     console.log('Current user data:', {
       id: user.id,
       email: user.email,
-      storeId: user.storeId,
-      showroomId: user.showroomId,
+      storeIds: user.stores.map((s) => s.id),
+      showroomIds: user.showrooms.map((s) => s.id),
       roleId: user.roleId,
     });
 
@@ -305,27 +236,12 @@ const updateUserById = async (userId, updateBody) => {
     }
 
     // Remove password field from update (silently ignore)
-    const { roleId, storeId, showroomId, password, ...rest } = updateBody;
+    const { roleId, storeIds, showroomIds, password, ...rest } = updateBody;
 
     // Log warning but continue (optional)
     if (password) {
       console.warn('⚠️ Password update attempt ignored for user:', userId);
       console.warn('Password field was provided but will not be updated');
-    }
-
-    // Validate store and showroom relationships if being updated
-    if (storeId !== undefined || showroomId !== undefined) {
-      const newStoreId = storeId !== undefined ? storeId : user.storeId;
-      const newShowroomId =
-        showroomId !== undefined ? showroomId : user.showroomId;
-
-      console.log('Validating store and showroom relationship:', {
-        storeId: newStoreId,
-        showroomId: newShowroomId,
-      });
-
-      await validateStoreAndShowroom(newStoreId, newShowroomId);
-      console.log('Store and showroom validation passed');
     }
 
     const updateData = { ...rest };
@@ -340,25 +256,33 @@ const updateUserById = async (userId, updateBody) => {
       updateData.role = { connect: { id: roleId } };
     }
 
-    // Handle store update
-    if (storeId !== undefined) {
-      if (storeId) {
-        console.log('Connecting store:', storeId);
-        updateData.store = { connect: { id: storeId } };
+    // Handle store updates (many-to-many)
+    if (storeIds !== undefined) {
+      if (storeIds.length > 0) {
+        console.log('Connecting stores:', storeIds);
+        updateData.stores = {
+          set: storeIds.map((id) => ({ id })),
+        };
       } else {
-        console.log('Disconnecting store');
-        updateData.store = { disconnect: true };
+        console.log('Disconnecting all stores');
+        updateData.stores = {
+          set: [],
+        };
       }
     }
 
-    // Handle showroom update
-    if (showroomId !== undefined) {
-      if (showroomId) {
-        console.log('Connecting showroom:', showroomId);
-        updateData.showroom = { connect: { id: showroomId } };
+    // Handle showroom updates (many-to-many)
+    if (showroomIds !== undefined) {
+      if (showroomIds.length > 0) {
+        console.log('Connecting showrooms:', showroomIds);
+        updateData.showrooms = {
+          set: showroomIds.map((id) => ({ id })),
+        };
       } else {
-        console.log('Disconnecting showroom');
-        updateData.showroom = { disconnect: true };
+        console.log('Disconnecting all showrooms');
+        updateData.showrooms = {
+          set: [],
+        };
       }
     }
 
@@ -369,8 +293,8 @@ const updateUserById = async (userId, updateBody) => {
       data: updateData,
       include: {
         role: true,
-        store: true,
-        showroom: true,
+        stores: true,
+        showrooms: true,
       },
     });
 
@@ -378,8 +302,8 @@ const updateUserById = async (userId, updateBody) => {
       id: updatedUser.id,
       name: updatedUser.name,
       email: updatedUser.email,
-      storeId: updatedUser.storeId,
-      showroomId: updatedUser.showroomId,
+      storeIds: updatedUser.stores.map((s) => s.id),
+      showroomIds: updatedUser.showrooms.map((s) => s.id),
       roleId: updatedUser.roleId,
     });
 
@@ -419,6 +343,8 @@ const changeUserStatus = async (userId, status) => {
     data: { status },
     include: {
       role: true,
+      stores: true,
+      showrooms: true,
     },
   });
 
@@ -433,7 +359,6 @@ const isPasswordMatch = async (user, password) => {
   }
   return bcrypt.compare(password, user.password);
 };
-// In your controller
 
 const changePassword = async (userId, currentPassword, newPassword) => {
   const user = await getUserById(userId);
@@ -458,11 +383,14 @@ const changePassword = async (userId, currentPassword, newPassword) => {
     data: { password: hashedNewPassword },
     include: {
       role: true,
+      stores: true,
+      showrooms: true,
     },
   });
 
   return updatedUser;
 };
+
 const resetPassword = async (userId, resetBody) => {
   const { newPassword } = resetBody;
 
@@ -482,7 +410,6 @@ const resetPassword = async (userId, resetBody) => {
   }
 
   // Hash new password
-
   const hashedNewPassword = await bcrypt.hash(newPassword, 8);
 
   const updatedUser = await prisma.user.update({
@@ -490,6 +417,8 @@ const resetPassword = async (userId, resetBody) => {
     data: { password: hashedNewPassword },
     include: {
       role: true,
+      stores: true,
+      showrooms: true,
     },
   });
 
@@ -503,6 +432,7 @@ const resetPassword = async (userId, resetBody) => {
 
   return updatedUser;
 };
+
 module.exports = {
   createUser,
   getUsers,

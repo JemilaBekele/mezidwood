@@ -5647,6 +5647,8 @@ export namespace Prisma {
    */
 
   export type UserCountOutputType = {
+    showrooms: number
+    stores: number
     Log: number
     purchases: number
     uppurchases: number
@@ -5677,6 +5679,8 @@ export namespace Prisma {
   }
 
   export type UserCountOutputTypeSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    showrooms?: boolean | UserCountOutputTypeCountShowroomsArgs
+    stores?: boolean | UserCountOutputTypeCountStoresArgs
     Log?: boolean | UserCountOutputTypeCountLogArgs
     purchases?: boolean | UserCountOutputTypeCountPurchasesArgs
     uppurchases?: boolean | UserCountOutputTypeCountUppurchasesArgs
@@ -5715,6 +5719,20 @@ export namespace Prisma {
      * Select specific fields to fetch from the UserCountOutputType
      */
     select?: UserCountOutputTypeSelect<ExtArgs> | null
+  }
+
+  /**
+   * UserCountOutputType without action
+   */
+  export type UserCountOutputTypeCountShowroomsArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ShowroomWhereInput
+  }
+
+  /**
+   * UserCountOutputType without action
+   */
+  export type UserCountOutputTypeCountStoresArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: StoreWhereInput
   }
 
   /**
@@ -7138,8 +7156,6 @@ export namespace Prisma {
     password: string | null
     roleId: string | null
     status: $Enums.Status | null
-    storeId: string | null
-    showroomId: string | null
     createdAt: Date | null
     updatedAt: Date | null
     lastLoginAt: Date | null
@@ -7155,8 +7171,6 @@ export namespace Prisma {
     password: string | null
     roleId: string | null
     status: $Enums.Status | null
-    storeId: string | null
-    showroomId: string | null
     createdAt: Date | null
     updatedAt: Date | null
     lastLoginAt: Date | null
@@ -7172,8 +7186,6 @@ export namespace Prisma {
     password: number
     roleId: number
     status: number
-    storeId: number
-    showroomId: number
     createdAt: number
     updatedAt: number
     lastLoginAt: number
@@ -7191,8 +7203,6 @@ export namespace Prisma {
     password?: true
     roleId?: true
     status?: true
-    storeId?: true
-    showroomId?: true
     createdAt?: true
     updatedAt?: true
     lastLoginAt?: true
@@ -7208,8 +7218,6 @@ export namespace Prisma {
     password?: true
     roleId?: true
     status?: true
-    storeId?: true
-    showroomId?: true
     createdAt?: true
     updatedAt?: true
     lastLoginAt?: true
@@ -7225,8 +7233,6 @@ export namespace Prisma {
     password?: true
     roleId?: true
     status?: true
-    storeId?: true
-    showroomId?: true
     createdAt?: true
     updatedAt?: true
     lastLoginAt?: true
@@ -7315,8 +7321,6 @@ export namespace Prisma {
     password: string
     roleId: string
     status: $Enums.Status
-    storeId: string | null
-    showroomId: string | null
     createdAt: Date
     updatedAt: Date
     lastLoginAt: Date | null
@@ -7349,14 +7353,12 @@ export namespace Prisma {
     password?: boolean
     roleId?: boolean
     status?: boolean
-    storeId?: boolean
-    showroomId?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     lastLoginAt?: boolean
     role?: boolean | RoleDefaultArgs<ExtArgs>
-    store?: boolean | User$storeArgs<ExtArgs>
-    showroom?: boolean | User$showroomArgs<ExtArgs>
+    showrooms?: boolean | User$showroomsArgs<ExtArgs>
+    stores?: boolean | User$storesArgs<ExtArgs>
     Log?: boolean | User$LogArgs<ExtArgs>
     purchases?: boolean | User$purchasesArgs<ExtArgs>
     uppurchases?: boolean | User$uppurchasesArgs<ExtArgs>
@@ -7399,18 +7401,16 @@ export namespace Prisma {
     password?: boolean
     roleId?: boolean
     status?: boolean
-    storeId?: boolean
-    showroomId?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     lastLoginAt?: boolean
   }
 
-  export type UserOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "phone" | "userCode" | "email" | "admin" | "password" | "roleId" | "status" | "storeId" | "showroomId" | "createdAt" | "updatedAt" | "lastLoginAt", ExtArgs["result"]["user"]>
+  export type UserOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "phone" | "userCode" | "email" | "admin" | "password" | "roleId" | "status" | "createdAt" | "updatedAt" | "lastLoginAt", ExtArgs["result"]["user"]>
   export type UserInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     role?: boolean | RoleDefaultArgs<ExtArgs>
-    store?: boolean | User$storeArgs<ExtArgs>
-    showroom?: boolean | User$showroomArgs<ExtArgs>
+    showrooms?: boolean | User$showroomsArgs<ExtArgs>
+    stores?: boolean | User$storesArgs<ExtArgs>
     Log?: boolean | User$LogArgs<ExtArgs>
     purchases?: boolean | User$purchasesArgs<ExtArgs>
     uppurchases?: boolean | User$uppurchasesArgs<ExtArgs>
@@ -7445,8 +7445,8 @@ export namespace Prisma {
     name: "User"
     objects: {
       role: Prisma.$RolePayload<ExtArgs>
-      store: Prisma.$StorePayload<ExtArgs> | null
-      showroom: Prisma.$ShowroomPayload<ExtArgs> | null
+      showrooms: Prisma.$ShowroomPayload<ExtArgs>[]
+      stores: Prisma.$StorePayload<ExtArgs>[]
       Log: Prisma.$LogPayload<ExtArgs>[]
       purchases: Prisma.$PurchasePayload<ExtArgs>[]
       uppurchases: Prisma.$PurchasePayload<ExtArgs>[]
@@ -7485,8 +7485,6 @@ export namespace Prisma {
       password: string
       roleId: string
       status: $Enums.Status
-      storeId: string | null
-      showroomId: string | null
       createdAt: Date
       updatedAt: Date
       lastLoginAt: Date | null
@@ -7831,8 +7829,8 @@ export namespace Prisma {
   export interface Prisma__UserClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
     readonly [Symbol.toStringTag]: "PrismaPromise"
     role<T extends RoleDefaultArgs<ExtArgs> = {}>(args?: Subset<T, RoleDefaultArgs<ExtArgs>>): Prisma__RoleClient<$Result.GetResult<Prisma.$RolePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
-    store<T extends User$storeArgs<ExtArgs> = {}>(args?: Subset<T, User$storeArgs<ExtArgs>>): Prisma__StoreClient<$Result.GetResult<Prisma.$StorePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
-    showroom<T extends User$showroomArgs<ExtArgs> = {}>(args?: Subset<T, User$showroomArgs<ExtArgs>>): Prisma__ShowroomClient<$Result.GetResult<Prisma.$ShowroomPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+    showrooms<T extends User$showroomsArgs<ExtArgs> = {}>(args?: Subset<T, User$showroomsArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ShowroomPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+    stores<T extends User$storesArgs<ExtArgs> = {}>(args?: Subset<T, User$storesArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$StorePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     Log<T extends User$LogArgs<ExtArgs> = {}>(args?: Subset<T, User$LogArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$LogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     purchases<T extends User$purchasesArgs<ExtArgs> = {}>(args?: Subset<T, User$purchasesArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$PurchasePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     uppurchases<T extends User$uppurchasesArgs<ExtArgs> = {}>(args?: Subset<T, User$uppurchasesArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$PurchasePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
@@ -7898,8 +7896,6 @@ export namespace Prisma {
     readonly password: FieldRef<"User", 'String'>
     readonly roleId: FieldRef<"User", 'String'>
     readonly status: FieldRef<"User", 'Status'>
-    readonly storeId: FieldRef<"User", 'String'>
-    readonly showroomId: FieldRef<"User", 'String'>
     readonly createdAt: FieldRef<"User", 'DateTime'>
     readonly updatedAt: FieldRef<"User", 'DateTime'>
     readonly lastLoginAt: FieldRef<"User", 'DateTime'>
@@ -8246,28 +8242,9 @@ export namespace Prisma {
   }
 
   /**
-   * User.store
+   * User.showrooms
    */
-  export type User$storeArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
-    /**
-     * Select specific fields to fetch from the Store
-     */
-    select?: StoreSelect<ExtArgs> | null
-    /**
-     * Omit specific fields from the Store
-     */
-    omit?: StoreOmit<ExtArgs> | null
-    /**
-     * Choose, which related nodes to fetch as well
-     */
-    include?: StoreInclude<ExtArgs> | null
-    where?: StoreWhereInput
-  }
-
-  /**
-   * User.showroom
-   */
-  export type User$showroomArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+  export type User$showroomsArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     /**
      * Select specific fields to fetch from the Showroom
      */
@@ -8281,6 +8258,35 @@ export namespace Prisma {
      */
     include?: ShowroomInclude<ExtArgs> | null
     where?: ShowroomWhereInput
+    orderBy?: ShowroomOrderByWithRelationInput | ShowroomOrderByWithRelationInput[]
+    cursor?: ShowroomWhereUniqueInput
+    take?: number
+    skip?: number
+    distinct?: ShowroomScalarFieldEnum | ShowroomScalarFieldEnum[]
+  }
+
+  /**
+   * User.stores
+   */
+  export type User$storesArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Store
+     */
+    select?: StoreSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Store
+     */
+    omit?: StoreOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: StoreInclude<ExtArgs> | null
+    where?: StoreWhereInput
+    orderBy?: StoreOrderByWithRelationInput | StoreOrderByWithRelationInput[]
+    cursor?: StoreWhereUniqueInput
+    take?: number
+    skip?: number
+    distinct?: StoreScalarFieldEnum | StoreScalarFieldEnum[]
   }
 
   /**
@@ -64281,8 +64287,6 @@ export namespace Prisma {
     password: 'password',
     roleId: 'roleId',
     status: 'status',
-    storeId: 'storeId',
-    showroomId: 'showroomId',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt',
     lastLoginAt: 'lastLoginAt'
@@ -65120,9 +65124,7 @@ export namespace Prisma {
     userCode: 'userCode',
     email: 'email',
     password: 'password',
-    roleId: 'roleId',
-    storeId: 'storeId',
-    showroomId: 'showroomId'
+    roleId: 'roleId'
   };
 
   export type UserOrderByRelevanceFieldEnum = (typeof UserOrderByRelevanceFieldEnum)[keyof typeof UserOrderByRelevanceFieldEnum]
@@ -65914,14 +65916,12 @@ export namespace Prisma {
     password?: StringFilter<"User"> | string
     roleId?: StringFilter<"User"> | string
     status?: EnumStatusFilter<"User"> | $Enums.Status
-    storeId?: StringNullableFilter<"User"> | string | null
-    showroomId?: StringNullableFilter<"User"> | string | null
     createdAt?: DateTimeFilter<"User"> | Date | string
     updatedAt?: DateTimeFilter<"User"> | Date | string
     lastLoginAt?: DateTimeNullableFilter<"User"> | Date | string | null
     role?: XOR<RoleScalarRelationFilter, RoleWhereInput>
-    store?: XOR<StoreNullableScalarRelationFilter, StoreWhereInput> | null
-    showroom?: XOR<ShowroomNullableScalarRelationFilter, ShowroomWhereInput> | null
+    showrooms?: ShowroomListRelationFilter
+    stores?: StoreListRelationFilter
     Log?: LogListRelationFilter
     purchases?: PurchaseListRelationFilter
     uppurchases?: PurchaseListRelationFilter
@@ -65961,14 +65961,12 @@ export namespace Prisma {
     password?: SortOrder
     roleId?: SortOrder
     status?: SortOrder
-    storeId?: SortOrderInput | SortOrder
-    showroomId?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     lastLoginAt?: SortOrderInput | SortOrder
     role?: RoleOrderByWithRelationInput
-    store?: StoreOrderByWithRelationInput
-    showroom?: ShowroomOrderByWithRelationInput
+    showrooms?: ShowroomOrderByRelationAggregateInput
+    stores?: StoreOrderByRelationAggregateInput
     Log?: LogOrderByRelationAggregateInput
     purchases?: PurchaseOrderByRelationAggregateInput
     uppurchases?: PurchaseOrderByRelationAggregateInput
@@ -66012,14 +66010,12 @@ export namespace Prisma {
     password?: StringFilter<"User"> | string
     roleId?: StringFilter<"User"> | string
     status?: EnumStatusFilter<"User"> | $Enums.Status
-    storeId?: StringNullableFilter<"User"> | string | null
-    showroomId?: StringNullableFilter<"User"> | string | null
     createdAt?: DateTimeFilter<"User"> | Date | string
     updatedAt?: DateTimeFilter<"User"> | Date | string
     lastLoginAt?: DateTimeNullableFilter<"User"> | Date | string | null
     role?: XOR<RoleScalarRelationFilter, RoleWhereInput>
-    store?: XOR<StoreNullableScalarRelationFilter, StoreWhereInput> | null
-    showroom?: XOR<ShowroomNullableScalarRelationFilter, ShowroomWhereInput> | null
+    showrooms?: ShowroomListRelationFilter
+    stores?: StoreListRelationFilter
     Log?: LogListRelationFilter
     purchases?: PurchaseListRelationFilter
     uppurchases?: PurchaseListRelationFilter
@@ -66059,8 +66055,6 @@ export namespace Prisma {
     password?: SortOrder
     roleId?: SortOrder
     status?: SortOrder
-    storeId?: SortOrderInput | SortOrder
-    showroomId?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     lastLoginAt?: SortOrderInput | SortOrder
@@ -66082,8 +66076,6 @@ export namespace Prisma {
     password?: StringWithAggregatesFilter<"User"> | string
     roleId?: StringWithAggregatesFilter<"User"> | string
     status?: EnumStatusWithAggregatesFilter<"User"> | $Enums.Status
-    storeId?: StringNullableWithAggregatesFilter<"User"> | string | null
-    showroomId?: StringNullableWithAggregatesFilter<"User"> | string | null
     createdAt?: DateTimeWithAggregatesFilter<"User"> | Date | string
     updatedAt?: DateTimeWithAggregatesFilter<"User"> | Date | string
     lastLoginAt?: DateTimeNullableWithAggregatesFilter<"User"> | Date | string | null
@@ -70600,8 +70592,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -70641,11 +70633,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -70688,8 +70680,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -70729,11 +70721,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -70773,8 +70765,6 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
@@ -70804,8 +70794,6 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -71536,7 +71524,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerCreateNestedManyWithoutShowroomInput
     transfers?: TransferCreateNestedManyWithoutSourceShowroomInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestShowroomInput
-    users?: UserCreateNestedManyWithoutShowroomInput
+    users?: UserCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomUncheckedCreateInput = {
@@ -71550,7 +71538,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedCreateNestedManyWithoutShowroomInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceShowroomInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestShowroomInput
-    users?: UserUncheckedCreateNestedManyWithoutShowroomInput
+    users?: UserUncheckedCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomUpdateInput = {
@@ -71564,7 +71552,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUpdateManyWithoutShowroomNestedInput
     transfers?: TransferUpdateManyWithoutSourceShowroomNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestShowroomNestedInput
-    users?: UserUpdateManyWithoutShowroomNestedInput
+    users?: UserUpdateManyWithoutShowroomsNestedInput
   }
 
   export type ShowroomUncheckedUpdateInput = {
@@ -71578,7 +71566,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedUpdateManyWithoutShowroomNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceShowroomNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestShowroomNestedInput
-    users?: UserUncheckedUpdateManyWithoutShowroomNestedInput
+    users?: UserUncheckedUpdateManyWithoutShowroomsNestedInput
   }
 
   export type ShowroomCreateManyInput = {
@@ -71612,7 +71600,7 @@ export namespace Prisma {
     sells?: SellCreateNestedManyWithoutStoreInput
     transfers?: TransferCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestStoreInput
-    users?: UserCreateNestedManyWithoutStoreInput
+    users?: UserCreateNestedManyWithoutStoresInput
   }
 
   export type StoreUncheckedCreateInput = {
@@ -71628,7 +71616,7 @@ export namespace Prisma {
     sells?: SellUncheckedCreateNestedManyWithoutStoreInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestStoreInput
-    users?: UserUncheckedCreateNestedManyWithoutStoreInput
+    users?: UserUncheckedCreateNestedManyWithoutStoresInput
   }
 
   export type StoreUpdateInput = {
@@ -71644,7 +71632,7 @@ export namespace Prisma {
     sells?: SellUpdateManyWithoutStoreNestedInput
     transfers?: TransferUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestStoreNestedInput
-    users?: UserUpdateManyWithoutStoreNestedInput
+    users?: UserUpdateManyWithoutStoresNestedInput
   }
 
   export type StoreUncheckedUpdateInput = {
@@ -71660,7 +71648,7 @@ export namespace Prisma {
     sells?: SellUncheckedUpdateManyWithoutStoreNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestStoreNestedInput
-    users?: UserUncheckedUpdateManyWithoutStoreNestedInput
+    users?: UserUncheckedUpdateManyWithoutStoresNestedInput
   }
 
   export type StoreCreateManyInput = {
@@ -75630,14 +75618,16 @@ export namespace Prisma {
     isNot?: RoleWhereInput
   }
 
-  export type StoreNullableScalarRelationFilter = {
-    is?: StoreWhereInput | null
-    isNot?: StoreWhereInput | null
+  export type ShowroomListRelationFilter = {
+    every?: ShowroomWhereInput
+    some?: ShowroomWhereInput
+    none?: ShowroomWhereInput
   }
 
-  export type ShowroomNullableScalarRelationFilter = {
-    is?: ShowroomWhereInput | null
-    isNot?: ShowroomWhereInput | null
+  export type StoreListRelationFilter = {
+    every?: StoreWhereInput
+    some?: StoreWhereInput
+    none?: StoreWhereInput
   }
 
   export type LogListRelationFilter = {
@@ -75753,6 +75743,14 @@ export namespace Prisma {
     nulls?: NullsOrder
   }
 
+  export type ShowroomOrderByRelationAggregateInput = {
+    _count?: SortOrder
+  }
+
+  export type StoreOrderByRelationAggregateInput = {
+    _count?: SortOrder
+  }
+
   export type LogOrderByRelationAggregateInput = {
     _count?: SortOrder
   }
@@ -75841,8 +75839,6 @@ export namespace Prisma {
     password?: SortOrder
     roleId?: SortOrder
     status?: SortOrder
-    storeId?: SortOrder
-    showroomId?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     lastLoginAt?: SortOrder
@@ -75858,8 +75854,6 @@ export namespace Prisma {
     password?: SortOrder
     roleId?: SortOrder
     status?: SortOrder
-    storeId?: SortOrder
-    showroomId?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     lastLoginAt?: SortOrder
@@ -75875,8 +75869,6 @@ export namespace Prisma {
     password?: SortOrder
     roleId?: SortOrder
     status?: SortOrder
-    storeId?: SortOrder
-    showroomId?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     lastLoginAt?: SortOrder
@@ -76447,6 +76439,16 @@ export namespace Prisma {
   export type MaterialScalarRelationFilter = {
     is?: MaterialWhereInput
     isNot?: MaterialWhereInput
+  }
+
+  export type StoreNullableScalarRelationFilter = {
+    is?: StoreWhereInput | null
+    isNot?: StoreWhereInput | null
+  }
+
+  export type ShowroomNullableScalarRelationFilter = {
+    is?: ShowroomWhereInput | null
+    isNot?: ShowroomWhereInput | null
   }
 
   export type UnitOfMeasureNullableScalarRelationFilter = {
@@ -79514,16 +79516,16 @@ export namespace Prisma {
     connect?: RoleWhereUniqueInput
   }
 
-  export type StoreCreateNestedOneWithoutUsersInput = {
-    create?: XOR<StoreCreateWithoutUsersInput, StoreUncheckedCreateWithoutUsersInput>
-    connectOrCreate?: StoreCreateOrConnectWithoutUsersInput
-    connect?: StoreWhereUniqueInput
+  export type ShowroomCreateNestedManyWithoutUsersInput = {
+    create?: XOR<ShowroomCreateWithoutUsersInput, ShowroomUncheckedCreateWithoutUsersInput> | ShowroomCreateWithoutUsersInput[] | ShowroomUncheckedCreateWithoutUsersInput[]
+    connectOrCreate?: ShowroomCreateOrConnectWithoutUsersInput | ShowroomCreateOrConnectWithoutUsersInput[]
+    connect?: ShowroomWhereUniqueInput | ShowroomWhereUniqueInput[]
   }
 
-  export type ShowroomCreateNestedOneWithoutUsersInput = {
-    create?: XOR<ShowroomCreateWithoutUsersInput, ShowroomUncheckedCreateWithoutUsersInput>
-    connectOrCreate?: ShowroomCreateOrConnectWithoutUsersInput
-    connect?: ShowroomWhereUniqueInput
+  export type StoreCreateNestedManyWithoutUsersInput = {
+    create?: XOR<StoreCreateWithoutUsersInput, StoreUncheckedCreateWithoutUsersInput> | StoreCreateWithoutUsersInput[] | StoreUncheckedCreateWithoutUsersInput[]
+    connectOrCreate?: StoreCreateOrConnectWithoutUsersInput | StoreCreateOrConnectWithoutUsersInput[]
+    connect?: StoreWhereUniqueInput | StoreWhereUniqueInput[]
   }
 
   export type LogCreateNestedManyWithoutUserInput = {
@@ -79713,6 +79715,18 @@ export namespace Prisma {
     connectOrCreate?: CapacityLotHistoryCreateOrConnectWithoutChangedByInput | CapacityLotHistoryCreateOrConnectWithoutChangedByInput[]
     createMany?: CapacityLotHistoryCreateManyChangedByInputEnvelope
     connect?: CapacityLotHistoryWhereUniqueInput | CapacityLotHistoryWhereUniqueInput[]
+  }
+
+  export type ShowroomUncheckedCreateNestedManyWithoutUsersInput = {
+    create?: XOR<ShowroomCreateWithoutUsersInput, ShowroomUncheckedCreateWithoutUsersInput> | ShowroomCreateWithoutUsersInput[] | ShowroomUncheckedCreateWithoutUsersInput[]
+    connectOrCreate?: ShowroomCreateOrConnectWithoutUsersInput | ShowroomCreateOrConnectWithoutUsersInput[]
+    connect?: ShowroomWhereUniqueInput | ShowroomWhereUniqueInput[]
+  }
+
+  export type StoreUncheckedCreateNestedManyWithoutUsersInput = {
+    create?: XOR<StoreCreateWithoutUsersInput, StoreUncheckedCreateWithoutUsersInput> | StoreCreateWithoutUsersInput[] | StoreUncheckedCreateWithoutUsersInput[]
+    connectOrCreate?: StoreCreateOrConnectWithoutUsersInput | StoreCreateOrConnectWithoutUsersInput[]
+    connect?: StoreWhereUniqueInput | StoreWhereUniqueInput[]
   }
 
   export type LogUncheckedCreateNestedManyWithoutUserInput = {
@@ -79936,24 +79950,30 @@ export namespace Prisma {
     update?: XOR<XOR<RoleUpdateToOneWithWhereWithoutUsersInput, RoleUpdateWithoutUsersInput>, RoleUncheckedUpdateWithoutUsersInput>
   }
 
-  export type StoreUpdateOneWithoutUsersNestedInput = {
-    create?: XOR<StoreCreateWithoutUsersInput, StoreUncheckedCreateWithoutUsersInput>
-    connectOrCreate?: StoreCreateOrConnectWithoutUsersInput
-    upsert?: StoreUpsertWithoutUsersInput
-    disconnect?: StoreWhereInput | boolean
-    delete?: StoreWhereInput | boolean
-    connect?: StoreWhereUniqueInput
-    update?: XOR<XOR<StoreUpdateToOneWithWhereWithoutUsersInput, StoreUpdateWithoutUsersInput>, StoreUncheckedUpdateWithoutUsersInput>
+  export type ShowroomUpdateManyWithoutUsersNestedInput = {
+    create?: XOR<ShowroomCreateWithoutUsersInput, ShowroomUncheckedCreateWithoutUsersInput> | ShowroomCreateWithoutUsersInput[] | ShowroomUncheckedCreateWithoutUsersInput[]
+    connectOrCreate?: ShowroomCreateOrConnectWithoutUsersInput | ShowroomCreateOrConnectWithoutUsersInput[]
+    upsert?: ShowroomUpsertWithWhereUniqueWithoutUsersInput | ShowroomUpsertWithWhereUniqueWithoutUsersInput[]
+    set?: ShowroomWhereUniqueInput | ShowroomWhereUniqueInput[]
+    disconnect?: ShowroomWhereUniqueInput | ShowroomWhereUniqueInput[]
+    delete?: ShowroomWhereUniqueInput | ShowroomWhereUniqueInput[]
+    connect?: ShowroomWhereUniqueInput | ShowroomWhereUniqueInput[]
+    update?: ShowroomUpdateWithWhereUniqueWithoutUsersInput | ShowroomUpdateWithWhereUniqueWithoutUsersInput[]
+    updateMany?: ShowroomUpdateManyWithWhereWithoutUsersInput | ShowroomUpdateManyWithWhereWithoutUsersInput[]
+    deleteMany?: ShowroomScalarWhereInput | ShowroomScalarWhereInput[]
   }
 
-  export type ShowroomUpdateOneWithoutUsersNestedInput = {
-    create?: XOR<ShowroomCreateWithoutUsersInput, ShowroomUncheckedCreateWithoutUsersInput>
-    connectOrCreate?: ShowroomCreateOrConnectWithoutUsersInput
-    upsert?: ShowroomUpsertWithoutUsersInput
-    disconnect?: ShowroomWhereInput | boolean
-    delete?: ShowroomWhereInput | boolean
-    connect?: ShowroomWhereUniqueInput
-    update?: XOR<XOR<ShowroomUpdateToOneWithWhereWithoutUsersInput, ShowroomUpdateWithoutUsersInput>, ShowroomUncheckedUpdateWithoutUsersInput>
+  export type StoreUpdateManyWithoutUsersNestedInput = {
+    create?: XOR<StoreCreateWithoutUsersInput, StoreUncheckedCreateWithoutUsersInput> | StoreCreateWithoutUsersInput[] | StoreUncheckedCreateWithoutUsersInput[]
+    connectOrCreate?: StoreCreateOrConnectWithoutUsersInput | StoreCreateOrConnectWithoutUsersInput[]
+    upsert?: StoreUpsertWithWhereUniqueWithoutUsersInput | StoreUpsertWithWhereUniqueWithoutUsersInput[]
+    set?: StoreWhereUniqueInput | StoreWhereUniqueInput[]
+    disconnect?: StoreWhereUniqueInput | StoreWhereUniqueInput[]
+    delete?: StoreWhereUniqueInput | StoreWhereUniqueInput[]
+    connect?: StoreWhereUniqueInput | StoreWhereUniqueInput[]
+    update?: StoreUpdateWithWhereUniqueWithoutUsersInput | StoreUpdateWithWhereUniqueWithoutUsersInput[]
+    updateMany?: StoreUpdateManyWithWhereWithoutUsersInput | StoreUpdateManyWithWhereWithoutUsersInput[]
+    deleteMany?: StoreScalarWhereInput | StoreScalarWhereInput[]
   }
 
   export type LogUpdateManyWithoutUserNestedInput = {
@@ -80332,6 +80352,32 @@ export namespace Prisma {
     update?: CapacityLotHistoryUpdateWithWhereUniqueWithoutChangedByInput | CapacityLotHistoryUpdateWithWhereUniqueWithoutChangedByInput[]
     updateMany?: CapacityLotHistoryUpdateManyWithWhereWithoutChangedByInput | CapacityLotHistoryUpdateManyWithWhereWithoutChangedByInput[]
     deleteMany?: CapacityLotHistoryScalarWhereInput | CapacityLotHistoryScalarWhereInput[]
+  }
+
+  export type ShowroomUncheckedUpdateManyWithoutUsersNestedInput = {
+    create?: XOR<ShowroomCreateWithoutUsersInput, ShowroomUncheckedCreateWithoutUsersInput> | ShowroomCreateWithoutUsersInput[] | ShowroomUncheckedCreateWithoutUsersInput[]
+    connectOrCreate?: ShowroomCreateOrConnectWithoutUsersInput | ShowroomCreateOrConnectWithoutUsersInput[]
+    upsert?: ShowroomUpsertWithWhereUniqueWithoutUsersInput | ShowroomUpsertWithWhereUniqueWithoutUsersInput[]
+    set?: ShowroomWhereUniqueInput | ShowroomWhereUniqueInput[]
+    disconnect?: ShowroomWhereUniqueInput | ShowroomWhereUniqueInput[]
+    delete?: ShowroomWhereUniqueInput | ShowroomWhereUniqueInput[]
+    connect?: ShowroomWhereUniqueInput | ShowroomWhereUniqueInput[]
+    update?: ShowroomUpdateWithWhereUniqueWithoutUsersInput | ShowroomUpdateWithWhereUniqueWithoutUsersInput[]
+    updateMany?: ShowroomUpdateManyWithWhereWithoutUsersInput | ShowroomUpdateManyWithWhereWithoutUsersInput[]
+    deleteMany?: ShowroomScalarWhereInput | ShowroomScalarWhereInput[]
+  }
+
+  export type StoreUncheckedUpdateManyWithoutUsersNestedInput = {
+    create?: XOR<StoreCreateWithoutUsersInput, StoreUncheckedCreateWithoutUsersInput> | StoreCreateWithoutUsersInput[] | StoreUncheckedCreateWithoutUsersInput[]
+    connectOrCreate?: StoreCreateOrConnectWithoutUsersInput | StoreCreateOrConnectWithoutUsersInput[]
+    upsert?: StoreUpsertWithWhereUniqueWithoutUsersInput | StoreUpsertWithWhereUniqueWithoutUsersInput[]
+    set?: StoreWhereUniqueInput | StoreWhereUniqueInput[]
+    disconnect?: StoreWhereUniqueInput | StoreWhereUniqueInput[]
+    delete?: StoreWhereUniqueInput | StoreWhereUniqueInput[]
+    connect?: StoreWhereUniqueInput | StoreWhereUniqueInput[]
+    update?: StoreUpdateWithWhereUniqueWithoutUsersInput | StoreUpdateWithWhereUniqueWithoutUsersInput[]
+    updateMany?: StoreUpdateManyWithWhereWithoutUsersInput | StoreUpdateManyWithWhereWithoutUsersInput[]
+    deleteMany?: StoreScalarWhereInput | StoreScalarWhereInput[]
   }
 
   export type LogUncheckedUpdateManyWithoutUserNestedInput = {
@@ -81351,10 +81397,9 @@ export namespace Prisma {
     connect?: TransferWhereUniqueInput | TransferWhereUniqueInput[]
   }
 
-  export type UserCreateNestedManyWithoutShowroomInput = {
-    create?: XOR<UserCreateWithoutShowroomInput, UserUncheckedCreateWithoutShowroomInput> | UserCreateWithoutShowroomInput[] | UserUncheckedCreateWithoutShowroomInput[]
-    connectOrCreate?: UserCreateOrConnectWithoutShowroomInput | UserCreateOrConnectWithoutShowroomInput[]
-    createMany?: UserCreateManyShowroomInputEnvelope
+  export type UserCreateNestedManyWithoutShowroomsInput = {
+    create?: XOR<UserCreateWithoutShowroomsInput, UserUncheckedCreateWithoutShowroomsInput> | UserCreateWithoutShowroomsInput[] | UserUncheckedCreateWithoutShowroomsInput[]
+    connectOrCreate?: UserCreateOrConnectWithoutShowroomsInput | UserCreateOrConnectWithoutShowroomsInput[]
     connect?: UserWhereUniqueInput | UserWhereUniqueInput[]
   }
 
@@ -81407,10 +81452,9 @@ export namespace Prisma {
     connect?: TransferWhereUniqueInput | TransferWhereUniqueInput[]
   }
 
-  export type UserUncheckedCreateNestedManyWithoutShowroomInput = {
-    create?: XOR<UserCreateWithoutShowroomInput, UserUncheckedCreateWithoutShowroomInput> | UserCreateWithoutShowroomInput[] | UserUncheckedCreateWithoutShowroomInput[]
-    connectOrCreate?: UserCreateOrConnectWithoutShowroomInput | UserCreateOrConnectWithoutShowroomInput[]
-    createMany?: UserCreateManyShowroomInputEnvelope
+  export type UserUncheckedCreateNestedManyWithoutShowroomsInput = {
+    create?: XOR<UserCreateWithoutShowroomsInput, UserUncheckedCreateWithoutShowroomsInput> | UserCreateWithoutShowroomsInput[] | UserUncheckedCreateWithoutShowroomsInput[]
+    connectOrCreate?: UserCreateOrConnectWithoutShowroomsInput | UserCreateOrConnectWithoutShowroomsInput[]
     connect?: UserWhereUniqueInput | UserWhereUniqueInput[]
   }
 
@@ -81512,17 +81556,16 @@ export namespace Prisma {
     deleteMany?: TransferScalarWhereInput | TransferScalarWhereInput[]
   }
 
-  export type UserUpdateManyWithoutShowroomNestedInput = {
-    create?: XOR<UserCreateWithoutShowroomInput, UserUncheckedCreateWithoutShowroomInput> | UserCreateWithoutShowroomInput[] | UserUncheckedCreateWithoutShowroomInput[]
-    connectOrCreate?: UserCreateOrConnectWithoutShowroomInput | UserCreateOrConnectWithoutShowroomInput[]
-    upsert?: UserUpsertWithWhereUniqueWithoutShowroomInput | UserUpsertWithWhereUniqueWithoutShowroomInput[]
-    createMany?: UserCreateManyShowroomInputEnvelope
+  export type UserUpdateManyWithoutShowroomsNestedInput = {
+    create?: XOR<UserCreateWithoutShowroomsInput, UserUncheckedCreateWithoutShowroomsInput> | UserCreateWithoutShowroomsInput[] | UserUncheckedCreateWithoutShowroomsInput[]
+    connectOrCreate?: UserCreateOrConnectWithoutShowroomsInput | UserCreateOrConnectWithoutShowroomsInput[]
+    upsert?: UserUpsertWithWhereUniqueWithoutShowroomsInput | UserUpsertWithWhereUniqueWithoutShowroomsInput[]
     set?: UserWhereUniqueInput | UserWhereUniqueInput[]
     disconnect?: UserWhereUniqueInput | UserWhereUniqueInput[]
     delete?: UserWhereUniqueInput | UserWhereUniqueInput[]
     connect?: UserWhereUniqueInput | UserWhereUniqueInput[]
-    update?: UserUpdateWithWhereUniqueWithoutShowroomInput | UserUpdateWithWhereUniqueWithoutShowroomInput[]
-    updateMany?: UserUpdateManyWithWhereWithoutShowroomInput | UserUpdateManyWithWhereWithoutShowroomInput[]
+    update?: UserUpdateWithWhereUniqueWithoutShowroomsInput | UserUpdateWithWhereUniqueWithoutShowroomsInput[]
+    updateMany?: UserUpdateManyWithWhereWithoutShowroomsInput | UserUpdateManyWithWhereWithoutShowroomsInput[]
     deleteMany?: UserScalarWhereInput | UserScalarWhereInput[]
   }
 
@@ -81624,17 +81667,16 @@ export namespace Prisma {
     deleteMany?: TransferScalarWhereInput | TransferScalarWhereInput[]
   }
 
-  export type UserUncheckedUpdateManyWithoutShowroomNestedInput = {
-    create?: XOR<UserCreateWithoutShowroomInput, UserUncheckedCreateWithoutShowroomInput> | UserCreateWithoutShowroomInput[] | UserUncheckedCreateWithoutShowroomInput[]
-    connectOrCreate?: UserCreateOrConnectWithoutShowroomInput | UserCreateOrConnectWithoutShowroomInput[]
-    upsert?: UserUpsertWithWhereUniqueWithoutShowroomInput | UserUpsertWithWhereUniqueWithoutShowroomInput[]
-    createMany?: UserCreateManyShowroomInputEnvelope
+  export type UserUncheckedUpdateManyWithoutShowroomsNestedInput = {
+    create?: XOR<UserCreateWithoutShowroomsInput, UserUncheckedCreateWithoutShowroomsInput> | UserCreateWithoutShowroomsInput[] | UserUncheckedCreateWithoutShowroomsInput[]
+    connectOrCreate?: UserCreateOrConnectWithoutShowroomsInput | UserCreateOrConnectWithoutShowroomsInput[]
+    upsert?: UserUpsertWithWhereUniqueWithoutShowroomsInput | UserUpsertWithWhereUniqueWithoutShowroomsInput[]
     set?: UserWhereUniqueInput | UserWhereUniqueInput[]
     disconnect?: UserWhereUniqueInput | UserWhereUniqueInput[]
     delete?: UserWhereUniqueInput | UserWhereUniqueInput[]
     connect?: UserWhereUniqueInput | UserWhereUniqueInput[]
-    update?: UserUpdateWithWhereUniqueWithoutShowroomInput | UserUpdateWithWhereUniqueWithoutShowroomInput[]
-    updateMany?: UserUpdateManyWithWhereWithoutShowroomInput | UserUpdateManyWithWhereWithoutShowroomInput[]
+    update?: UserUpdateWithWhereUniqueWithoutShowroomsInput | UserUpdateWithWhereUniqueWithoutShowroomsInput[]
+    updateMany?: UserUpdateManyWithWhereWithoutShowroomsInput | UserUpdateManyWithWhereWithoutShowroomsInput[]
     deleteMany?: UserScalarWhereInput | UserScalarWhereInput[]
   }
 
@@ -81701,10 +81743,9 @@ export namespace Prisma {
     connect?: TransferWhereUniqueInput | TransferWhereUniqueInput[]
   }
 
-  export type UserCreateNestedManyWithoutStoreInput = {
-    create?: XOR<UserCreateWithoutStoreInput, UserUncheckedCreateWithoutStoreInput> | UserCreateWithoutStoreInput[] | UserUncheckedCreateWithoutStoreInput[]
-    connectOrCreate?: UserCreateOrConnectWithoutStoreInput | UserCreateOrConnectWithoutStoreInput[]
-    createMany?: UserCreateManyStoreInputEnvelope
+  export type UserCreateNestedManyWithoutStoresInput = {
+    create?: XOR<UserCreateWithoutStoresInput, UserUncheckedCreateWithoutStoresInput> | UserCreateWithoutStoresInput[] | UserUncheckedCreateWithoutStoresInput[]
+    connectOrCreate?: UserCreateOrConnectWithoutStoresInput | UserCreateOrConnectWithoutStoresInput[]
     connect?: UserWhereUniqueInput | UserWhereUniqueInput[]
   }
 
@@ -81771,10 +81812,9 @@ export namespace Prisma {
     connect?: TransferWhereUniqueInput | TransferWhereUniqueInput[]
   }
 
-  export type UserUncheckedCreateNestedManyWithoutStoreInput = {
-    create?: XOR<UserCreateWithoutStoreInput, UserUncheckedCreateWithoutStoreInput> | UserCreateWithoutStoreInput[] | UserUncheckedCreateWithoutStoreInput[]
-    connectOrCreate?: UserCreateOrConnectWithoutStoreInput | UserCreateOrConnectWithoutStoreInput[]
-    createMany?: UserCreateManyStoreInputEnvelope
+  export type UserUncheckedCreateNestedManyWithoutStoresInput = {
+    create?: XOR<UserCreateWithoutStoresInput, UserUncheckedCreateWithoutStoresInput> | UserCreateWithoutStoresInput[] | UserUncheckedCreateWithoutStoresInput[]
+    connectOrCreate?: UserCreateOrConnectWithoutStoresInput | UserCreateOrConnectWithoutStoresInput[]
     connect?: UserWhereUniqueInput | UserWhereUniqueInput[]
   }
 
@@ -81904,17 +81944,16 @@ export namespace Prisma {
     deleteMany?: TransferScalarWhereInput | TransferScalarWhereInput[]
   }
 
-  export type UserUpdateManyWithoutStoreNestedInput = {
-    create?: XOR<UserCreateWithoutStoreInput, UserUncheckedCreateWithoutStoreInput> | UserCreateWithoutStoreInput[] | UserUncheckedCreateWithoutStoreInput[]
-    connectOrCreate?: UserCreateOrConnectWithoutStoreInput | UserCreateOrConnectWithoutStoreInput[]
-    upsert?: UserUpsertWithWhereUniqueWithoutStoreInput | UserUpsertWithWhereUniqueWithoutStoreInput[]
-    createMany?: UserCreateManyStoreInputEnvelope
+  export type UserUpdateManyWithoutStoresNestedInput = {
+    create?: XOR<UserCreateWithoutStoresInput, UserUncheckedCreateWithoutStoresInput> | UserCreateWithoutStoresInput[] | UserUncheckedCreateWithoutStoresInput[]
+    connectOrCreate?: UserCreateOrConnectWithoutStoresInput | UserCreateOrConnectWithoutStoresInput[]
+    upsert?: UserUpsertWithWhereUniqueWithoutStoresInput | UserUpsertWithWhereUniqueWithoutStoresInput[]
     set?: UserWhereUniqueInput | UserWhereUniqueInput[]
     disconnect?: UserWhereUniqueInput | UserWhereUniqueInput[]
     delete?: UserWhereUniqueInput | UserWhereUniqueInput[]
     connect?: UserWhereUniqueInput | UserWhereUniqueInput[]
-    update?: UserUpdateWithWhereUniqueWithoutStoreInput | UserUpdateWithWhereUniqueWithoutStoreInput[]
-    updateMany?: UserUpdateManyWithWhereWithoutStoreInput | UserUpdateManyWithWhereWithoutStoreInput[]
+    update?: UserUpdateWithWhereUniqueWithoutStoresInput | UserUpdateWithWhereUniqueWithoutStoresInput[]
+    updateMany?: UserUpdateManyWithWhereWithoutStoresInput | UserUpdateManyWithWhereWithoutStoresInput[]
     deleteMany?: UserScalarWhereInput | UserScalarWhereInput[]
   }
 
@@ -82044,17 +82083,16 @@ export namespace Prisma {
     deleteMany?: TransferScalarWhereInput | TransferScalarWhereInput[]
   }
 
-  export type UserUncheckedUpdateManyWithoutStoreNestedInput = {
-    create?: XOR<UserCreateWithoutStoreInput, UserUncheckedCreateWithoutStoreInput> | UserCreateWithoutStoreInput[] | UserUncheckedCreateWithoutStoreInput[]
-    connectOrCreate?: UserCreateOrConnectWithoutStoreInput | UserCreateOrConnectWithoutStoreInput[]
-    upsert?: UserUpsertWithWhereUniqueWithoutStoreInput | UserUpsertWithWhereUniqueWithoutStoreInput[]
-    createMany?: UserCreateManyStoreInputEnvelope
+  export type UserUncheckedUpdateManyWithoutStoresNestedInput = {
+    create?: XOR<UserCreateWithoutStoresInput, UserUncheckedCreateWithoutStoresInput> | UserCreateWithoutStoresInput[] | UserUncheckedCreateWithoutStoresInput[]
+    connectOrCreate?: UserCreateOrConnectWithoutStoresInput | UserCreateOrConnectWithoutStoresInput[]
+    upsert?: UserUpsertWithWhereUniqueWithoutStoresInput | UserUpsertWithWhereUniqueWithoutStoresInput[]
     set?: UserWhereUniqueInput | UserWhereUniqueInput[]
     disconnect?: UserWhereUniqueInput | UserWhereUniqueInput[]
     delete?: UserWhereUniqueInput | UserWhereUniqueInput[]
     connect?: UserWhereUniqueInput | UserWhereUniqueInput[]
-    update?: UserUpdateWithWhereUniqueWithoutStoreInput | UserUpdateWithWhereUniqueWithoutStoreInput[]
-    updateMany?: UserUpdateManyWithWhereWithoutStoreInput | UserUpdateManyWithWhereWithoutStoreInput[]
+    update?: UserUpdateWithWhereUniqueWithoutStoresInput | UserUpdateWithWhereUniqueWithoutStoresInput[]
+    updateMany?: UserUpdateManyWithWhereWithoutStoresInput | UserUpdateManyWithWhereWithoutStoresInput[]
     deleteMany?: UserScalarWhereInput | UserScalarWhereInput[]
   }
 
@@ -86159,6 +86197,37 @@ export namespace Prisma {
     create: XOR<RoleCreateWithoutUsersInput, RoleUncheckedCreateWithoutUsersInput>
   }
 
+  export type ShowroomCreateWithoutUsersInput = {
+    id?: string
+    name: string
+    isMain?: boolean
+    inventoryStocks?: InventoryStockCreateNestedManyWithoutShowroomInput
+    itemStocks?: ItemStockCreateNestedManyWithoutShowroomInput
+    stockCorrections?: StockCorrectionCreateNestedManyWithoutShowroomInput
+    itemStockLedgers?: ItemStockLedgerCreateNestedManyWithoutShowroomInput
+    stockLedgers?: StockLedgerCreateNestedManyWithoutShowroomInput
+    transfers?: TransferCreateNestedManyWithoutSourceShowroomInput
+    distnationtransfers?: TransferCreateNestedManyWithoutDestShowroomInput
+  }
+
+  export type ShowroomUncheckedCreateWithoutUsersInput = {
+    id?: string
+    name: string
+    isMain?: boolean
+    inventoryStocks?: InventoryStockUncheckedCreateNestedManyWithoutShowroomInput
+    itemStocks?: ItemStockUncheckedCreateNestedManyWithoutShowroomInput
+    stockCorrections?: StockCorrectionUncheckedCreateNestedManyWithoutShowroomInput
+    itemStockLedgers?: ItemStockLedgerUncheckedCreateNestedManyWithoutShowroomInput
+    stockLedgers?: StockLedgerUncheckedCreateNestedManyWithoutShowroomInput
+    transfers?: TransferUncheckedCreateNestedManyWithoutSourceShowroomInput
+    distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestShowroomInput
+  }
+
+  export type ShowroomCreateOrConnectWithoutUsersInput = {
+    where: ShowroomWhereUniqueInput
+    create: XOR<ShowroomCreateWithoutUsersInput, ShowroomUncheckedCreateWithoutUsersInput>
+  }
+
   export type StoreCreateWithoutUsersInput = {
     id?: string
     name: string
@@ -86192,37 +86261,6 @@ export namespace Prisma {
   export type StoreCreateOrConnectWithoutUsersInput = {
     where: StoreWhereUniqueInput
     create: XOR<StoreCreateWithoutUsersInput, StoreUncheckedCreateWithoutUsersInput>
-  }
-
-  export type ShowroomCreateWithoutUsersInput = {
-    id?: string
-    name: string
-    isMain?: boolean
-    inventoryStocks?: InventoryStockCreateNestedManyWithoutShowroomInput
-    itemStocks?: ItemStockCreateNestedManyWithoutShowroomInput
-    stockCorrections?: StockCorrectionCreateNestedManyWithoutShowroomInput
-    itemStockLedgers?: ItemStockLedgerCreateNestedManyWithoutShowroomInput
-    stockLedgers?: StockLedgerCreateNestedManyWithoutShowroomInput
-    transfers?: TransferCreateNestedManyWithoutSourceShowroomInput
-    distnationtransfers?: TransferCreateNestedManyWithoutDestShowroomInput
-  }
-
-  export type ShowroomUncheckedCreateWithoutUsersInput = {
-    id?: string
-    name: string
-    isMain?: boolean
-    inventoryStocks?: InventoryStockUncheckedCreateNestedManyWithoutShowroomInput
-    itemStocks?: ItemStockUncheckedCreateNestedManyWithoutShowroomInput
-    stockCorrections?: StockCorrectionUncheckedCreateNestedManyWithoutShowroomInput
-    itemStockLedgers?: ItemStockLedgerUncheckedCreateNestedManyWithoutShowroomInput
-    stockLedgers?: StockLedgerUncheckedCreateNestedManyWithoutShowroomInput
-    transfers?: TransferUncheckedCreateNestedManyWithoutSourceShowroomInput
-    distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestShowroomInput
-  }
-
-  export type ShowroomCreateOrConnectWithoutUsersInput = {
-    where: ShowroomWhereUniqueInput
-    create: XOR<ShowroomCreateWithoutUsersInput, ShowroomUncheckedCreateWithoutUsersInput>
   }
 
   export type LogCreateWithoutUserInput = {
@@ -87458,82 +87496,54 @@ export namespace Prisma {
     permissions?: RolePermissionUncheckedUpdateManyWithoutRoleNestedInput
   }
 
-  export type StoreUpsertWithoutUsersInput = {
-    update: XOR<StoreUpdateWithoutUsersInput, StoreUncheckedUpdateWithoutUsersInput>
-    create: XOR<StoreCreateWithoutUsersInput, StoreUncheckedCreateWithoutUsersInput>
-    where?: StoreWhereInput
-  }
-
-  export type StoreUpdateToOneWithWhereWithoutUsersInput = {
-    where?: StoreWhereInput
-    data: XOR<StoreUpdateWithoutUsersInput, StoreUncheckedUpdateWithoutUsersInput>
-  }
-
-  export type StoreUpdateWithoutUsersInput = {
-    id?: StringFieldUpdateOperationsInput | string
-    name?: StringFieldUpdateOperationsInput | string
-    isMain?: BoolFieldUpdateOperationsInput | boolean
-    inventoryStocks?: InventoryStockUpdateManyWithoutStoreNestedInput
-    itemStocks?: ItemStockUpdateManyWithoutStoreNestedInput
-    purchases?: PurchaseUpdateManyWithoutStoreNestedInput
-    stockCorrections?: StockCorrectionUpdateManyWithoutStoreNestedInput
-    itemStockLedgers?: ItemStockLedgerUpdateManyWithoutStoreNestedInput
-    stockLedgers?: StockLedgerUpdateManyWithoutStoreNestedInput
-    sells?: SellUpdateManyWithoutStoreNestedInput
-    transfers?: TransferUpdateManyWithoutSourceStoreNestedInput
-    distnationtransfers?: TransferUpdateManyWithoutDestStoreNestedInput
-  }
-
-  export type StoreUncheckedUpdateWithoutUsersInput = {
-    id?: StringFieldUpdateOperationsInput | string
-    name?: StringFieldUpdateOperationsInput | string
-    isMain?: BoolFieldUpdateOperationsInput | boolean
-    inventoryStocks?: InventoryStockUncheckedUpdateManyWithoutStoreNestedInput
-    itemStocks?: ItemStockUncheckedUpdateManyWithoutStoreNestedInput
-    purchases?: PurchaseUncheckedUpdateManyWithoutStoreNestedInput
-    stockCorrections?: StockCorrectionUncheckedUpdateManyWithoutStoreNestedInput
-    itemStockLedgers?: ItemStockLedgerUncheckedUpdateManyWithoutStoreNestedInput
-    stockLedgers?: StockLedgerUncheckedUpdateManyWithoutStoreNestedInput
-    sells?: SellUncheckedUpdateManyWithoutStoreNestedInput
-    transfers?: TransferUncheckedUpdateManyWithoutSourceStoreNestedInput
-    distnationtransfers?: TransferUncheckedUpdateManyWithoutDestStoreNestedInput
-  }
-
-  export type ShowroomUpsertWithoutUsersInput = {
+  export type ShowroomUpsertWithWhereUniqueWithoutUsersInput = {
+    where: ShowroomWhereUniqueInput
     update: XOR<ShowroomUpdateWithoutUsersInput, ShowroomUncheckedUpdateWithoutUsersInput>
     create: XOR<ShowroomCreateWithoutUsersInput, ShowroomUncheckedCreateWithoutUsersInput>
-    where?: ShowroomWhereInput
   }
 
-  export type ShowroomUpdateToOneWithWhereWithoutUsersInput = {
-    where?: ShowroomWhereInput
+  export type ShowroomUpdateWithWhereUniqueWithoutUsersInput = {
+    where: ShowroomWhereUniqueInput
     data: XOR<ShowroomUpdateWithoutUsersInput, ShowroomUncheckedUpdateWithoutUsersInput>
   }
 
-  export type ShowroomUpdateWithoutUsersInput = {
-    id?: StringFieldUpdateOperationsInput | string
-    name?: StringFieldUpdateOperationsInput | string
-    isMain?: BoolFieldUpdateOperationsInput | boolean
-    inventoryStocks?: InventoryStockUpdateManyWithoutShowroomNestedInput
-    itemStocks?: ItemStockUpdateManyWithoutShowroomNestedInput
-    stockCorrections?: StockCorrectionUpdateManyWithoutShowroomNestedInput
-    itemStockLedgers?: ItemStockLedgerUpdateManyWithoutShowroomNestedInput
-    stockLedgers?: StockLedgerUpdateManyWithoutShowroomNestedInput
-    transfers?: TransferUpdateManyWithoutSourceShowroomNestedInput
-    distnationtransfers?: TransferUpdateManyWithoutDestShowroomNestedInput
+  export type ShowroomUpdateManyWithWhereWithoutUsersInput = {
+    where: ShowroomScalarWhereInput
+    data: XOR<ShowroomUpdateManyMutationInput, ShowroomUncheckedUpdateManyWithoutUsersInput>
   }
 
-  export type ShowroomUncheckedUpdateWithoutUsersInput = {
-    id?: StringFieldUpdateOperationsInput | string
-    name?: StringFieldUpdateOperationsInput | string
-    isMain?: BoolFieldUpdateOperationsInput | boolean
-    inventoryStocks?: InventoryStockUncheckedUpdateManyWithoutShowroomNestedInput
-    itemStocks?: ItemStockUncheckedUpdateManyWithoutShowroomNestedInput
-    stockCorrections?: StockCorrectionUncheckedUpdateManyWithoutShowroomNestedInput
-    itemStockLedgers?: ItemStockLedgerUncheckedUpdateManyWithoutShowroomNestedInput
-    stockLedgers?: StockLedgerUncheckedUpdateManyWithoutShowroomNestedInput
-    transfers?: TransferUncheckedUpdateManyWithoutSourceShowroomNestedInput
-    distnationtransfers?: TransferUncheckedUpdateManyWithoutDestShowroomNestedInput
+  export type ShowroomScalarWhereInput = {
+    AND?: ShowroomScalarWhereInput | ShowroomScalarWhereInput[]
+    OR?: ShowroomScalarWhereInput[]
+    NOT?: ShowroomScalarWhereInput | ShowroomScalarWhereInput[]
+    id?: StringFilter<"Showroom"> | string
+    name?: StringFilter<"Showroom"> | string
+    isMain?: BoolFilter<"Showroom"> | boolean
+  }
+
+  export type StoreUpsertWithWhereUniqueWithoutUsersInput = {
+    where: StoreWhereUniqueInput
+    update: XOR<StoreUpdateWithoutUsersInput, StoreUncheckedUpdateWithoutUsersInput>
+    create: XOR<StoreCreateWithoutUsersInput, StoreUncheckedCreateWithoutUsersInput>
+  }
+
+  export type StoreUpdateWithWhereUniqueWithoutUsersInput = {
+    where: StoreWhereUniqueInput
+    data: XOR<StoreUpdateWithoutUsersInput, StoreUncheckedUpdateWithoutUsersInput>
+  }
+
+  export type StoreUpdateManyWithWhereWithoutUsersInput = {
+    where: StoreScalarWhereInput
+    data: XOR<StoreUpdateManyMutationInput, StoreUncheckedUpdateManyWithoutUsersInput>
+  }
+
+  export type StoreScalarWhereInput = {
+    AND?: StoreScalarWhereInput | StoreScalarWhereInput[]
+    OR?: StoreScalarWhereInput[]
+    NOT?: StoreScalarWhereInput | StoreScalarWhereInput[]
+    id?: StringFilter<"Store"> | string
+    name?: StringFilter<"Store"> | string
+    isMain?: BoolFilter<"Store"> | boolean
   }
 
   export type LogUpsertWithWhereUniqueWithoutUserInput = {
@@ -88332,8 +88342,8 @@ export namespace Prisma {
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -88372,11 +88382,11 @@ export namespace Prisma {
     admin?: boolean
     password: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -88472,8 +88482,6 @@ export namespace Prisma {
     password?: StringFilter<"User"> | string
     roleId?: StringFilter<"User"> | string
     status?: EnumStatusFilter<"User"> | $Enums.Status
-    storeId?: StringNullableFilter<"User"> | string | null
-    showroomId?: StringNullableFilter<"User"> | string | null
     createdAt?: DateTimeFilter<"User"> | Date | string
     updatedAt?: DateTimeFilter<"User"> | Date | string
     lastLoginAt?: DateTimeNullableFilter<"User"> | Date | string | null
@@ -88632,8 +88640,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
     proformaInvoices?: ProformaInvoiceCreateNestedManyWithoutPreparedByInput
@@ -88672,11 +88680,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
     proformaInvoices?: ProformaInvoiceUncheckedCreateNestedManyWithoutPreparedByInput
@@ -88734,8 +88742,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
     proformaInvoices?: ProformaInvoiceUpdateManyWithoutPreparedByNestedInput
@@ -88774,11 +88782,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
     proformaInvoices?: ProformaInvoiceUncheckedUpdateManyWithoutPreparedByNestedInput
@@ -89750,7 +89758,7 @@ export namespace Prisma {
     skipDuplicates?: boolean
   }
 
-  export type UserCreateWithoutShowroomInput = {
+  export type UserCreateWithoutShowroomsInput = {
     id?: string
     name: string
     phone?: string | null
@@ -89763,7 +89771,7 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -89793,7 +89801,7 @@ export namespace Prisma {
     capacityLotHistories?: CapacityLotHistoryCreateNestedManyWithoutChangedByInput
   }
 
-  export type UserUncheckedCreateWithoutShowroomInput = {
+  export type UserUncheckedCreateWithoutShowroomsInput = {
     id?: string
     name: string
     phone?: string | null
@@ -89803,10 +89811,10 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -89836,14 +89844,9 @@ export namespace Prisma {
     capacityLotHistories?: CapacityLotHistoryUncheckedCreateNestedManyWithoutChangedByInput
   }
 
-  export type UserCreateOrConnectWithoutShowroomInput = {
+  export type UserCreateOrConnectWithoutShowroomsInput = {
     where: UserWhereUniqueInput
-    create: XOR<UserCreateWithoutShowroomInput, UserUncheckedCreateWithoutShowroomInput>
-  }
-
-  export type UserCreateManyShowroomInputEnvelope = {
-    data: UserCreateManyShowroomInput | UserCreateManyShowroomInput[]
-    skipDuplicates?: boolean
+    create: XOR<UserCreateWithoutShowroomsInput, UserUncheckedCreateWithoutShowroomsInput>
   }
 
   export type InventoryStockUpsertWithWhereUniqueWithoutShowroomInput = {
@@ -89986,20 +89989,20 @@ export namespace Prisma {
     data: XOR<TransferUpdateManyMutationInput, TransferUncheckedUpdateManyWithoutDestShowroomInput>
   }
 
-  export type UserUpsertWithWhereUniqueWithoutShowroomInput = {
+  export type UserUpsertWithWhereUniqueWithoutShowroomsInput = {
     where: UserWhereUniqueInput
-    update: XOR<UserUpdateWithoutShowroomInput, UserUncheckedUpdateWithoutShowroomInput>
-    create: XOR<UserCreateWithoutShowroomInput, UserUncheckedCreateWithoutShowroomInput>
+    update: XOR<UserUpdateWithoutShowroomsInput, UserUncheckedUpdateWithoutShowroomsInput>
+    create: XOR<UserCreateWithoutShowroomsInput, UserUncheckedCreateWithoutShowroomsInput>
   }
 
-  export type UserUpdateWithWhereUniqueWithoutShowroomInput = {
+  export type UserUpdateWithWhereUniqueWithoutShowroomsInput = {
     where: UserWhereUniqueInput
-    data: XOR<UserUpdateWithoutShowroomInput, UserUncheckedUpdateWithoutShowroomInput>
+    data: XOR<UserUpdateWithoutShowroomsInput, UserUncheckedUpdateWithoutShowroomsInput>
   }
 
-  export type UserUpdateManyWithWhereWithoutShowroomInput = {
+  export type UserUpdateManyWithWhereWithoutShowroomsInput = {
     where: UserScalarWhereInput
-    data: XOR<UserUpdateManyMutationInput, UserUncheckedUpdateManyWithoutShowroomInput>
+    data: XOR<UserUpdateManyMutationInput, UserUncheckedUpdateManyWithoutShowroomsInput>
   }
 
   export type InventoryStockCreateWithoutStoreInput = {
@@ -90388,7 +90391,7 @@ export namespace Prisma {
     skipDuplicates?: boolean
   }
 
-  export type UserCreateWithoutStoreInput = {
+  export type UserCreateWithoutStoresInput = {
     id?: string
     name: string
     phone?: string | null
@@ -90401,7 +90404,7 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -90431,7 +90434,7 @@ export namespace Prisma {
     capacityLotHistories?: CapacityLotHistoryCreateNestedManyWithoutChangedByInput
   }
 
-  export type UserUncheckedCreateWithoutStoreInput = {
+  export type UserUncheckedCreateWithoutStoresInput = {
     id?: string
     name: string
     phone?: string | null
@@ -90441,10 +90444,10 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -90474,14 +90477,9 @@ export namespace Prisma {
     capacityLotHistories?: CapacityLotHistoryUncheckedCreateNestedManyWithoutChangedByInput
   }
 
-  export type UserCreateOrConnectWithoutStoreInput = {
+  export type UserCreateOrConnectWithoutStoresInput = {
     where: UserWhereUniqueInput
-    create: XOR<UserCreateWithoutStoreInput, UserUncheckedCreateWithoutStoreInput>
-  }
-
-  export type UserCreateManyStoreInputEnvelope = {
-    data: UserCreateManyStoreInput | UserCreateManyStoreInput[]
-    skipDuplicates?: boolean
+    create: XOR<UserCreateWithoutStoresInput, UserUncheckedCreateWithoutStoresInput>
   }
 
   export type InventoryStockUpsertWithWhereUniqueWithoutStoreInput = {
@@ -90628,20 +90626,20 @@ export namespace Prisma {
     data: XOR<TransferUpdateManyMutationInput, TransferUncheckedUpdateManyWithoutDestStoreInput>
   }
 
-  export type UserUpsertWithWhereUniqueWithoutStoreInput = {
+  export type UserUpsertWithWhereUniqueWithoutStoresInput = {
     where: UserWhereUniqueInput
-    update: XOR<UserUpdateWithoutStoreInput, UserUncheckedUpdateWithoutStoreInput>
-    create: XOR<UserCreateWithoutStoreInput, UserUncheckedCreateWithoutStoreInput>
+    update: XOR<UserUpdateWithoutStoresInput, UserUncheckedUpdateWithoutStoresInput>
+    create: XOR<UserCreateWithoutStoresInput, UserUncheckedCreateWithoutStoresInput>
   }
 
-  export type UserUpdateWithWhereUniqueWithoutStoreInput = {
+  export type UserUpdateWithWhereUniqueWithoutStoresInput = {
     where: UserWhereUniqueInput
-    data: XOR<UserUpdateWithoutStoreInput, UserUncheckedUpdateWithoutStoreInput>
+    data: XOR<UserUpdateWithoutStoresInput, UserUncheckedUpdateWithoutStoresInput>
   }
 
-  export type UserUpdateManyWithWhereWithoutStoreInput = {
+  export type UserUpdateManyWithWhereWithoutStoresInput = {
     where: UserScalarWhereInput
-    data: XOR<UserUpdateManyMutationInput, UserUncheckedUpdateManyWithoutStoreInput>
+    data: XOR<UserUpdateManyMutationInput, UserUncheckedUpdateManyWithoutStoresInput>
   }
 
   export type MaterialCreateWithoutStockLedgersInput = {
@@ -90711,7 +90709,7 @@ export namespace Prisma {
     sells?: SellCreateNestedManyWithoutStoreInput
     transfers?: TransferCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestStoreInput
-    users?: UserCreateNestedManyWithoutStoreInput
+    users?: UserCreateNestedManyWithoutStoresInput
   }
 
   export type StoreUncheckedCreateWithoutStockLedgersInput = {
@@ -90726,7 +90724,7 @@ export namespace Prisma {
     sells?: SellUncheckedCreateNestedManyWithoutStoreInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestStoreInput
-    users?: UserUncheckedCreateNestedManyWithoutStoreInput
+    users?: UserUncheckedCreateNestedManyWithoutStoresInput
   }
 
   export type StoreCreateOrConnectWithoutStockLedgersInput = {
@@ -90744,7 +90742,7 @@ export namespace Prisma {
     itemStockLedgers?: ItemStockLedgerCreateNestedManyWithoutShowroomInput
     transfers?: TransferCreateNestedManyWithoutSourceShowroomInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestShowroomInput
-    users?: UserCreateNestedManyWithoutShowroomInput
+    users?: UserCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomUncheckedCreateWithoutStockLedgersInput = {
@@ -90757,7 +90755,7 @@ export namespace Prisma {
     itemStockLedgers?: ItemStockLedgerUncheckedCreateNestedManyWithoutShowroomInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceShowroomInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestShowroomInput
-    users?: UserUncheckedCreateNestedManyWithoutShowroomInput
+    users?: UserUncheckedCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomCreateOrConnectWithoutStockLedgersInput = {
@@ -90805,8 +90803,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -90845,11 +90843,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -90967,7 +90965,7 @@ export namespace Prisma {
     sells?: SellUpdateManyWithoutStoreNestedInput
     transfers?: TransferUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestStoreNestedInput
-    users?: UserUpdateManyWithoutStoreNestedInput
+    users?: UserUpdateManyWithoutStoresNestedInput
   }
 
   export type StoreUncheckedUpdateWithoutStockLedgersInput = {
@@ -90982,7 +90980,7 @@ export namespace Prisma {
     sells?: SellUncheckedUpdateManyWithoutStoreNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestStoreNestedInput
-    users?: UserUncheckedUpdateManyWithoutStoreNestedInput
+    users?: UserUncheckedUpdateManyWithoutStoresNestedInput
   }
 
   export type ShowroomUpsertWithoutStockLedgersInput = {
@@ -91006,7 +91004,7 @@ export namespace Prisma {
     itemStockLedgers?: ItemStockLedgerUpdateManyWithoutShowroomNestedInput
     transfers?: TransferUpdateManyWithoutSourceShowroomNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestShowroomNestedInput
-    users?: UserUpdateManyWithoutShowroomNestedInput
+    users?: UserUpdateManyWithoutShowroomsNestedInput
   }
 
   export type ShowroomUncheckedUpdateWithoutStockLedgersInput = {
@@ -91019,7 +91017,7 @@ export namespace Prisma {
     itemStockLedgers?: ItemStockLedgerUncheckedUpdateManyWithoutShowroomNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceShowroomNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestShowroomNestedInput
-    users?: UserUncheckedUpdateManyWithoutShowroomNestedInput
+    users?: UserUncheckedUpdateManyWithoutShowroomsNestedInput
   }
 
   export type UnitOfMeasureUpsertWithoutStockLedgersInput = {
@@ -91079,8 +91077,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -91119,11 +91117,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -91219,7 +91217,7 @@ export namespace Prisma {
     sells?: SellCreateNestedManyWithoutStoreInput
     transfers?: TransferCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestStoreInput
-    users?: UserCreateNestedManyWithoutStoreInput
+    users?: UserCreateNestedManyWithoutStoresInput
   }
 
   export type StoreUncheckedCreateWithoutInventoryStocksInput = {
@@ -91234,7 +91232,7 @@ export namespace Prisma {
     sells?: SellUncheckedCreateNestedManyWithoutStoreInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestStoreInput
-    users?: UserUncheckedCreateNestedManyWithoutStoreInput
+    users?: UserUncheckedCreateNestedManyWithoutStoresInput
   }
 
   export type StoreCreateOrConnectWithoutInventoryStocksInput = {
@@ -91252,7 +91250,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerCreateNestedManyWithoutShowroomInput
     transfers?: TransferCreateNestedManyWithoutSourceShowroomInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestShowroomInput
-    users?: UserCreateNestedManyWithoutShowroomInput
+    users?: UserCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomUncheckedCreateWithoutInventoryStocksInput = {
@@ -91265,7 +91263,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedCreateNestedManyWithoutShowroomInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceShowroomInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestShowroomInput
-    users?: UserUncheckedCreateNestedManyWithoutShowroomInput
+    users?: UserUncheckedCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomCreateOrConnectWithoutInventoryStocksInput = {
@@ -91357,7 +91355,7 @@ export namespace Prisma {
     sells?: SellUpdateManyWithoutStoreNestedInput
     transfers?: TransferUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestStoreNestedInput
-    users?: UserUpdateManyWithoutStoreNestedInput
+    users?: UserUpdateManyWithoutStoresNestedInput
   }
 
   export type StoreUncheckedUpdateWithoutInventoryStocksInput = {
@@ -91372,7 +91370,7 @@ export namespace Prisma {
     sells?: SellUncheckedUpdateManyWithoutStoreNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestStoreNestedInput
-    users?: UserUncheckedUpdateManyWithoutStoreNestedInput
+    users?: UserUncheckedUpdateManyWithoutStoresNestedInput
   }
 
   export type ShowroomUpsertWithoutInventoryStocksInput = {
@@ -91396,7 +91394,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUpdateManyWithoutShowroomNestedInput
     transfers?: TransferUpdateManyWithoutSourceShowroomNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestShowroomNestedInput
-    users?: UserUpdateManyWithoutShowroomNestedInput
+    users?: UserUpdateManyWithoutShowroomsNestedInput
   }
 
   export type ShowroomUncheckedUpdateWithoutInventoryStocksInput = {
@@ -91409,7 +91407,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedUpdateManyWithoutShowroomNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceShowroomNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestShowroomNestedInput
-    users?: UserUncheckedUpdateManyWithoutShowroomNestedInput
+    users?: UserUncheckedUpdateManyWithoutShowroomsNestedInput
   }
 
   export type MaterialCreateWithoutMaterialTypeInput = {
@@ -92065,7 +92063,7 @@ export namespace Prisma {
     sells?: SellCreateNestedManyWithoutStoreInput
     transfers?: TransferCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestStoreInput
-    users?: UserCreateNestedManyWithoutStoreInput
+    users?: UserCreateNestedManyWithoutStoresInput
   }
 
   export type StoreUncheckedCreateWithoutPurchasesInput = {
@@ -92080,7 +92078,7 @@ export namespace Prisma {
     sells?: SellUncheckedCreateNestedManyWithoutStoreInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestStoreInput
-    users?: UserUncheckedCreateNestedManyWithoutStoreInput
+    users?: UserUncheckedCreateNestedManyWithoutStoresInput
   }
 
   export type StoreCreateOrConnectWithoutPurchasesInput = {
@@ -92101,8 +92099,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
     proformaInvoices?: ProformaInvoiceCreateNestedManyWithoutPreparedByInput
@@ -92141,11 +92139,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
     proformaInvoices?: ProformaInvoiceUncheckedCreateNestedManyWithoutPreparedByInput
@@ -92192,8 +92190,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     proformaInvoices?: ProformaInvoiceCreateNestedManyWithoutPreparedByInput
@@ -92232,11 +92230,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     proformaInvoices?: ProformaInvoiceUncheckedCreateNestedManyWithoutPreparedByInput
@@ -92441,7 +92439,7 @@ export namespace Prisma {
     sells?: SellUpdateManyWithoutStoreNestedInput
     transfers?: TransferUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestStoreNestedInput
-    users?: UserUpdateManyWithoutStoreNestedInput
+    users?: UserUpdateManyWithoutStoresNestedInput
   }
 
   export type StoreUncheckedUpdateWithoutPurchasesInput = {
@@ -92456,7 +92454,7 @@ export namespace Prisma {
     sells?: SellUncheckedUpdateManyWithoutStoreNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestStoreNestedInput
-    users?: UserUncheckedUpdateManyWithoutStoreNestedInput
+    users?: UserUncheckedUpdateManyWithoutStoresNestedInput
   }
 
   export type UserUpsertWithoutPurchasesInput = {
@@ -92483,8 +92481,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
     proformaInvoices?: ProformaInvoiceUpdateManyWithoutPreparedByNestedInput
@@ -92523,11 +92521,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
     proformaInvoices?: ProformaInvoiceUncheckedUpdateManyWithoutPreparedByNestedInput
@@ -92580,8 +92578,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     proformaInvoices?: ProformaInvoiceUpdateManyWithoutPreparedByNestedInput
@@ -92620,11 +92618,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     proformaInvoices?: ProformaInvoiceUncheckedUpdateManyWithoutPreparedByNestedInput
@@ -94138,7 +94136,7 @@ export namespace Prisma {
     sells?: SellCreateNestedManyWithoutStoreInput
     transfers?: TransferCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestStoreInput
-    users?: UserCreateNestedManyWithoutStoreInput
+    users?: UserCreateNestedManyWithoutStoresInput
   }
 
   export type StoreUncheckedCreateWithoutItemStocksInput = {
@@ -94153,7 +94151,7 @@ export namespace Prisma {
     sells?: SellUncheckedCreateNestedManyWithoutStoreInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestStoreInput
-    users?: UserUncheckedCreateNestedManyWithoutStoreInput
+    users?: UserUncheckedCreateNestedManyWithoutStoresInput
   }
 
   export type StoreCreateOrConnectWithoutItemStocksInput = {
@@ -94171,7 +94169,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerCreateNestedManyWithoutShowroomInput
     transfers?: TransferCreateNestedManyWithoutSourceShowroomInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestShowroomInput
-    users?: UserCreateNestedManyWithoutShowroomInput
+    users?: UserCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomUncheckedCreateWithoutItemStocksInput = {
@@ -94184,7 +94182,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedCreateNestedManyWithoutShowroomInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceShowroomInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestShowroomInput
-    users?: UserUncheckedCreateNestedManyWithoutShowroomInput
+    users?: UserUncheckedCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomCreateOrConnectWithoutItemStocksInput = {
@@ -94264,7 +94262,7 @@ export namespace Prisma {
     sells?: SellUpdateManyWithoutStoreNestedInput
     transfers?: TransferUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestStoreNestedInput
-    users?: UserUpdateManyWithoutStoreNestedInput
+    users?: UserUpdateManyWithoutStoresNestedInput
   }
 
   export type StoreUncheckedUpdateWithoutItemStocksInput = {
@@ -94279,7 +94277,7 @@ export namespace Prisma {
     sells?: SellUncheckedUpdateManyWithoutStoreNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestStoreNestedInput
-    users?: UserUncheckedUpdateManyWithoutStoreNestedInput
+    users?: UserUncheckedUpdateManyWithoutStoresNestedInput
   }
 
   export type ShowroomUpsertWithoutItemStocksInput = {
@@ -94303,7 +94301,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUpdateManyWithoutShowroomNestedInput
     transfers?: TransferUpdateManyWithoutSourceShowroomNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestShowroomNestedInput
-    users?: UserUpdateManyWithoutShowroomNestedInput
+    users?: UserUpdateManyWithoutShowroomsNestedInput
   }
 
   export type ShowroomUncheckedUpdateWithoutItemStocksInput = {
@@ -94316,7 +94314,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedUpdateManyWithoutShowroomNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceShowroomNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestShowroomNestedInput
-    users?: UserUncheckedUpdateManyWithoutShowroomNestedInput
+    users?: UserUncheckedUpdateManyWithoutShowroomsNestedInput
   }
 
   export type ItemsCreateWithoutItemStockLedgersInput = {
@@ -94374,7 +94372,7 @@ export namespace Prisma {
     sells?: SellCreateNestedManyWithoutStoreInput
     transfers?: TransferCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestStoreInput
-    users?: UserCreateNestedManyWithoutStoreInput
+    users?: UserCreateNestedManyWithoutStoresInput
   }
 
   export type StoreUncheckedCreateWithoutItemStockLedgersInput = {
@@ -94389,7 +94387,7 @@ export namespace Prisma {
     sells?: SellUncheckedCreateNestedManyWithoutStoreInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestStoreInput
-    users?: UserUncheckedCreateNestedManyWithoutStoreInput
+    users?: UserUncheckedCreateNestedManyWithoutStoresInput
   }
 
   export type StoreCreateOrConnectWithoutItemStockLedgersInput = {
@@ -94407,7 +94405,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerCreateNestedManyWithoutShowroomInput
     transfers?: TransferCreateNestedManyWithoutSourceShowroomInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestShowroomInput
-    users?: UserCreateNestedManyWithoutShowroomInput
+    users?: UserCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomUncheckedCreateWithoutItemStockLedgersInput = {
@@ -94420,7 +94418,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedCreateNestedManyWithoutShowroomInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceShowroomInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestShowroomInput
-    users?: UserUncheckedCreateNestedManyWithoutShowroomInput
+    users?: UserUncheckedCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomCreateOrConnectWithoutItemStockLedgersInput = {
@@ -94441,8 +94439,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -94481,11 +94479,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -94591,7 +94589,7 @@ export namespace Prisma {
     sells?: SellUpdateManyWithoutStoreNestedInput
     transfers?: TransferUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestStoreNestedInput
-    users?: UserUpdateManyWithoutStoreNestedInput
+    users?: UserUpdateManyWithoutStoresNestedInput
   }
 
   export type StoreUncheckedUpdateWithoutItemStockLedgersInput = {
@@ -94606,7 +94604,7 @@ export namespace Prisma {
     sells?: SellUncheckedUpdateManyWithoutStoreNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestStoreNestedInput
-    users?: UserUncheckedUpdateManyWithoutStoreNestedInput
+    users?: UserUncheckedUpdateManyWithoutStoresNestedInput
   }
 
   export type ShowroomUpsertWithoutItemStockLedgersInput = {
@@ -94630,7 +94628,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUpdateManyWithoutShowroomNestedInput
     transfers?: TransferUpdateManyWithoutSourceShowroomNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestShowroomNestedInput
-    users?: UserUpdateManyWithoutShowroomNestedInput
+    users?: UserUpdateManyWithoutShowroomsNestedInput
   }
 
   export type ShowroomUncheckedUpdateWithoutItemStockLedgersInput = {
@@ -94643,7 +94641,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedUpdateManyWithoutShowroomNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceShowroomNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestShowroomNestedInput
-    users?: UserUncheckedUpdateManyWithoutShowroomNestedInput
+    users?: UserUncheckedUpdateManyWithoutShowroomsNestedInput
   }
 
   export type UserUpsertWithoutItemStockLedgersInput = {
@@ -94670,8 +94668,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -94710,11 +94708,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -94815,8 +94813,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -94855,11 +94853,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -95007,8 +95005,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -95047,11 +95045,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -95123,7 +95121,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerCreateNestedManyWithoutStoreInput
     transfers?: TransferCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestStoreInput
-    users?: UserCreateNestedManyWithoutStoreInput
+    users?: UserCreateNestedManyWithoutStoresInput
   }
 
   export type StoreUncheckedCreateWithoutSellsInput = {
@@ -95138,7 +95136,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedCreateNestedManyWithoutStoreInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestStoreInput
-    users?: UserUncheckedCreateNestedManyWithoutStoreInput
+    users?: UserUncheckedCreateNestedManyWithoutStoresInput
   }
 
   export type StoreCreateOrConnectWithoutSellsInput = {
@@ -95196,8 +95194,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -95236,11 +95234,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -95287,8 +95285,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -95327,11 +95325,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -95450,7 +95448,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUpdateManyWithoutStoreNestedInput
     transfers?: TransferUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestStoreNestedInput
-    users?: UserUpdateManyWithoutStoreNestedInput
+    users?: UserUpdateManyWithoutStoresNestedInput
   }
 
   export type StoreUncheckedUpdateWithoutSellsInput = {
@@ -95465,7 +95463,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedUpdateManyWithoutStoreNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestStoreNestedInput
-    users?: UserUncheckedUpdateManyWithoutStoreNestedInput
+    users?: UserUncheckedUpdateManyWithoutStoresNestedInput
   }
 
   export type CustomerUpsertWithoutSellsInput = {
@@ -95535,8 +95533,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -95575,11 +95573,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -95632,8 +95630,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -95672,11 +95670,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -95965,7 +95963,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerCreateNestedManyWithoutStoreInput
     sells?: SellCreateNestedManyWithoutStoreInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestStoreInput
-    users?: UserCreateNestedManyWithoutStoreInput
+    users?: UserCreateNestedManyWithoutStoresInput
   }
 
   export type StoreUncheckedCreateWithoutTransfersInput = {
@@ -95980,7 +95978,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedCreateNestedManyWithoutStoreInput
     sells?: SellUncheckedCreateNestedManyWithoutStoreInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestStoreInput
-    users?: UserUncheckedCreateNestedManyWithoutStoreInput
+    users?: UserUncheckedCreateNestedManyWithoutStoresInput
   }
 
   export type StoreCreateOrConnectWithoutTransfersInput = {
@@ -95998,7 +95996,7 @@ export namespace Prisma {
     itemStockLedgers?: ItemStockLedgerCreateNestedManyWithoutShowroomInput
     stockLedgers?: StockLedgerCreateNestedManyWithoutShowroomInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestShowroomInput
-    users?: UserCreateNestedManyWithoutShowroomInput
+    users?: UserCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomUncheckedCreateWithoutTransfersInput = {
@@ -96011,7 +96009,7 @@ export namespace Prisma {
     itemStockLedgers?: ItemStockLedgerUncheckedCreateNestedManyWithoutShowroomInput
     stockLedgers?: StockLedgerUncheckedCreateNestedManyWithoutShowroomInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestShowroomInput
-    users?: UserUncheckedCreateNestedManyWithoutShowroomInput
+    users?: UserUncheckedCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomCreateOrConnectWithoutTransfersInput = {
@@ -96031,7 +96029,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerCreateNestedManyWithoutStoreInput
     sells?: SellCreateNestedManyWithoutStoreInput
     transfers?: TransferCreateNestedManyWithoutSourceStoreInput
-    users?: UserCreateNestedManyWithoutStoreInput
+    users?: UserCreateNestedManyWithoutStoresInput
   }
 
   export type StoreUncheckedCreateWithoutDistnationtransfersInput = {
@@ -96046,7 +96044,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedCreateNestedManyWithoutStoreInput
     sells?: SellUncheckedCreateNestedManyWithoutStoreInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceStoreInput
-    users?: UserUncheckedCreateNestedManyWithoutStoreInput
+    users?: UserUncheckedCreateNestedManyWithoutStoresInput
   }
 
   export type StoreCreateOrConnectWithoutDistnationtransfersInput = {
@@ -96064,7 +96062,7 @@ export namespace Prisma {
     itemStockLedgers?: ItemStockLedgerCreateNestedManyWithoutShowroomInput
     stockLedgers?: StockLedgerCreateNestedManyWithoutShowroomInput
     transfers?: TransferCreateNestedManyWithoutSourceShowroomInput
-    users?: UserCreateNestedManyWithoutShowroomInput
+    users?: UserCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomUncheckedCreateWithoutDistnationtransfersInput = {
@@ -96077,7 +96075,7 @@ export namespace Prisma {
     itemStockLedgers?: ItemStockLedgerUncheckedCreateNestedManyWithoutShowroomInput
     stockLedgers?: StockLedgerUncheckedCreateNestedManyWithoutShowroomInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceShowroomInput
-    users?: UserUncheckedCreateNestedManyWithoutShowroomInput
+    users?: UserUncheckedCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomCreateOrConnectWithoutDistnationtransfersInput = {
@@ -96098,8 +96096,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -96138,11 +96136,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -96189,8 +96187,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -96229,11 +96227,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -96320,7 +96318,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUpdateManyWithoutStoreNestedInput
     sells?: SellUpdateManyWithoutStoreNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestStoreNestedInput
-    users?: UserUpdateManyWithoutStoreNestedInput
+    users?: UserUpdateManyWithoutStoresNestedInput
   }
 
   export type StoreUncheckedUpdateWithoutTransfersInput = {
@@ -96335,7 +96333,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedUpdateManyWithoutStoreNestedInput
     sells?: SellUncheckedUpdateManyWithoutStoreNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestStoreNestedInput
-    users?: UserUncheckedUpdateManyWithoutStoreNestedInput
+    users?: UserUncheckedUpdateManyWithoutStoresNestedInput
   }
 
   export type ShowroomUpsertWithoutTransfersInput = {
@@ -96359,7 +96357,7 @@ export namespace Prisma {
     itemStockLedgers?: ItemStockLedgerUpdateManyWithoutShowroomNestedInput
     stockLedgers?: StockLedgerUpdateManyWithoutShowroomNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestShowroomNestedInput
-    users?: UserUpdateManyWithoutShowroomNestedInput
+    users?: UserUpdateManyWithoutShowroomsNestedInput
   }
 
   export type ShowroomUncheckedUpdateWithoutTransfersInput = {
@@ -96372,7 +96370,7 @@ export namespace Prisma {
     itemStockLedgers?: ItemStockLedgerUncheckedUpdateManyWithoutShowroomNestedInput
     stockLedgers?: StockLedgerUncheckedUpdateManyWithoutShowroomNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestShowroomNestedInput
-    users?: UserUncheckedUpdateManyWithoutShowroomNestedInput
+    users?: UserUncheckedUpdateManyWithoutShowroomsNestedInput
   }
 
   export type StoreUpsertWithoutDistnationtransfersInput = {
@@ -96398,7 +96396,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUpdateManyWithoutStoreNestedInput
     sells?: SellUpdateManyWithoutStoreNestedInput
     transfers?: TransferUpdateManyWithoutSourceStoreNestedInput
-    users?: UserUpdateManyWithoutStoreNestedInput
+    users?: UserUpdateManyWithoutStoresNestedInput
   }
 
   export type StoreUncheckedUpdateWithoutDistnationtransfersInput = {
@@ -96413,7 +96411,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedUpdateManyWithoutStoreNestedInput
     sells?: SellUncheckedUpdateManyWithoutStoreNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceStoreNestedInput
-    users?: UserUncheckedUpdateManyWithoutStoreNestedInput
+    users?: UserUncheckedUpdateManyWithoutStoresNestedInput
   }
 
   export type ShowroomUpsertWithoutDistnationtransfersInput = {
@@ -96437,7 +96435,7 @@ export namespace Prisma {
     itemStockLedgers?: ItemStockLedgerUpdateManyWithoutShowroomNestedInput
     stockLedgers?: StockLedgerUpdateManyWithoutShowroomNestedInput
     transfers?: TransferUpdateManyWithoutSourceShowroomNestedInput
-    users?: UserUpdateManyWithoutShowroomNestedInput
+    users?: UserUpdateManyWithoutShowroomsNestedInput
   }
 
   export type ShowroomUncheckedUpdateWithoutDistnationtransfersInput = {
@@ -96450,7 +96448,7 @@ export namespace Prisma {
     itemStockLedgers?: ItemStockLedgerUncheckedUpdateManyWithoutShowroomNestedInput
     stockLedgers?: StockLedgerUncheckedUpdateManyWithoutShowroomNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceShowroomNestedInput
-    users?: UserUncheckedUpdateManyWithoutShowroomNestedInput
+    users?: UserUncheckedUpdateManyWithoutShowroomsNestedInput
   }
 
   export type UserUpsertWithoutTransfersInput = {
@@ -96477,8 +96475,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -96517,11 +96515,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -96574,8 +96572,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -96614,11 +96612,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -97052,8 +97050,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -97092,11 +97090,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -97242,8 +97240,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -97282,11 +97280,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -97634,8 +97632,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -97674,11 +97672,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -97787,8 +97785,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -97827,11 +97825,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -97967,8 +97965,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -98007,11 +98005,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -98058,8 +98056,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -98098,11 +98096,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -98378,8 +98376,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -98418,11 +98416,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -98475,8 +98473,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -98515,11 +98513,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -99146,8 +99144,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -99186,11 +99184,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -99237,8 +99235,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -99277,11 +99275,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -99382,8 +99380,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -99422,11 +99420,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -99479,8 +99477,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -99519,11 +99517,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -99734,8 +99732,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -99774,11 +99772,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -99903,8 +99901,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -99943,11 +99941,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -100036,8 +100034,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -100076,11 +100074,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -100191,8 +100189,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -100231,11 +100229,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -100365,8 +100363,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -100405,11 +100403,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -100456,8 +100454,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -100496,11 +100494,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -100547,8 +100545,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -100587,11 +100585,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -100859,8 +100857,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -100899,11 +100897,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -100956,8 +100954,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -100996,11 +100994,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -101053,8 +101051,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -101093,11 +101091,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -101271,8 +101269,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -101311,11 +101309,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -101440,8 +101438,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -101480,11 +101478,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -101603,8 +101601,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -101643,11 +101641,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -101738,8 +101736,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -101778,11 +101776,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -102315,8 +102313,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -102355,11 +102353,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -102406,8 +102404,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -102446,11 +102444,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -102508,8 +102506,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -102548,11 +102546,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -102605,8 +102603,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -102645,11 +102643,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -102690,7 +102688,7 @@ export namespace Prisma {
     sells?: SellCreateNestedManyWithoutStoreInput
     transfers?: TransferCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestStoreInput
-    users?: UserCreateNestedManyWithoutStoreInput
+    users?: UserCreateNestedManyWithoutStoresInput
   }
 
   export type StoreUncheckedCreateWithoutStockCorrectionsInput = {
@@ -102705,7 +102703,7 @@ export namespace Prisma {
     sells?: SellUncheckedCreateNestedManyWithoutStoreInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceStoreInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestStoreInput
-    users?: UserUncheckedCreateNestedManyWithoutStoreInput
+    users?: UserUncheckedCreateNestedManyWithoutStoresInput
   }
 
   export type StoreCreateOrConnectWithoutStockCorrectionsInput = {
@@ -102723,7 +102721,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerCreateNestedManyWithoutShowroomInput
     transfers?: TransferCreateNestedManyWithoutSourceShowroomInput
     distnationtransfers?: TransferCreateNestedManyWithoutDestShowroomInput
-    users?: UserCreateNestedManyWithoutShowroomInput
+    users?: UserCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomUncheckedCreateWithoutStockCorrectionsInput = {
@@ -102736,7 +102734,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedCreateNestedManyWithoutShowroomInput
     transfers?: TransferUncheckedCreateNestedManyWithoutSourceShowroomInput
     distnationtransfers?: TransferUncheckedCreateNestedManyWithoutDestShowroomInput
-    users?: UserUncheckedCreateNestedManyWithoutShowroomInput
+    users?: UserUncheckedCreateNestedManyWithoutShowroomsInput
   }
 
   export type ShowroomCreateOrConnectWithoutStockCorrectionsInput = {
@@ -102800,8 +102798,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -102840,11 +102838,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -102891,8 +102889,8 @@ export namespace Prisma {
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
     role: RoleCreateNestedOneWithoutUsersInput
-    store?: StoreCreateNestedOneWithoutUsersInput
-    showroom?: ShowroomCreateNestedOneWithoutUsersInput
+    showrooms?: ShowroomCreateNestedManyWithoutUsersInput
+    stores?: StoreCreateNestedManyWithoutUsersInput
     Log?: LogCreateNestedManyWithoutUserInput
     purchases?: PurchaseCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseCreateNestedManyWithoutUpdatedByInput
@@ -102931,11 +102929,11 @@ export namespace Prisma {
     password: string
     roleId: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
+    showrooms?: ShowroomUncheckedCreateNestedManyWithoutUsersInput
+    stores?: StoreUncheckedCreateNestedManyWithoutUsersInput
     Log?: LogUncheckedCreateNestedManyWithoutUserInput
     purchases?: PurchaseUncheckedCreateNestedManyWithoutCreatedByInput
     uppurchases?: PurchaseUncheckedCreateNestedManyWithoutUpdatedByInput
@@ -103020,7 +103018,7 @@ export namespace Prisma {
     sells?: SellUpdateManyWithoutStoreNestedInput
     transfers?: TransferUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestStoreNestedInput
-    users?: UserUpdateManyWithoutStoreNestedInput
+    users?: UserUpdateManyWithoutStoresNestedInput
   }
 
   export type StoreUncheckedUpdateWithoutStockCorrectionsInput = {
@@ -103035,7 +103033,7 @@ export namespace Prisma {
     sells?: SellUncheckedUpdateManyWithoutStoreNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceStoreNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestStoreNestedInput
-    users?: UserUncheckedUpdateManyWithoutStoreNestedInput
+    users?: UserUncheckedUpdateManyWithoutStoresNestedInput
   }
 
   export type ShowroomUpsertWithoutStockCorrectionsInput = {
@@ -103059,7 +103057,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUpdateManyWithoutShowroomNestedInput
     transfers?: TransferUpdateManyWithoutSourceShowroomNestedInput
     distnationtransfers?: TransferUpdateManyWithoutDestShowroomNestedInput
-    users?: UserUpdateManyWithoutShowroomNestedInput
+    users?: UserUpdateManyWithoutShowroomsNestedInput
   }
 
   export type ShowroomUncheckedUpdateWithoutStockCorrectionsInput = {
@@ -103072,7 +103070,7 @@ export namespace Prisma {
     stockLedgers?: StockLedgerUncheckedUpdateManyWithoutShowroomNestedInput
     transfers?: TransferUncheckedUpdateManyWithoutSourceShowroomNestedInput
     distnationtransfers?: TransferUncheckedUpdateManyWithoutDestShowroomNestedInput
-    users?: UserUncheckedUpdateManyWithoutShowroomNestedInput
+    users?: UserUncheckedUpdateManyWithoutShowroomsNestedInput
   }
 
   export type PurchaseUpsertWithoutStockCorrectionsInput = {
@@ -103148,8 +103146,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -103188,11 +103186,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -103245,8 +103243,8 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -103285,11 +103283,11 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -104060,6 +104058,74 @@ export namespace Prisma {
     newCapacity?: number | null
     action: $Enums.CapacityHistoryAction
     createdAt?: Date | string
+  }
+
+  export type ShowroomUpdateWithoutUsersInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    isMain?: BoolFieldUpdateOperationsInput | boolean
+    inventoryStocks?: InventoryStockUpdateManyWithoutShowroomNestedInput
+    itemStocks?: ItemStockUpdateManyWithoutShowroomNestedInput
+    stockCorrections?: StockCorrectionUpdateManyWithoutShowroomNestedInput
+    itemStockLedgers?: ItemStockLedgerUpdateManyWithoutShowroomNestedInput
+    stockLedgers?: StockLedgerUpdateManyWithoutShowroomNestedInput
+    transfers?: TransferUpdateManyWithoutSourceShowroomNestedInput
+    distnationtransfers?: TransferUpdateManyWithoutDestShowroomNestedInput
+  }
+
+  export type ShowroomUncheckedUpdateWithoutUsersInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    isMain?: BoolFieldUpdateOperationsInput | boolean
+    inventoryStocks?: InventoryStockUncheckedUpdateManyWithoutShowroomNestedInput
+    itemStocks?: ItemStockUncheckedUpdateManyWithoutShowroomNestedInput
+    stockCorrections?: StockCorrectionUncheckedUpdateManyWithoutShowroomNestedInput
+    itemStockLedgers?: ItemStockLedgerUncheckedUpdateManyWithoutShowroomNestedInput
+    stockLedgers?: StockLedgerUncheckedUpdateManyWithoutShowroomNestedInput
+    transfers?: TransferUncheckedUpdateManyWithoutSourceShowroomNestedInput
+    distnationtransfers?: TransferUncheckedUpdateManyWithoutDestShowroomNestedInput
+  }
+
+  export type ShowroomUncheckedUpdateManyWithoutUsersInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    isMain?: BoolFieldUpdateOperationsInput | boolean
+  }
+
+  export type StoreUpdateWithoutUsersInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    isMain?: BoolFieldUpdateOperationsInput | boolean
+    inventoryStocks?: InventoryStockUpdateManyWithoutStoreNestedInput
+    itemStocks?: ItemStockUpdateManyWithoutStoreNestedInput
+    purchases?: PurchaseUpdateManyWithoutStoreNestedInput
+    stockCorrections?: StockCorrectionUpdateManyWithoutStoreNestedInput
+    itemStockLedgers?: ItemStockLedgerUpdateManyWithoutStoreNestedInput
+    stockLedgers?: StockLedgerUpdateManyWithoutStoreNestedInput
+    sells?: SellUpdateManyWithoutStoreNestedInput
+    transfers?: TransferUpdateManyWithoutSourceStoreNestedInput
+    distnationtransfers?: TransferUpdateManyWithoutDestStoreNestedInput
+  }
+
+  export type StoreUncheckedUpdateWithoutUsersInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    isMain?: BoolFieldUpdateOperationsInput | boolean
+    inventoryStocks?: InventoryStockUncheckedUpdateManyWithoutStoreNestedInput
+    itemStocks?: ItemStockUncheckedUpdateManyWithoutStoreNestedInput
+    purchases?: PurchaseUncheckedUpdateManyWithoutStoreNestedInput
+    stockCorrections?: StockCorrectionUncheckedUpdateManyWithoutStoreNestedInput
+    itemStockLedgers?: ItemStockLedgerUncheckedUpdateManyWithoutStoreNestedInput
+    stockLedgers?: StockLedgerUncheckedUpdateManyWithoutStoreNestedInput
+    sells?: SellUncheckedUpdateManyWithoutStoreNestedInput
+    transfers?: TransferUncheckedUpdateManyWithoutSourceStoreNestedInput
+    distnationtransfers?: TransferUncheckedUpdateManyWithoutDestStoreNestedInput
+  }
+
+  export type StoreUncheckedUpdateManyWithoutUsersInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    isMain?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type LogUpdateWithoutUserInput = {
@@ -105448,8 +105514,6 @@ export namespace Prisma {
     admin?: boolean
     password: string
     status?: $Enums.Status
-    storeId?: string | null
-    showroomId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     lastLoginAt?: Date | string | null
@@ -105488,8 +105552,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
-    store?: StoreUpdateOneWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -105528,11 +105592,11 @@ export namespace Prisma {
     admin?: BoolFieldUpdateOperationsInput | boolean
     password?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -105571,8 +105635,6 @@ export namespace Prisma {
     admin?: BoolFieldUpdateOperationsInput | boolean
     password?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -106407,22 +106469,6 @@ export namespace Prisma {
     updatedAt?: Date | string
   }
 
-  export type UserCreateManyShowroomInput = {
-    id?: string
-    name: string
-    phone?: string | null
-    userCode?: string | null
-    email: string
-    admin?: boolean
-    password: string
-    roleId: string
-    status?: $Enums.Status
-    storeId?: string | null
-    createdAt?: Date | string
-    updatedAt?: Date | string
-    lastLoginAt?: Date | string | null
-  }
-
   export type InventoryStockUpdateWithoutShowroomInput = {
     id?: StringFieldUpdateOperationsInput | string
     quantity?: IntFieldUpdateOperationsInput | number
@@ -106726,7 +106772,7 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
-  export type UserUpdateWithoutShowroomInput = {
+  export type UserUpdateWithoutShowroomsInput = {
     id?: StringFieldUpdateOperationsInput | string
     name?: StringFieldUpdateOperationsInput | string
     phone?: NullableStringFieldUpdateOperationsInput | string | null
@@ -106739,7 +106785,7 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    store?: StoreUpdateOneWithoutUsersNestedInput
+    stores?: StoreUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -106769,7 +106815,7 @@ export namespace Prisma {
     capacityLotHistories?: CapacityLotHistoryUpdateManyWithoutChangedByNestedInput
   }
 
-  export type UserUncheckedUpdateWithoutShowroomInput = {
+  export type UserUncheckedUpdateWithoutShowroomsInput = {
     id?: StringFieldUpdateOperationsInput | string
     name?: StringFieldUpdateOperationsInput | string
     phone?: NullableStringFieldUpdateOperationsInput | string | null
@@ -106779,10 +106825,10 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    stores?: StoreUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -106812,7 +106858,7 @@ export namespace Prisma {
     capacityLotHistories?: CapacityLotHistoryUncheckedUpdateManyWithoutChangedByNestedInput
   }
 
-  export type UserUncheckedUpdateManyWithoutShowroomInput = {
+  export type UserUncheckedUpdateManyWithoutShowroomsInput = {
     id?: StringFieldUpdateOperationsInput | string
     name?: StringFieldUpdateOperationsInput | string
     phone?: NullableStringFieldUpdateOperationsInput | string | null
@@ -106822,7 +106868,6 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    storeId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -106967,22 +107012,6 @@ export namespace Prisma {
     updatedById?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
-  }
-
-  export type UserCreateManyStoreInput = {
-    id?: string
-    name: string
-    phone?: string | null
-    userCode?: string | null
-    email: string
-    admin?: boolean
-    password: string
-    roleId: string
-    status?: $Enums.Status
-    showroomId?: string | null
-    createdAt?: Date | string
-    updatedAt?: Date | string
-    lastLoginAt?: Date | string | null
   }
 
   export type InventoryStockUpdateWithoutStoreInput = {
@@ -107422,7 +107451,7 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
-  export type UserUpdateWithoutStoreInput = {
+  export type UserUpdateWithoutStoresInput = {
     id?: StringFieldUpdateOperationsInput | string
     name?: StringFieldUpdateOperationsInput | string
     phone?: NullableStringFieldUpdateOperationsInput | string | null
@@ -107435,7 +107464,7 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     role?: RoleUpdateOneRequiredWithoutUsersNestedInput
-    showroom?: ShowroomUpdateOneWithoutUsersNestedInput
+    showrooms?: ShowroomUpdateManyWithoutUsersNestedInput
     Log?: LogUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUpdateManyWithoutUpdatedByNestedInput
@@ -107465,7 +107494,7 @@ export namespace Prisma {
     capacityLotHistories?: CapacityLotHistoryUpdateManyWithoutChangedByNestedInput
   }
 
-  export type UserUncheckedUpdateWithoutStoreInput = {
+  export type UserUncheckedUpdateWithoutStoresInput = {
     id?: StringFieldUpdateOperationsInput | string
     name?: StringFieldUpdateOperationsInput | string
     phone?: NullableStringFieldUpdateOperationsInput | string | null
@@ -107475,10 +107504,10 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    showrooms?: ShowroomUncheckedUpdateManyWithoutUsersNestedInput
     Log?: LogUncheckedUpdateManyWithoutUserNestedInput
     purchases?: PurchaseUncheckedUpdateManyWithoutCreatedByNestedInput
     uppurchases?: PurchaseUncheckedUpdateManyWithoutUpdatedByNestedInput
@@ -107508,7 +107537,7 @@ export namespace Prisma {
     capacityLotHistories?: CapacityLotHistoryUncheckedUpdateManyWithoutChangedByNestedInput
   }
 
-  export type UserUncheckedUpdateManyWithoutStoreInput = {
+  export type UserUncheckedUpdateManyWithoutStoresInput = {
     id?: StringFieldUpdateOperationsInput | string
     name?: StringFieldUpdateOperationsInput | string
     phone?: NullableStringFieldUpdateOperationsInput | string | null
@@ -107518,7 +107547,6 @@ export namespace Prisma {
     password?: StringFieldUpdateOperationsInput | string
     roleId?: StringFieldUpdateOperationsInput | string
     status?: EnumStatusFieldUpdateOperationsInput | $Enums.Status
-    showroomId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastLoginAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null

@@ -27,13 +27,11 @@ model User {
   role     Role    @relation(fields: [roleId], references: [id])
   status   Status  @default(Active)
 
-  // Store Assignment
-  storeId String? @db.Char(36)
-  store   Store?  @relation(fields: [storeId], references: [id])
+  // ✅ A user can be assigned to many showrooms
+  showrooms Showroom[] @relation("UserShowrooms")
 
-  // Showroom Assignment
-  showroomId String?   @db.Char(36)
-  showroom   Showroom? @relation(fields: [showroomId], references: [id])
+  // ✅ A user can be assigned to many stores
+  stores Store[] @relation("UserStores")
 
   // <-- Enum status field replacing isActive
   createdAt   DateTime  @default(now()) @map("created_at")
@@ -220,7 +218,7 @@ model Showroom {
 
   distnationtransfers Transfer[] @relation("TransferDestinationShowroom")
 
-  users User[]
+  users User[] @relation("UserShowrooms")
 }
 
 model Store {
@@ -246,7 +244,7 @@ model Store {
 
   distnationtransfers Transfer[] @relation("TransferDestinationStore")
 
-  users User[]
+  users User[] @relation("UserStores")
 }
 
 enum StockMovementType {

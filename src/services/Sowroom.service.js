@@ -117,7 +117,7 @@ const getAllShowroomsBasedUser = async (userId = null) => {
       };
     }
 
-    // Get user with their showroom
+    // Get user with their showrooms
     const user = await prisma.user.findUnique({
       where: {
         id: userId,
@@ -125,7 +125,7 @@ const getAllShowroomsBasedUser = async (userId = null) => {
       select: {
         id: true,
         admin: true,
-        showroom: {
+        showrooms: {
           select: {
             id: true,
             name: true,
@@ -139,12 +139,12 @@ const getAllShowroomsBasedUser = async (userId = null) => {
       throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
     }
 
-    // If user has no showroom assigned, return empty array
-    if (!user.showroom) {
+    // If user has no showrooms assigned, return empty array
+    if (!user.showrooms || user.showrooms.length === 0) {
       return {
         showrooms: [],
         count: 0,
-        message: 'User has no showroom assigned',
+        message: 'User has no showrooms assigned',
       };
     }
 
@@ -168,10 +168,10 @@ const getAllShowroomsBasedUser = async (userId = null) => {
       };
     }
 
-    // For regular users, return their assigned showroom
+    // For regular users, return their assigned showrooms
     return {
-      showrooms: [user.showroom],
-      count: 1,
+      showrooms: user.showrooms,
+      count: user.showrooms.length,
     };
   } catch (error) {
     console.error('Error in getAllShowroomsBasedUser:', {
@@ -190,6 +190,7 @@ const getAllShowroomsBasedUser = async (userId = null) => {
     );
   }
 };
+
 const getAllStoresBasedUser = async (userId = null) => {
   try {
     // If no userId provided, return all stores (for admin/superuser scenarios)
@@ -211,7 +212,7 @@ const getAllStoresBasedUser = async (userId = null) => {
       };
     }
 
-    // Get user with their store
+    // Get user with their stores
     const user = await prisma.user.findUnique({
       where: {
         id: userId,
@@ -219,7 +220,7 @@ const getAllStoresBasedUser = async (userId = null) => {
       select: {
         id: true,
         admin: true,
-        store: {
+        stores: {
           select: {
             id: true,
             name: true,
@@ -233,12 +234,12 @@ const getAllStoresBasedUser = async (userId = null) => {
       throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
     }
 
-    // If user has no store assigned, return empty array
-    if (!user.store) {
+    // If user has no stores assigned, return empty array
+    if (!user.stores || user.stores.length === 0) {
       return {
         stores: [],
         count: 0,
-        message: 'User has no store assigned',
+        message: 'User has no stores assigned',
       };
     }
 
@@ -262,10 +263,10 @@ const getAllStoresBasedUser = async (userId = null) => {
       };
     }
 
-    // For regular users, return their assigned store
+    // For regular users, return their assigned stores
     return {
-      stores: [user.store],
-      count: 1,
+      stores: user.stores,
+      count: user.stores.length,
     };
   } catch (error) {
     console.error('Error in getAllStoresBasedUser:', {
