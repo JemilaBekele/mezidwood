@@ -492,64 +492,229 @@ const updateSell = async (sellId, sellBody, userId) => {
 
   return result;
 };
-
 // ==================== DELETE SELL ====================
 const deleteSell = async (id, userId) => {
-  const existingSell = await getSellById(id);
-  if (!existingSell) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Sale not found');
-  }
-
-  if (existingSell.locked === true) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Cannot delete locked sale');
-  }
-
-  await prisma.$transaction(async (tx) => {
-    // Get all sell items
-    const sellItems = await tx.sellItem.findMany({
-      where: { sellId: id },
-    });
-
-    // Restore stock for all items
-    for (const sellItem of sellItems) {
-      await tx.itemStock.update({
-        where: { itemId: sellItem.itemId },
-        data: {
-          quantity: { increment: sellItem.quantity },
-        },
-      });
-
-      await tx.itemStockLedger.create({
-        data: {
-          itemId: sellItem.itemId,
-          movementType: 'IN',
-          quantity: sellItem.quantity,
-          reference: `Sell-Delete-${existingSell.invoiceNo}`,
-          notes: `Stock restored from deleted sale`,
-          userId,
-        },
-      });
+  try {
+    const existingSell = await getSellById(id);
+    if (!existingSell) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Sale not found');
     }
 
-    // Delete sell items
-    await tx.sellItem.deleteMany({
-      where: { sellId: id },
+    if (existingSell.locked === true) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Cannot delete locked sale');
+    }
+
+    let wasDelivered = false;
+
+    await prisma.$transaction(async (tx) => {
+      try {
+        // Check if sale was delivered (has stock ledger entries)
+        const existingLedgerEntries = await tx.itemStockLedger.count({
+          where: {
+            reference: {
+              contains: existingSell.invoiceNo,
+            },
+            movementType: 'OUT',
+          },
+        });
+
+        wasDelivered = existingLedgerEntries > 0;
+
+        // Get all sell items with their details
+        const sellItems = await tx.sellItem.findMany({
+          where: { sellId: id },
+        });
+
+        console.log(
+          `Processing sale ${existingSell.invoiceNo} with ${sellItems.length} items, wasDelivered: ${wasDelivered}`,
+        );
+
+        // REVERSE EVERYTHING if delivered
+        if (wasDelivered && sellItems.length > 0) {
+          console.log(`Starting reversal for sale ${existingSell.invoiceNo}`);
+
+          await Promise.all(
+            sellItems.map(async (sellItem) => {
+              try {
+                console.log(
+                  `Processing item ${sellItem.itemId} with quantity ${sellItem.quantity}`,
+                );
+
+                // 1. Restore stock for each delivered item
+                const existingStock = await tx.itemStock.findFirst({
+                  where: {
+                    itemId: sellItem.itemId,
+                    storeId: existingSell.storeId,
+                  },
+                });
+
+                if (existingStock) {
+                  console.log(
+                    `Found existing stock for item ${sellItem.itemId}, current quantity: ${existingStock.quantity}`,
+                  );
+                  // If stock exists, increment it back
+                  await tx.itemStock.update({
+                    where: { id: existingStock.id },
+                    data: {
+                      quantity: {
+                        increment: sellItem.quantity,
+                      },
+                    },
+                  });
+                  console.log(
+                    `Updated stock for item ${sellItem.itemId}, new quantity: ${
+                      existingStock.quantity + sellItem.quantity
+                    }`,
+                  );
+                } else {
+                  console.log(
+                    `No existing stock found for item ${sellItem.itemId}, creating new record`,
+                  );
+                  // If no stock record exists (shouldn't happen), create one
+                  await tx.itemStock.create({
+                    data: {
+                      itemId: sellItem.itemId,
+                      storeId: existingSell.storeId,
+                      quantity: sellItem.quantity,
+                    },
+                  });
+                  console.log(
+                    `Created new stock record for item ${sellItem.itemId}`,
+                  );
+                }
+
+                // 2. Create reversal ledger entry (IN movement)
+                await tx.itemStockLedger.create({
+                  data: {
+                    itemId: sellItem.itemId,
+                    storeId: existingSell.storeId,
+                    movementType: 'IN',
+                    quantity: sellItem.quantity,
+                    reference: `SELL-REVERSAL-${existingSell.invoiceNo}`,
+                    notes: `Stock restored from deleted sale`,
+                    userId,
+                  },
+                });
+                console.log(
+                  `Created reversal ledger entry for item ${sellItem.itemId}`,
+                );
+
+                // 3. Delete original OUT ledger entries for this item
+                const deletedCount = await tx.itemStockLedger.deleteMany({
+                  where: {
+                    reference: {
+                      contains: existingSell.invoiceNo,
+                    },
+                    movementType: 'OUT',
+                    itemId: sellItem.itemId,
+                    storeId: existingSell.storeId,
+                  },
+                });
+                console.log(
+                  `Deleted ${deletedCount.count} OUT ledger entries for item ${sellItem.itemId}`,
+                );
+              } catch (itemError) {
+                console.error(`Error processing item ${sellItem.itemId}:`, {
+                  error: itemError.message,
+                  stack: itemError.stack,
+                  sellItem: JSON.stringify(sellItem),
+                  saleInvoice: existingSell.invoiceNo,
+                });
+                throw itemError;
+              }
+            }),
+          );
+
+          // 4. Delete any remaining OUT ledger entries
+          const remainingDeleted = await tx.itemStockLedger.deleteMany({
+            where: {
+              reference: {
+                contains: existingSell.invoiceNo,
+              },
+              movementType: 'OUT',
+              storeId: existingSell.storeId,
+            },
+          });
+          console.log(
+            `Deleted ${remainingDeleted.count} remaining OUT ledger entries`,
+          );
+        } else {
+          console.log(`No reversal needed for sale ${existingSell.invoiceNo}`);
+        }
+
+        // 5. Delete sell items
+        const deletedItems = await tx.sellItem.deleteMany({
+          where: { sellId: id },
+        });
+        console.log(`Deleted ${deletedItems.count} sell items`);
+
+        // 6. Delete sell payments
+        const deletedPayments = await tx.sellPayment.deleteMany({
+          where: { sellId: id },
+        });
+        console.log(`Deleted ${deletedPayments.count} sell payments`);
+
+        // 7. Delete sell
+        await tx.sell.delete({
+          where: { id },
+        });
+        console.log(`Deleted sale ${existingSell.invoiceNo}`);
+
+        // 8. Create log entry
+        await tx.log.create({
+          data: {
+            action: `Deleted sale ${existingSell.invoiceNo}${
+              wasDelivered ? ' and reversed stock transactions' : ''
+            }`,
+            userId,
+          },
+        });
+        console.log(`Created log entry for sale deletion`);
+      } catch (transactionError) {
+        console.error(
+          `Transaction error while deleting sale ${existingSell.invoiceNo}:`,
+          {
+            error: transactionError.message,
+            stack: transactionError.stack,
+            saleId: id,
+            userId,
+          },
+        );
+        throw transactionError;
+      }
     });
 
-    // Delete sell payments
-    await tx.sellPayment.deleteMany({
-      where: { sellId: id },
+    console.log(
+      `Successfully deleted sale ${existingSell.invoiceNo}, wasReversed: ${wasDelivered}`,
+    );
+
+    return {
+      message: `Sale deleted successfully${
+        wasDelivered ? ' and stock transactions reversed' : ''
+      }`,
+      wasReversed: wasDelivered,
+      invoiceNo: existingSell.invoiceNo,
+    };
+  } catch (error) {
+    console.error(`Error in deleteSell for sale ID ${id}:`, {
+      error: error.message,
+      stack: error.stack,
+      saleId: id,
+      userId,
     });
 
-    // Delete sell
-    await tx.sell.delete({
-      where: { id },
-    });
-  });
+    // Re-throw ApiErrors as they are already formatted
+    if (error instanceof ApiError) {
+      throw error;
+    }
 
-  return { message: 'Sale deleted successfully' };
+    // Wrap unexpected errors
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to delete sale: ${error.message}`,
+    );
+  }
 };
-
 // ==================== ADD SELL PAYMENT ====================
 const addSellPayment = async (sellId, paymentData, userId) => {
   const { amount, bankId, paidBy } = paymentData;
@@ -924,18 +1089,18 @@ const getSellStatistics = async ({ startDate, endDate } = {}) => {
 
 const deliverSaleItems = async (saleId, deliveryItems, userId) => {
   try {
-    // Get the sale with its items and store relation
+    // Get the sale with its items and showroom relation
     let sale;
     try {
       sale = await prisma.sell.findUnique({
         where: { id: saleId },
         include: {
-          store: true, // Include store relation directly
+          showroom: true, // Only include showroom
           items: {
             include: {
               item: {
                 include: {
-                  itemStocks: true, // Get all stocks, we'll filter by storeId
+                  itemStocks: true, // Get all stocks, we'll filter by showroomId
                 },
               },
             },
@@ -943,6 +1108,7 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
         },
       });
     } catch (prismaError) {
+      console.error('Error fetching sale:', prismaError);
       throw new ApiError(
         httpStatus.INTERNAL_SERVER_ERROR,
         `Database error: ${prismaError.message}`,
@@ -953,8 +1119,15 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
       throw new ApiError(httpStatus.NOT_FOUND, 'Sale not found');
     }
 
-    // Get the store ID directly from the sale
-    const saleStoreId = sale.storeId;
+    // Get the showroom ID from the sale
+    const showroomId = sale.showroomId;
+
+    if (!showroomId) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Sale has no associated showroom'
+      );
+    }
 
     // Check if sale can be delivered
     if (sale.saleStatus === 'CANCELLED') {
@@ -982,9 +1155,9 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
           return `Sell item ${deliveryItem.sellItemId} not found`;
         }
 
-        // Get stock for the sale's store
+        // Get stock for the sale's showroom
         const itemStock = sellItem.item?.itemStocks?.find(
-          (stock) => stock.storeId === saleStoreId,
+          (stock) => stock.showroomId === showroomId,
         );
         const availableStock = itemStock?.quantity || 0;
 
@@ -997,8 +1170,8 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
         }
 
         if (deliveryItem.quantityDelivered > availableStock) {
-          return `Insufficient stock for item ${sellItem.item.name} at store ${
-            sale.store?.name || saleStoreId
+          return `Insufficient stock for item ${sellItem.item.name} at showroom ${
+            sale.showroom?.name || showroomId
           }. Available: ${availableStock}, Requested: ${
             deliveryItem.quantityDelivered
           }`;
@@ -1026,17 +1199,27 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
         throw new Error(`Sell item not found: ${deliveryItem.sellItemId}`);
       }
 
-      // Update stock for the sale's store
+      // Update stock for the sale's showroom
       if (deliveryItem.quantityDelivered > 0) {
-        // Find the existing stock record for this item at the sale's store
+        // Find the existing stock record for this item at the sale's showroom
         const existingStock = await prisma.itemStock.findFirst({
           where: {
             itemId: sellItem.itemId,
-            storeId: saleStoreId,
+            showroomId: showroomId,
           },
         });
 
         if (existingStock) {
+          // Check if we have enough stock
+          if (existingStock.quantity < deliveryItem.quantityDelivered) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Insufficient stock for item ${sellItem.item.name} at showroom ${
+                sale.showroom?.name || showroomId
+              }. Available: ${existingStock.quantity}, Requested: ${deliveryItem.quantityDelivered}`
+            );
+          }
+
           // Update existing stock
           await prisma.itemStock.update({
             where: { id: existingStock.id },
@@ -1050,21 +1233,21 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
           // If no stock record exists, throw error
           throw new ApiError(
             httpStatus.BAD_REQUEST,
-            `No stock record found for item ${sellItem.item.name} at store ${
-              sale.store?.name || saleStoreId
+            `No stock record found for item ${sellItem.item.name} at showroom ${
+              sale.showroom?.name || showroomId
             }`,
           );
         }
 
-        // Create ledger entry with store reference
+        // Create ledger entry with showroom reference
         await prisma.itemStockLedger.create({
           data: {
             itemId: sellItem.itemId,
+            showroomId: showroomId,
             movementType: 'OUT',
-            quantity: -deliveryItem.quantityDelivered,
-            reference: `Sale delivery for invoice ${sale.invoiceNo}`,
+            quantity: deliveryItem.quantityDelivered,
+            reference: `SALE-DELIVERY-${sale.invoiceNo}`,
             notes: `Delivered ${deliveryItem.quantityDelivered} units for sale item ${sellItem.id}`,
-            storeId: saleStoreId, // Use store ID from sale
             userId,
           },
         });
@@ -1125,11 +1308,19 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
         include: {
           items: true,
           customer: true,
-          store: true,
+          showroom: true,
           createdBy: true,
         },
       });
     }
+
+    // Create log entry for delivery
+    await prisma.log.create({
+      data: {
+        action: `Delivered ${deliveryItems.length} items for sale ${sale.invoiceNo}. Status: ${newSaleStatus}`,
+        userId,
+      },
+    });
 
     const finalResult = {
       sale: updatedSale,
@@ -1139,11 +1330,20 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
         anyItemDelivered,
         totalItemsDelivered: updatedItems.length,
         saleStatus: newSaleStatus,
+        showroomName: sale.showroom?.name || showroomId,
+        deliveredItemsCount: deliveryItems.length,
       },
     };
 
     return finalResult;
   } catch (error) {
+    console.error('Error in deliverSaleItems:', {
+      error: error.message,
+      stack: error.stack,
+      saleId,
+      userId
+    });
+    
     if (error instanceof ApiError) {
       throw error;
     }

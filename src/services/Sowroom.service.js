@@ -97,50 +97,193 @@ const getAllShowrooms = async (userId) => {
 };
 
 const getAllShowroomsBasedUser = async (userId = null) => {
-  // If no userId provided, return all showrooms (for admin/superuser scenarios)
-  if (!userId) {
-    const showrooms = await prisma.showroom.findMany({
-      orderBy: {
-        name: 'asc',
+  try {
+    // If no userId provided, return all showrooms (for admin/superuser scenarios)
+    if (!userId) {
+      const showrooms = await prisma.showroom.findMany({
+        orderBy: {
+          name: 'asc',
+        },
+        select: {
+          id: true,
+          name: true,
+          isMain: true,
+        },
+      });
+
+      return {
+        showrooms,
+        count: showrooms.length,
+      };
+    }
+
+    // Get user with their showroom
+    const user = await prisma.user.findUnique({
+      where: {
+        id: userId,
       },
-      include: {
-        inventoryStocks: true,
-        itemStocks: true,
+      select: {
+        id: true,
+        admin: true,
+        showroom: {
+          select: {
+            id: true,
+            name: true,
+            isMain: true,
+          },
+        },
       },
     });
 
-    return {
-      showrooms,
-      count: showrooms.length,
-    };
-  }
+    if (!user) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
+    }
 
-  // For specific user, return only their allowed showrooms
-  const user = await prisma.user.findUnique({
-    where: {
-      id: userId,
-    },
-    include: {
-      branch: true,
-      showrooms: {
-        include: {
-          inventoryStocks: true,
-          itemStocks: true,
+    // If user has no showroom assigned, return empty array
+    if (!user.showroom) {
+      return {
+        showrooms: [],
+        count: 0,
+        message: 'User has no showroom assigned',
+      };
+    }
+
+    // Check if user is admin - they might have access to all showrooms
+    if (user.admin === true) {
+      const allShowrooms = await prisma.showroom.findMany({
+        orderBy: {
+          name: 'asc',
+        },
+        select: {
+          id: true,
+          name: true,
+          isMain: true,
+        },
+      });
+
+      return {
+        showrooms: allShowrooms,
+        count: allShowrooms.length,
+        isAdmin: true,
+      };
+    }
+
+    // For regular users, return their assigned showroom
+    return {
+      showrooms: [user.showroom],
+      count: 1,
+    };
+  } catch (error) {
+    console.error('Error in getAllShowroomsBasedUser:', {
+      error: error.message,
+      stack: error.stack,
+      userId,
+    });
+
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to fetch showrooms: ${error.message}`,
+    );
+  }
+};
+const getAllStoresBasedUser = async (userId = null) => {
+  try {
+    // If no userId provided, return all stores (for admin/superuser scenarios)
+    if (!userId) {
+      const stores = await prisma.store.findMany({
+        orderBy: {
+          name: 'asc',
+        },
+        select: {
+          id: true,
+          name: true,
+          isMain: true,
+        },
+      });
+
+      return {
+        stores,
+        count: stores.length,
+      };
+    }
+
+    // Get user with their store
+    const user = await prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      select: {
+        id: true,
+        admin: true,
+        store: {
+          select: {
+            id: true,
+            name: true,
+            isMain: true,
+          },
         },
       },
-    },
-  });
+    });
 
-  if (!user) {
-    throw new Error('User not found');
+    if (!user) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
+    }
+
+    // If user has no store assigned, return empty array
+    if (!user.store) {
+      return {
+        stores: [],
+        count: 0,
+        message: 'User has no store assigned',
+      };
+    }
+
+    // Check if user is admin - they might have access to all stores
+    if (user.admin === true) {
+      const allStores = await prisma.store.findMany({
+        orderBy: {
+          name: 'asc',
+        },
+        select: {
+          id: true,
+          name: true,
+          isMain: true,
+        },
+      });
+
+      return {
+        stores: allStores,
+        count: allStores.length,
+        isAdmin: true,
+      };
+    }
+
+    // For regular users, return their assigned store
+    return {
+      stores: [user.store],
+      count: 1,
+    };
+  } catch (error) {
+    console.error('Error in getAllStoresBasedUser:', {
+      error: error.message,
+      stack: error.stack,
+      userId,
+    });
+
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to fetch stores: ${error.message}`,
+    );
   }
-
-  return {
-    showrooms: user.showrooms,
-    count: user.showrooms.length,
-  };
 };
-
 // Create Showroom
 const createShowroom = async (showroomBody) => {
   // Check if showroom with same name already exists
@@ -289,6 +432,7 @@ const getMainShowroom = async () => {
 };
 
 module.exports = {
+  getAllStoresBasedUser,
   getShowroomById,
   getAllShowroom,
   getShowroomByName,

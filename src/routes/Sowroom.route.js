@@ -44,6 +44,13 @@ router.get(
   // checkPermission('VIEW_SHOWROOM'),
   showroomController.getAllShowroomsBasedUser,
 );
+// Get all showrooms based on user
+router.get(
+  '/api/stores/find/based/user',
+  auth,
+  // checkPermission('VIEW_SHOWROOM'),
+  showroomController.getAllStoresBasedUser,
+);
 
 // Set main showroom
 router.put(

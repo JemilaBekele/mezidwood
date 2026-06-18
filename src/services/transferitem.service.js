@@ -456,323 +456,433 @@ const updateTransfer = async (transferId, transferBody, userId) => {
 };
 
 // Delete Transfer
+// Delete Transfer
 const deleteTransfer = async (id, userId) => {
   const existingTransfer = await getTransferById(id);
   if (!existingTransfer) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Transfer not found');
   }
 
-  const result = await prisma.$transaction(async (tx) => {
-    const ledgerEntries = await tx.stockLedger.findMany({
-      where: { reference: `TRANSFER-${existingTransfer.shortCode}` },
+  await prisma.$transaction(async (tx) => {
+    // Check if transfer was completed by checking for ledger entries
+    const existingLedgerEntries = await tx.stockLedger.count({
+      where: {
+        reference: `TRANSFER-${existingTransfer.shortCode}`,
+      },
     });
 
-    const itemLedgerEntries = await tx.itemStockLedger.findMany({
-      where: { reference: `TRANSFER-${existingTransfer.shortCode}` },
+    const existingItemLedgerEntries = await tx.itemStockLedger.count({
+      where: {
+        reference: `TRANSFER-${existingTransfer.shortCode}`,
+      },
     });
 
-    const isCompleted =
-      ledgerEntries.length > 0 || itemLedgerEntries.length > 0;
+    const wasCompleted = existingLedgerEntries > 0 || existingItemLedgerEntries > 0;
 
-    if (isCompleted) {
-      for (const item of existingTransfer.items) {
-        if (item.ismaterial) {
-          // Handle material reversal
-          if (
-            existingTransfer.sourceType === 'STORE' &&
-            existingTransfer.sourceStoreId
-          ) {
-            await tx.inventoryStock.upsert({
-              where: { materialId: item.materialId },
-              update: {
-                quantity: { increment: item.quantity },
-                lastUpdated: new Date(),
-              },
-              create: {
-                materialId: item.materialId,
-                storeId: existingTransfer.sourceStoreId,
-                quantity: item.quantity,
-                status: 'Available',
-                lastUpdated: new Date(),
-              },
-            });
+    // REVERSE EVERYTHING if completed
+    if (wasCompleted) {
+      await Promise.all(
+        existingTransfer.items.map(async (item) => {
+          if (item.ismaterial) {
+            // Handle material reversal
+            // 1. Return stock to source
+            if (existingTransfer.sourceType === 'STORE' && existingTransfer.sourceStoreId) {
+              // Add stock back to source store
+              const sourceStock = await tx.inventoryStock.findFirst({
+                where: {
+                  materialId: item.materialId,
+                  storeId: existingTransfer.sourceStoreId,
+                },
+              });
 
-            await tx.stockLedger.create({
-              data: {
-                materialId: item.materialId,
-                storeId: existingTransfer.sourceStoreId,
-                movementType: 'IN',
-                quantity: item.quantity,
-                reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
-                userId,
-                notes: `Transfer reversal - stock returned`,
-                movementDate: new Date(),
-              },
-            });
-          } else if (
-            existingTransfer.sourceType === 'SHOP' &&
-            existingTransfer.sourceShowroomId
-          ) {
-            await tx.inventoryStock.upsert({
-              where: { materialId: item.materialId },
-              update: {
-                quantity: { increment: item.quantity },
-                lastUpdated: new Date(),
-              },
-              create: {
-                materialId: item.materialId,
-                showroomId: existingTransfer.sourceShowroomId,
-                quantity: item.quantity,
-                status: 'Available',
-                lastUpdated: new Date(),
-              },
-            });
-
-            await tx.stockLedger.create({
-              data: {
-                materialId: item.materialId,
-                showroomId: existingTransfer.sourceShowroomId,
-                movementType: 'IN',
-                quantity: item.quantity,
-                reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
-                userId,
-                notes: `Transfer reversal - stock returned`,
-                movementDate: new Date(),
-              },
-            });
-          }
-
-          // Remove from destination
-          if (
-            existingTransfer.destinationType === 'STORE' &&
-            existingTransfer.destStoreId
-          ) {
-            const existingStock = await tx.inventoryStock.findFirst({
-              where: {
-                materialId: item.materialId,
-                storeId: existingTransfer.destStoreId,
-              },
-            });
-
-            if (existingStock) {
-              const newQuantity = existingStock.quantity - item.quantity;
-              if (newQuantity <= 0) {
-                await tx.inventoryStock.delete({
-                  where: { id: existingStock.id },
+              if (sourceStock) {
+                await tx.inventoryStock.update({
+                  where: { id: sourceStock.id },
+                  data: {
+                    quantity: {
+                      increment: item.quantity,
+                    },
+                    status: 'Available',
+                    lastUpdated: new Date(),
+                  },
                 });
               } else {
-                await tx.inventoryStock.update({
-                  where: { id: existingStock.id },
+                await tx.inventoryStock.create({
                   data: {
-                    quantity: { decrement: item.quantity },
+                    materialId: item.materialId,
+                    storeId: existingTransfer.sourceStoreId,
+                    quantity: item.quantity,
+                    status: 'Available',
                     lastUpdated: new Date(),
                   },
                 });
               }
-            }
 
-            await tx.stockLedger.create({
-              data: {
-                materialId: item.materialId,
-                storeId: existingTransfer.destStoreId,
-                movementType: 'OUT',
-                quantity: item.quantity,
-                reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
-                userId,
-                notes: `Transfer reversal - stock removed`,
-                movementDate: new Date(),
-              },
-            });
-          } else if (
-            existingTransfer.destinationType === 'SHOP' &&
-            existingTransfer.destShowroomId
-          ) {
-            const existingStock = await tx.inventoryStock.findFirst({
-              where: {
-                materialId: item.materialId,
-                showroomId: existingTransfer.destShowroomId,
-              },
-            });
+              // Create reversal ledger entry for source
+              await tx.stockLedger.create({
+                data: {
+                  materialId: item.materialId,
+                  storeId: existingTransfer.sourceStoreId,
+                  movementType: 'IN',
+                  quantity: item.quantity,
+                  reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
+                  userId,
+                  notes: `Transfer reversal - stock returned to source`,
+                  movementDate: new Date(),
+                },
+              });
+            } else if (existingTransfer.sourceType === 'SHOWROOM' && existingTransfer.sourceShowroomId) {
+              // Add stock back to source showroom
+              const sourceStock = await tx.inventoryStock.findFirst({
+                where: {
+                  materialId: item.materialId,
+                  showroomId: existingTransfer.sourceShowroomId,
+                },
+              });
 
-            if (existingStock) {
-              const newQuantity = existingStock.quantity - item.quantity;
-              if (newQuantity <= 0) {
-                await tx.inventoryStock.delete({
-                  where: { id: existingStock.id },
+              if (sourceStock) {
+                await tx.inventoryStock.update({
+                  where: { id: sourceStock.id },
+                  data: {
+                    quantity: {
+                      increment: item.quantity,
+                    },
+                    status: 'Available',
+                    lastUpdated: new Date(),
+                  },
                 });
               } else {
-                await tx.inventoryStock.update({
-                  where: { id: existingStock.id },
+                await tx.inventoryStock.create({
                   data: {
-                    quantity: { decrement: item.quantity },
+                    materialId: item.materialId,
+                    showroomId: existingTransfer.sourceShowroomId,
+                    quantity: item.quantity,
+                    status: 'Available',
                     lastUpdated: new Date(),
                   },
                 });
               }
+
+              await tx.stockLedger.create({
+                data: {
+                  materialId: item.materialId,
+                  showroomId: existingTransfer.sourceShowroomId,
+                  movementType: 'IN',
+                  quantity: item.quantity,
+                  reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
+                  userId,
+                  notes: `Transfer reversal - stock returned to source`,
+                  movementDate: new Date(),
+                },
+              });
             }
 
-            await tx.stockLedger.create({
-              data: {
+            // 2. Remove stock from destination
+            if (existingTransfer.destinationType === 'STORE' && existingTransfer.destStoreId) {
+              const destStock = await tx.inventoryStock.findFirst({
+                where: {
+                  materialId: item.materialId,
+                  storeId: existingTransfer.destStoreId,
+                },
+              });
+
+              if (destStock) {
+                if (destStock.quantity <= item.quantity) {
+                  // Delete inventory stock if quantity becomes zero or negative
+                  await tx.inventoryStock.delete({
+                    where: { id: destStock.id },
+                  });
+                } else {
+                  await tx.inventoryStock.update({
+                    where: { id: destStock.id },
+                    data: {
+                      quantity: {
+                        decrement: item.quantity,
+                      },
+                      lastUpdated: new Date(),
+                    },
+                  });
+                }
+              }
+
+              await tx.stockLedger.create({
+                data: {
+                  materialId: item.materialId,
+                  storeId: existingTransfer.destStoreId,
+                  movementType: 'OUT',
+                  quantity: item.quantity,
+                  reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
+                  userId,
+                  notes: `Transfer reversal - stock removed from destination`,
+                  movementDate: new Date(),
+                },
+              });
+            } else if (existingTransfer.destinationType === 'SHOWROOM' && existingTransfer.destShowroomId) {
+              const destStock = await tx.inventoryStock.findFirst({
+                where: {
+                  materialId: item.materialId,
+                  showroomId: existingTransfer.destShowroomId,
+                },
+              });
+
+              if (destStock) {
+                if (destStock.quantity <= item.quantity) {
+                  await tx.inventoryStock.delete({
+                    where: { id: destStock.id },
+                  });
+                } else {
+                  await tx.inventoryStock.update({
+                    where: { id: destStock.id },
+                    data: {
+                      quantity: {
+                        decrement: item.quantity,
+                      },
+                      lastUpdated: new Date(),
+                    },
+                  });
+                }
+              }
+
+              await tx.stockLedger.create({
+                data: {
+                  materialId: item.materialId,
+                  showroomId: existingTransfer.destShowroomId,
+                  movementType: 'OUT',
+                  quantity: item.quantity,
+                  reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
+                  userId,
+                  notes: `Transfer reversal - stock removed from destination`,
+                  movementDate: new Date(),
+                },
+              });
+            }
+
+            // 3. Delete original stock ledger entries for this item
+            await tx.stockLedger.deleteMany({
+              where: {
+                reference: `TRANSFER-${existingTransfer.shortCode}`,
+                movementType: 'IN',
                 materialId: item.materialId,
-                showroomId: existingTransfer.destShowroomId,
-                movementType: 'OUT',
-                quantity: item.quantity,
-                reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
-                userId,
-                notes: `Transfer reversal - stock removed`,
-                movementDate: new Date(),
-              },
-            });
-          }
-        } else {
-          // Handle product/item reversal
-          if (
-            existingTransfer.sourceType === 'STORE' &&
-            existingTransfer.sourceStoreId
-          ) {
-            await tx.itemStock.upsert({
-              where: { itemId: item.itemId },
-              update: { quantity: { increment: item.quantity } },
-              create: {
-                itemId: item.itemId,
-                storeId: existingTransfer.sourceStoreId,
-                quantity: item.quantity,
+                OR: [
+                  { storeId: existingTransfer.destStoreId },
+                  { showroomId: existingTransfer.destShowroomId },
+                ],
               },
             });
 
-            await tx.itemStockLedger.create({
-              data: {
-                itemId: item.itemId,
-                storeId: existingTransfer.sourceStoreId,
-                movementType: 'IN',
-                quantity: item.quantity,
-                reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
-                userId,
-                notes: `Transfer reversal - stock returned`,
-              },
-            });
-          } else if (
-            existingTransfer.sourceType === 'SHOP' &&
-            existingTransfer.sourceShowroomId
-          ) {
-            await tx.itemStock.upsert({
-              where: { itemId: item.itemId },
-              update: { quantity: { increment: item.quantity } },
-              create: {
-                itemId: item.itemId,
-                showroomId: existingTransfer.sourceShowroomId,
-                quantity: item.quantity,
-              },
-            });
-
-            await tx.itemStockLedger.create({
-              data: {
-                itemId: item.itemId,
-                showroomId: existingTransfer.sourceShowroomId,
-                movementType: 'IN',
-                quantity: item.quantity,
-                reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
-                userId,
-                notes: `Transfer reversal - stock returned`,
-              },
-            });
-          }
-
-          // Remove from destination
-          if (
-            existingTransfer.destinationType === 'STORE' &&
-            existingTransfer.destStoreId
-          ) {
-            const existingStock = await tx.itemStock.findFirst({
+            await tx.stockLedger.deleteMany({
               where: {
-                itemId: item.itemId,
-                storeId: existingTransfer.destStoreId,
+                reference: `TRANSFER-${existingTransfer.shortCode}`,
+                movementType: 'OUT',
+                materialId: item.materialId,
+                OR: [
+                  { storeId: existingTransfer.sourceStoreId },
+                  { showroomId: existingTransfer.sourceShowroomId },
+                ],
               },
             });
 
-            if (existingStock) {
-              const newQuantity = existingStock.quantity - item.quantity;
-              if (newQuantity <= 0) {
-                await tx.itemStock.delete({ where: { id: existingStock.id } });
-              } else {
+          } else {
+            // Handle product/item reversal
+            // 1. Return stock to source
+            if (existingTransfer.sourceType === 'STORE' && existingTransfer.sourceStoreId) {
+              const sourceStock = await tx.itemStock.findFirst({
+                where: {
+                  itemId: item.itemId,
+                  storeId: existingTransfer.sourceStoreId,
+                },
+              });
+
+              if (sourceStock) {
                 await tx.itemStock.update({
-                  where: { id: existingStock.id },
-                  data: { quantity: { decrement: item.quantity } },
+                  where: { id: sourceStock.id },
+                  data: {
+                    quantity: {
+                      increment: item.quantity,
+                    },
+                  },
+                });
+              } else {
+                await tx.itemStock.create({
+                  data: {
+                    itemId: item.itemId,
+                    storeId: existingTransfer.sourceStoreId,
+                    quantity: item.quantity,
+                  },
                 });
               }
-            }
 
-            await tx.itemStockLedger.create({
-              data: {
-                itemId: item.itemId,
-                storeId: existingTransfer.destStoreId,
-                movementType: 'OUT',
-                quantity: item.quantity,
-                reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
-                userId,
-                notes: `Transfer reversal - stock removed`,
-              },
-            });
-          } else if (
-            existingTransfer.destinationType === 'SHOP' &&
-            existingTransfer.destShowroomId
-          ) {
-            const existingStock = await tx.itemStock.findFirst({
-              where: {
-                itemId: item.itemId,
-                showroomId: existingTransfer.destShowroomId,
-              },
-            });
+              await tx.itemStockLedger.create({
+                data: {
+                  itemId: item.itemId,
+                  storeId: existingTransfer.sourceStoreId,
+                  movementType: 'IN',
+                  quantity: item.quantity,
+                  reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
+                  userId,
+                  notes: `Transfer reversal - stock returned to source`,
+                },
+              });
+            } else if (existingTransfer.sourceType === 'SHOWROOM' && existingTransfer.sourceShowroomId) {
+              const sourceStock = await tx.itemStock.findFirst({
+                where: {
+                  itemId: item.itemId,
+                  showroomId: existingTransfer.sourceShowroomId,
+                },
+              });
 
-            if (existingStock) {
-              const newQuantity = existingStock.quantity - item.quantity;
-              if (newQuantity <= 0) {
-                await tx.itemStock.delete({ where: { id: existingStock.id } });
-              } else {
+              if (sourceStock) {
                 await tx.itemStock.update({
-                  where: { id: existingStock.id },
-                  data: { quantity: { decrement: item.quantity } },
+                  where: { id: sourceStock.id },
+                  data: {
+                    quantity: {
+                      increment: item.quantity,
+                    },
+                  },
+                });
+              } else {
+                await tx.itemStock.create({
+                  data: {
+                    itemId: item.itemId,
+                    showroomId: existingTransfer.sourceShowroomId,
+                    quantity: item.quantity,
+                  },
                 });
               }
+
+              await tx.itemStockLedger.create({
+                data: {
+                  itemId: item.itemId,
+                  showroomId: existingTransfer.sourceShowroomId,
+                  movementType: 'IN',
+                  quantity: item.quantity,
+                  reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
+                  userId,
+                  notes: `Transfer reversal - stock returned to source`,
+                },
+              });
             }
 
-            await tx.itemStockLedger.create({
-              data: {
+            // 2. Remove stock from destination
+            if (existingTransfer.destinationType === 'STORE' && existingTransfer.destStoreId) {
+              const destStock = await tx.itemStock.findFirst({
+                where: {
+                  itemId: item.itemId,
+                  storeId: existingTransfer.destStoreId,
+                },
+              });
+
+              if (destStock) {
+                if (destStock.quantity <= item.quantity) {
+                  await tx.itemStock.delete({
+                    where: { id: destStock.id },
+                  });
+                } else {
+                  await tx.itemStock.update({
+                    where: { id: destStock.id },
+                    data: {
+                      quantity: {
+                        decrement: item.quantity,
+                      },
+                    },
+                  });
+                }
+              }
+
+              await tx.itemStockLedger.create({
+                data: {
+                  itemId: item.itemId,
+                  storeId: existingTransfer.destStoreId,
+                  movementType: 'OUT',
+                  quantity: item.quantity,
+                  reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
+                  userId,
+                  notes: `Transfer reversal - stock removed from destination`,
+                },
+              });
+            } else if (existingTransfer.destinationType === 'SHOWROOM' && existingTransfer.destShowroomId) {
+              const destStock = await tx.itemStock.findFirst({
+                where: {
+                  itemId: item.itemId,
+                  showroomId: existingTransfer.destShowroomId,
+                },
+              });
+
+              if (destStock) {
+                if (destStock.quantity <= item.quantity) {
+                  await tx.itemStock.delete({
+                    where: { id: destStock.id },
+                  });
+                } else {
+                  await tx.itemStock.update({
+                    where: { id: destStock.id },
+                    data: {
+                      quantity: {
+                        decrement: item.quantity,
+                      },
+                    },
+                  });
+                }
+              }
+
+              await tx.itemStockLedger.create({
+                data: {
+                  itemId: item.itemId,
+                  showroomId: existingTransfer.destShowroomId,
+                  movementType: 'OUT',
+                  quantity: item.quantity,
+                  reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
+                  userId,
+                  notes: `Transfer reversal - stock removed from destination`,
+                },
+              });
+            }
+
+            // 3. Delete original item stock ledger entries for this item
+            await tx.itemStockLedger.deleteMany({
+              where: {
+                reference: `TRANSFER-${existingTransfer.shortCode}`,
+                movementType: 'IN',
                 itemId: item.itemId,
-                showroomId: existingTransfer.destShowroomId,
+                OR: [
+                  { storeId: existingTransfer.destStoreId },
+                  { showroomId: existingTransfer.destShowroomId },
+                ],
+              },
+            });
+
+            await tx.itemStockLedger.deleteMany({
+              where: {
+                reference: `TRANSFER-${existingTransfer.shortCode}`,
                 movementType: 'OUT',
-                quantity: item.quantity,
-                reference: `TRANSFER-REVERSAL-${existingTransfer.shortCode}`,
-                userId,
-                notes: `Transfer reversal - stock removed`,
+                itemId: item.itemId,
+                OR: [
+                  { storeId: existingTransfer.sourceStoreId },
+                  { showroomId: existingTransfer.sourceShowroomId },
+                ],
               },
             });
           }
-        }
-      }
-
-      // Delete original ledger entries
-      await tx.stockLedger.deleteMany({
-        where: { reference: `TRANSFER-${existingTransfer.shortCode}` },
-      });
-      await tx.itemStockLedger.deleteMany({
-        where: { reference: `TRANSFER-${existingTransfer.shortCode}` },
-      });
+        }),
+      );
     }
 
-    // Delete transfer items and transfer
-    await tx.transferItem.deleteMany({ where: { transferId: id } });
-    await tx.transfer.delete({ where: { id } });
+    // 4. Delete transfer items
+    await tx.transferItem.deleteMany({
+      where: { transferId: id },
+    });
 
-    return {
-      message: `Transfer deleted successfully${
-        isCompleted ? ' and stock transactions reversed' : ''
-      }`,
-      stockReversed: isCompleted,
-    };
+    // 5. Delete transfer record
+    await tx.transfer.delete({
+      where: { id },
+    });
   });
 
-  return result;
+  return {
+    message: 'Transfer deleted successfully',
+    wasReversed: true,
+    shortCode: existingTransfer.shortCode,
+  };
 };
 
 // Complete Transfer

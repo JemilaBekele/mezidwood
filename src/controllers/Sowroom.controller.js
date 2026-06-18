@@ -52,6 +52,14 @@ const getAllShowroomsBasedUser = catchAsync(async (req, res) => {
     ...result,
   });
 });
+const getAllStoresBasedUser = catchAsync(async (req, res) => {
+  const userId = req.user.id;
+  const result = await showroomService.getAllStoresBasedUser(userId);
+  res.status(httpStatus.OK).send({
+    success: true,
+    ...result,
+  });
+});
 
 // Set Main Showroom
 const setMainShowroom = catchAsync(async (req, res) => {
@@ -95,6 +103,7 @@ const deleteShowroom = catchAsync(async (req, res) => {
 });
 
 module.exports = {
+  getAllStoresBasedUser,
   createShowroom,
   getAllShowroom,
   getShowroom,
