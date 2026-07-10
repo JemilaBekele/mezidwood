@@ -49,7 +49,12 @@ const normalizeWorkingStart = (cal, startInstant, workingHoursPerDay) => {
   throw new Error('Could not find a valid working start');
 };
 
-const splitWorkingMinutes = (cal, startInstant, minutes, workingHoursPerDay) => {
+const splitWorkingMinutes = (
+  cal,
+  startInstant,
+  minutes,
+  workingHoursPerDay,
+) => {
   const segments = [];
   let cur = normalizeWorkingStart(cal, startInstant, workingHoursPerDay);
   let remaining = Math.max(0, minutes);
@@ -69,7 +74,10 @@ const splitWorkingMinutes = (cal, startInstant, minutes, workingHoursPerDay) => 
       continue;
     }
 
-    const available = Math.max(0, Math.floor((window.end.getTime() - cur.getTime()) / 60000));
+    const available = Math.max(
+      0,
+      Math.floor((window.end.getTime() - cur.getTime()) / 60000),
+    );
     const used = Math.min(remaining, available);
     const end = new Date(cur.getTime() + used * 60000);
     segments.push({ start: cur, end, minutes: used, dateKey: cal.dayKey(cur) });
@@ -77,7 +85,8 @@ const splitWorkingMinutes = (cal, startInstant, minutes, workingHoursPerDay) => 
     cur = end;
   }
 
-  if (remaining > 0) throw new Error('Could not allocate manual stage duration');
+  if (remaining > 0)
+    throw new Error('Could not allocate manual stage duration');
   return { start: segments[0]?.start || cur, end: cur, segments };
 };
 
@@ -90,7 +99,11 @@ const allocateManualStageCapacity = async ({
   segments,
   workingHoursPerDay,
 }) => {
-  if (!CAPACITY_STAGES.includes(stageName) || quantity <= 0 || segments.length === 0) {
+  if (
+    !CAPACITY_STAGES.includes(stageName) ||
+    quantity <= 0 ||
+    segments.length === 0
+  ) {
     return;
   }
 
@@ -108,7 +121,10 @@ const allocateManualStageCapacity = async ({
     const allocatedUnits =
       i === segments.length - 1
         ? remainingUnits
-        : Math.min(remainingUnits, Math.round(totalUnits * (segment.minutes / totalMinutes)));
+        : Math.min(
+            remainingUnits,
+            Math.round(totalUnits * (segment.minutes / totalMinutes)),
+          );
     remainingUnits -= allocatedUnits;
 
     const date = dailyCapacityDate(segment.dateKey);
@@ -154,7 +170,8 @@ const allocateManualStageCapacity = async ({
         customStartTime: segment.start,
         customEndTime: segment.end,
         allocationDate: date,
-        isOverCapacity: nextUsedCapacity > maxCapacity || nextUsedHours > workingHoursPerDay,
+        isOverCapacity:
+          nextUsedCapacity > maxCapacity || nextUsedHours > workingHoursPerDay,
       },
     });
   }
@@ -174,22 +191,31 @@ const createProject = async (projectData, userId) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invoice ID is required');
   }
   if (!VALID_DIFFICULTIES.includes(difficulty)) {
-    throw new ApiError(httpStatus.BAD_REQUEST, `Invalid difficulty: ${difficulty}`);
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Invalid difficulty: ${difficulty}`,
+    );
   }
 
   // --- customer resolution (unchanged behaviour) ---
   const resolveCustomerId = async (cid) => {
     if (!cid) {
-      const def = await prisma.customer.findFirst({ where: { isdefault: true } });
+      const def = await prisma.customer.findFirst({
+        where: { isdefault: true },
+      });
       if (def) return def.id;
       return (
-        await prisma.customer.create({ data: { name: 'Default Customer', isdefault: true } })
+        await prisma.customer.create({
+          data: { name: 'Default Customer', isdefault: true },
+        })
       ).id;
     }
     return cid;
   };
   const validCustomerId = await resolveCustomerId(customerId);
-  const customerRow = await prisma.customer.findUnique({ where: { id: validCustomerId } });
+  const customerRow = await prisma.customer.findUnique({
+    where: { id: validCustomerId },
+  });
   const isDefaultCustomer = customerRow?.isdefault || false;
 
   // --- invoice + materials ---
@@ -197,16 +223,27 @@ const createProject = async (projectData, userId) => {
     where: { id: invoiceId },
     include: {
       project: true,
-      items: { include: { proformaItemMaterials: { include: { material: true } } } },
+      items: {
+        include: { proformaItemMaterials: { include: { material: true } } },
+      },
     },
   });
   if (!invoice) throw new ApiError(httpStatus.NOT_FOUND, 'Invoice not found');
   if (invoice.project) {
-    throw new ApiError(httpStatus.CONFLICT, 'Invoice already associated with another project');
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      'Invoice already associated with another project',
+    );
   }
 
   // Aggregate material quantities by type from the invoice items.
-  const materials = { laminatedMDF: 0, plainMDF: 0, wood: 0, metal: 0, other: 0 };
+  const materials = {
+    laminatedMDF: 0,
+    plainMDF: 0,
+    wood: 0,
+    metal: 0,
+    other: 0,
+  };
   invoice.items.forEach((item) => {
     (item.proformaItemMaterials || []).forEach((pim) => {
       const qty = pim.quantity || 0;
@@ -260,7 +297,10 @@ const createProject = async (projectData, userId) => {
       !Number.isNaN(requested.getTime()) &&
       requested.getTime() > forwardPlan.deliveryDate.getTime()
     ) {
-      const backStart = cal.addWorkingDays(requested, -forwardPlan.estimatedDays);
+      const backStart = cal.addWorkingDays(
+        requested,
+        -forwardPlan.estimatedDays,
+      );
       if (backStart.getTime() > baseStart.getTime()) commitStart = backStart;
     }
   }
@@ -287,7 +327,9 @@ const createProject = async (projectData, userId) => {
           difficulty,
           totalProjectQuantity: totalQty,
           requestedDelivery:
-            requestedDelivery && requestedDelivery !== '' ? new Date(requestedDelivery) : null,
+            requestedDelivery && requestedDelivery !== ''
+              ? new Date(requestedDelivery)
+              : null,
           calculatedDelivery: plan.deliveryDate,
           totalDays: plan.productionWorkingDays,
           createdById: userId,
@@ -890,6 +932,8 @@ const getProjectById = async (id) => {
             amountDate: true,
             items: {
               include: {
+                item: true, // Include item details (like name) if it's a relation to a product/item table
+                images: true,
                 proformaItemMaterials: {
                   include: {
                     material: true,
@@ -1211,6 +1255,9 @@ const updateProjectStatus = async (id, status, userId) => {
 
 const updateProjectDesignStatus = async (id, designStatus, userId) => {
   // 1️⃣ Validate design status
+  console.log(
+    `🔄 Updating design status for project ${id} to ${designStatus} by user ${userId}`,
+  );
   const validDesignStatuses = [
     'INITIATED',
     'MODELING',
@@ -1239,11 +1286,11 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
           include: {
             projectStageCapacityAllocations: {
               include: {
-                dailyStageCapacity: true
-              }
-            }
-          }
-        }, // Include project stages with their allocations
+                dailyStageCapacity: true,
+              },
+            },
+          },
+        },
       },
     });
   } catch (err) {
@@ -1262,7 +1309,7 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
   // 3️⃣ Prepare update data
   const updateData = {
     designStatus,
-    designById: userId, // Track which user changed the design status
+    designById: userId,
   };
 
   // 4️⃣ Handle FINISHED status logic
@@ -1281,52 +1328,88 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
     );
 
     if (designStage) {
-      // ===== STEP 1: GET ALL CAPACITY ALLOCATIONS FOR DESIGN STAGE =====
+      // ===== STEP 1: SYNC ACTUAL WORK UNITS TO MATCH WORK UNITS =====
+      // IMPORTANT: We set actualWorkUnits to equal workUnits
+      // because workUnits represents the PLANNED work that should be done
+      console.log(
+        '🔄 Syncing actual work units to match planned work units...',
+      );
+
+      // Get the current values
+      const currentWorkUnits = designStage.workUnits || 0;
+      const currentActualWorkUnits = designStage.actualWorkUnits || 0;
+
+      console.log(`📊 Current Work Units (planned): ${currentWorkUnits}`);
+      console.log(
+        `📊 Current Actual Work Units (actual): ${currentActualWorkUnits}`,
+      );
+
+      // ALWAYS set actualWorkUnits to match workUnits when finishing
+      // This ensures the actual work done equals the planned work
+      const syncedActualWorkUnits = currentWorkUnits;
+      const workUnitsChanged = currentWorkUnits !== currentActualWorkUnits;
+
+      if (workUnitsChanged) {
+        console.log(
+          `✅ Syncing: Actual Work Units ${currentActualWorkUnits} → ${syncedActualWorkUnits} (matches Planned Work Units)`,
+        );
+      } else {
+        console.log('✅ Actual work units already match planned work units');
+      }
+
+      // ===== STEP 2: GET ALL CAPACITY ALLOCATIONS FOR DESIGN STAGE =====
       console.log('🔍 Fetching capacity allocations for DESIGN stage...');
-      const stageAllocations = designStage.projectStageCapacityAllocations || [];
-      
-      console.log(`📊 Found ${stageAllocations.length} capacity allocations for DESIGN stage`);
-      
+      const stageAllocations =
+        designStage.projectStageCapacityAllocations || [];
+
+      console.log(
+        `📊 Found ${stageAllocations.length} capacity allocations for DESIGN stage`,
+      );
+
       let totalFreedUnits = 0;
       let totalFreedHours = 0;
       const allocationDetails = [];
-      
-      // ===== STEP 2: SUBTRACT ALLOCATED CAPACITY FROM DAILY CAPACITIES =====
+
+      // ===== STEP 3: SUBTRACT ALLOCATED CAPACITY FROM DAILY CAPACITIES =====
       for (const allocation of stageAllocations) {
         const dateStr = allocation.allocationDate.toISOString().split('T')[0];
         console.log(`\n🔄 Processing allocation from ${dateStr}:`);
         console.log(`  Allocated Units: ${allocation.allocatedUnits}`);
         console.log(`  Allocated Hours: ${allocation.allocatedHours}`);
-        console.log(`  Current Daily UsedCapacity: ${allocation.dailyStageCapacity.usedCapacity}`);
-        
+        console.log(
+          `  Current Daily UsedCapacity: ${allocation.dailyStageCapacity.usedCapacity}`,
+        );
+
         allocationDetails.push({
           date: dateStr,
           allocatedUnits: allocation.allocatedUnits,
           allocatedHours: allocation.allocatedHours,
-          shift: allocation.shift
+          shift: allocation.shift,
         });
-        
+
         totalFreedUnits += allocation.allocatedUnits;
         totalFreedHours += allocation.allocatedHours;
       }
-      
-      console.log(`\n📊 TOTAL CAPACITY TO FREE: ${totalFreedUnits} units, ${totalFreedHours} hours`);
-      
+
+      console.log(
+        `\n📊 TOTAL CAPACITY TO FREE: ${totalFreedUnits} units, ${totalFreedHours} hours`,
+      );
+
       // Store capacity freed data for logging
       capacityFreedData = {
         totalFreedUnits,
         totalFreedHours,
         allocationsCount: stageAllocations.length,
-        allocationDetails
+        allocationDetails,
+        workUnits: currentWorkUnits,
+        actualWorkUnitsBefore: currentActualWorkUnits,
+        actualWorkUnitsAfter: syncedActualWorkUnits,
+        workUnitsChanged,
       };
-      
-      // Make work unit equal to actual work unit
-      const actualWorkUnits =
-        designStage.actualWorkUnits || designStage.workUnits;
-      
+
       // Prepare design stage update with capacity operations
       const capacityUpdateOperations = [];
-      
+
       // Create update operations for each daily capacity
       for (const allocation of stageAllocations) {
         capacityUpdateOperations.push(
@@ -1334,34 +1417,41 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
             where: { id: allocation.dailyStageCapacityId },
             data: {
               usedCapacity: {
-                decrement: allocation.allocatedUnits
+                decrement: allocation.allocatedUnits,
               },
               usedHours: {
-                decrement: allocation.allocatedHours
-              }
-            }
-          })
+                decrement: allocation.allocatedHours,
+              },
+            },
+          }),
         );
       }
-      
+
       // Create delete operation for allocations
-      const deleteAllocationsOperation = prisma.projectStageCapacityAllocation.deleteMany({
-        where: { projectStageId: designStage.id }
-      });
-      
+      const deleteAllocationsOperation =
+        prisma.projectStageCapacityAllocation.deleteMany({
+          where: { projectStageId: designStage.id },
+        });
+
       // Store operations to be executed in transaction
       designStageUpdate = {
         update: prisma.projectStage.update({
           where: { id: designStage.id },
           data: {
             finished: true,
-            actualWorkUnits,
+            // CRITICAL: Always set actualWorkUnits to match workUnits
+            workUnits: currentWorkUnits, // ← workUnits stays the same
+            actualWorkUnits: syncedActualWorkUnits, // ← actualWorkUnits becomes workUnits
             endDate: new Date(),
             status: 'COMPLETED',
           },
         }),
         capacityUpdates: capacityUpdateOperations,
-        deleteAllocations: deleteAllocationsOperation
+        deleteAllocations: deleteAllocationsOperation,
+        workUnitsChanged,
+        workUnits: currentWorkUnits,
+        actualWorkUnitsBefore: currentActualWorkUnits,
+        actualWorkUnitsAfter: syncedActualWorkUnits,
       };
 
       // Update project status to next stage after DESIGN
@@ -1389,6 +1479,24 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
     );
   }
 
+  // Log for actual work units sync (always log this when finishing design)
+  if (isNowFinished && designStageUpdate) {
+    const workUnitsLogMessage =
+      `📊 Actual work units synced to planned work units: ` +
+      `${designStageUpdate.actualWorkUnitsBefore} → ${designStageUpdate.actualWorkUnitsAfter} ` +
+      `(Planned: ${designStageUpdate.workUnits})`;
+
+    logs.push(
+      prisma.projectLog.create({
+        data: {
+          projectId: id,
+          note: workUnitsLogMessage,
+          createdById: userId,
+        },
+      }),
+    );
+  }
+
   // Log for project status change (if applicable)
   if (isNowFinished && oldProjectStatus !== 'PURCHASING') {
     logs.push(
@@ -1406,8 +1514,16 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
 
   // Log for design completion with capacity information
   if (isNowFinished && capacityFreedData) {
-    const capacityLogMessage = `Design phase completed. Freed ${capacityFreedData.totalFreedUnits.toFixed(2)} capacity units and ${capacityFreedData.totalFreedHours.toFixed(2)} hours from ${capacityFreedData.allocationsCount} calendar day(s).`;
-    
+    const capacityLogMessage =
+      `Design phase completed. ` +
+      `Freed ${capacityFreedData.totalFreedUnits.toFixed(
+        2,
+      )} capacity units and ${capacityFreedData.totalFreedHours.toFixed(
+        2,
+      )} hours from ${capacityFreedData.allocationsCount} calendar day(s). ` +
+      `Actual work units synced: ${capacityFreedData.actualWorkUnitsBefore} → ${capacityFreedData.actualWorkUnitsAfter} ` +
+      `(matches planned: ${capacityFreedData.workUnits})`;
+
     logs.push(
       prisma.projectLog.create({
         data: {
@@ -1415,20 +1531,27 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
           note: capacityLogMessage,
           createdById: userId,
         },
-      })
+      }),
     );
-    
+
     // Create detailed log entries for each allocation if not too many
-    if (capacityFreedData.allocationsCount > 0 && capacityFreedData.allocationsCount <= 10) {
+    if (
+      capacityFreedData.allocationsCount > 0 &&
+      capacityFreedData.allocationsCount <= 10
+    ) {
       for (const detail of capacityFreedData.allocationDetails) {
         logs.push(
           prisma.projectLog.create({
             data: {
               projectId: id,
-              note: `  - Freed ${detail.allocatedUnits.toFixed(2)} units (${detail.allocatedHours.toFixed(2)} hours) from ${detail.date} (${detail.shift} shift)`,
+              note: `  - Freed ${detail.allocatedUnits.toFixed(
+                2,
+              )} units (${detail.allocatedHours.toFixed(2)} hours) from ${
+                detail.date
+              } (${detail.shift} shift)`,
               createdById: userId,
             },
-          })
+          }),
         );
       }
     }
@@ -1468,12 +1591,15 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
     if (designStageUpdate) {
       // Add the stage update
       operations.push(designStageUpdate.update);
-      
+
       // Add all daily capacity updates
-      if (designStageUpdate.capacityUpdates && designStageUpdate.capacityUpdates.length > 0) {
+      if (
+        designStageUpdate.capacityUpdates &&
+        designStageUpdate.capacityUpdates.length > 0
+      ) {
         operations.push(...designStageUpdate.capacityUpdates);
       }
-      
+
       // Add delete allocations operation
       if (designStageUpdate.deleteAllocations) {
         operations.push(designStageUpdate.deleteAllocations);
@@ -1488,10 +1614,16 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
 
     console.log('✅ DESIGN stage completed successfully:', {
       projectId: id,
-      designStatus: designStatus,
-      capacityFreed: capacityFreedData ? `${capacityFreedData.totalFreedUnits} units / ${capacityFreedData.totalFreedHours} hours` : 'No capacity allocated',
+      designStatus,
+      actualWorkUnitsSynced: true,
+      workUnits: designStageUpdate?.workUnits || 'N/A',
+      actualWorkUnitsBefore: designStageUpdate?.actualWorkUnitsBefore || 'N/A',
+      actualWorkUnitsAfter: designStageUpdate?.actualWorkUnitsAfter || 'N/A',
+      capacityFreed: capacityFreedData
+        ? `${capacityFreedData.totalFreedUnits} units / ${capacityFreedData.totalFreedHours} hours`
+        : 'No capacity allocated',
       allocationsRemoved: capacityFreedData?.allocationsCount || 0,
-      logsCreated: logs.length
+      logsCreated: logs.length,
     });
 
     return updatedProject;
@@ -1563,11 +1695,19 @@ const autoScheduleProjectStages = async (projectId, userId = null) => {
 
   return prisma.project.findUnique({
     where: { id: projectId },
-    include: { stages: { orderBy: { startDate: 'asc' } }, customer: true, invoice: true },
+    include: {
+      stages: { orderBy: { startDate: 'asc' } },
+      customer: true,
+      invoice: true,
+    },
   });
 };
 
-const manualScheduleProjectStage = async (projectId, manualDelivery, userId = null) => {
+const manualScheduleProjectStage = async (
+  projectId,
+  manualDelivery,
+  userId = null,
+) => {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     include: { stages: true },
@@ -1601,7 +1741,11 @@ const manualScheduleProjectStage = async (projectId, manualDelivery, userId = nu
   // project to MANUAL mode so automatic jobs stop moving it.
   await prisma.project.update({
     where: { id: projectId },
-    data: { manualDelivery: manual, finalDelivery: manual, scheduleMode: 'MANUAL' },
+    data: {
+      manualDelivery: manual,
+      finalDelivery: manual,
+      scheduleMode: 'MANUAL',
+    },
   });
   await reschedule.logScheduleEvent(prisma, {
     projectId,
@@ -1615,7 +1759,11 @@ const manualScheduleProjectStage = async (projectId, manualDelivery, userId = nu
 
   const finalProject = await prisma.project.findUnique({
     where: { id: projectId },
-    include: { stages: { orderBy: { startDate: 'asc' } }, customer: true, invoice: true },
+    include: {
+      stages: { orderBy: { startDate: 'asc' } },
+      customer: true,
+      invoice: true,
+    },
   });
   return {
     success: true,
@@ -2536,12 +2684,17 @@ const updateProjectStage = async (
 
   const existingStage = project.stages.find((s) => s.stage === stageName);
   if (!existingStage && !isNewStage) {
-    throw new ApiError(httpStatus.NOT_FOUND, `Stage ${stageName} not found on this project`);
+    throw new ApiError(
+      httpStatus.NOT_FOUND,
+      `Stage ${stageName} not found on this project`,
+    );
   }
   const cal = await getCalendar();
   const settings = await getSchedulingSettings();
-  const workingHoursPerDay = settings.workingHoursPerDay || WORKING_HOURS_PER_DAY;
-  const hasManualDuration = timeTakenMinutes !== null && timeTakenMinutes !== undefined;
+  const workingHoursPerDay =
+    settings.workingHoursPerDay || WORKING_HOURS_PER_DAY;
+  const hasManualDuration =
+    timeTakenMinutes !== null && timeTakenMinutes !== undefined;
 
   // An explicit user edit (Gantt drag / quantity change / manual CNC add) is
   // allowed in ANY scheduleMode — the lock only stops AUTOMATIC movement. The
@@ -2557,7 +2710,11 @@ const updateProjectStage = async (
         if (manualOverride && customDates && customDates.startDate) {
           startDt = new Date(customDates.startDate);
         } else {
-          startDt = reschedule.getStagePhaseStart(project.stages, stageName, new Date());
+          startDt = reschedule.getStagePhaseStart(
+            project.stages,
+            stageName,
+            new Date(),
+          );
         }
         stage = await tx.projectStage.create({
           data: {
@@ -2586,7 +2743,12 @@ const updateProjectStage = async (
           ? new Date(customDates.startDate)
           : new Date(stage.startDateTime || stage.startDate || Date.now());
       const manualTimeline = hasManualDuration
-        ? splitWorkingMinutes(cal, chosenStart, timeTakenMinutes, workingHoursPerDay)
+        ? splitWorkingMinutes(
+            cal,
+            chosenStart,
+            timeTakenMinutes,
+            workingHoursPerDay,
+          )
         : null;
 
       let updatedStage;
@@ -2602,7 +2764,11 @@ const updateProjectStage = async (
               tx,
             });
         const sp = plan ? plan.stages.find((s) => s.stage === stageName) : null;
-        const startDateTime = manualTimeline ? manualTimeline.start : sp ? sp.startDateTime : chosenStart;
+        const startDateTime = manualTimeline
+          ? manualTimeline.start
+          : sp
+          ? sp.startDateTime
+          : chosenStart;
         const endDateTime = manualTimeline
           ? manualTimeline.end
           : manualOverride && customDates && customDates.endDate
@@ -2615,7 +2781,11 @@ const updateProjectStage = async (
           : sp
           ? sp.capacityDays
           : 1;
-        const timeTaken = manualTimeline ? timeTakenMinutes : sp ? sp.timeTaken : 0;
+        const timeTaken = manualTimeline
+          ? timeTakenMinutes
+          : sp
+          ? sp.timeTaken
+          : 0;
         updatedStage = await tx.projectStage.update({
           where: { id: stage.id },
           data: {
@@ -2625,7 +2795,9 @@ const updateProjectStage = async (
             endDateTime,
             endDate: endDateTime,
             capacityDays,
-            shift: sp ? sp.shift : STAGE_SHIFT_PREFERENCE[stageName] || 'CUSTOM',
+            shift: sp
+              ? sp.shift
+              : STAGE_SHIFT_PREFERENCE[stageName] || 'CUSTOM',
             timeTaken,
             autoSchedule: !manualOverride,
             status: 'ACTIVE',
@@ -2653,7 +2825,12 @@ const updateProjectStage = async (
             });
           }
         } else if (sp) {
-          await reschedule.persistStageAllocations(stage.id, stageName, sp.allocations, tx);
+          await reschedule.persistStageAllocations(
+            stage.id,
+            stageName,
+            sp.allocations,
+            tx,
+          );
         }
       } else {
         // Zero quantity: keep the row but clear its work.
@@ -2674,7 +2851,10 @@ const updateProjectStage = async (
         tx,
         manualOverride ? OVERCAPACITY_FACTOR : 1.0,
       );
-      const recomputed = await reschedule.recomputeProjectDelivery(projectId, tx);
+      const recomputed = await reschedule.recomputeProjectDelivery(
+        projectId,
+        tx,
+      );
 
       await reschedule.logScheduleEvent(tx, {
         projectId,
@@ -2682,7 +2862,9 @@ const updateProjectStage = async (
         trigger: 'USER',
         stage: stageName,
         byUserId: userId,
-        oldDelivery: recomputed ? recomputed.oldDelivery : project.calculatedDelivery,
+        oldDelivery: recomputed
+          ? recomputed.oldDelivery
+          : project.calculatedDelivery,
         newDelivery: recomputed ? recomputed.newDelivery : undefined,
         reason: manualOverride
           ? `Stage ${stageName} manually adjusted; downstream rescheduled`
@@ -2694,7 +2876,11 @@ const updateProjectStage = async (
 
   return prisma.project.findUnique({
     where: { id: projectId },
-    include: { stages: { orderBy: { startDate: 'asc' } }, customer: true, invoice: true },
+    include: {
+      stages: { orderBy: { startDate: 'asc' } },
+      customer: true,
+      invoice: true,
+    },
   });
 };
 
@@ -2707,7 +2893,10 @@ const VALID_SCHEDULE_MODES = ['AUTO', 'MANUAL', 'LOCKED'];
  */
 const setProjectScheduleMode = async (projectId, mode, userId = null) => {
   if (!VALID_SCHEDULE_MODES.includes(mode)) {
-    throw new ApiError(httpStatus.BAD_REQUEST, `Invalid schedule mode: ${mode}`);
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Invalid schedule mode: ${mode}`,
+    );
   }
   const project = await prisma.project.findUnique({ where: { id: projectId } });
   if (!project) throw new ApiError(httpStatus.NOT_FOUND, 'Project not found');
@@ -2739,7 +2928,11 @@ const cancelProjectStage = async (projectId, stageName, userId = null) => {
 
   return prisma.project.findUnique({
     where: { id: projectId },
-    include: { stages: { orderBy: { startDate: 'asc' } }, customer: true, invoice: true },
+    include: {
+      stages: { orderBy: { startDate: 'asc' } },
+      customer: true,
+      invoice: true,
+    },
   });
 };
 

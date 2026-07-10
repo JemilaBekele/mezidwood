@@ -4,27 +4,37 @@ const { itemService } = require('../services');
 
 // Create Item
 const createItem = catchAsync(async (req, res) => {
-  // Structure files by field name (same pattern as material)
+
+  // Structure files by field name
   const structuredFiles = {};
 
-  if (Array.isArray(req.files)) {
-    req.files.forEach((file) => {
-      if (!structuredFiles[file.fieldname]) {
-        structuredFiles[file.fieldname] = [];
-      }
-      structuredFiles[file.fieldname].push(file);
-    });
-  } else if (req.files) {
-    Object.keys(req.files).forEach((fieldname) => {
-      const files = req.files[fieldname];
-      structuredFiles[fieldname] = Array.isArray(files) ? files : [files];
-    });
+  // Handle both formats (object from .fields() or array from .any())
+  if (req.files) {
+    if (Array.isArray(req.files)) {
+      // If using .any(), files come as array
+      req.files.forEach((file) => {
+        if (!structuredFiles[file.fieldname]) {
+          structuredFiles[file.fieldname] = [];
+        }
+        structuredFiles[file.fieldname].push(file);
+      });
+    } else {
+      // If using .fields(), files come as object
+      Object.keys(req.files).forEach((fieldname) => {
+        const files = req.files[fieldname];
+        if (files && files.length > 0) {
+          structuredFiles[fieldname] = files;
+        }
+      });
+    }
   }
 
-  // Ensure image field exists even if no file was uploaded
+  // Ensure image fields exist
   structuredFiles.image = structuredFiles.image || undefined;
+  structuredFiles.images = structuredFiles.images || undefined;
 
-  // Parse materials if it's a string (coming from FormData)
+
+  // Parse request body
   const itemData = { ...req.body };
 
   // Parse materials if it's a JSON string
@@ -44,6 +54,8 @@ const createItem = catchAsync(async (req, res) => {
     itemData.price = parseFloat(itemData.price);
   }
 
+
+
   const item = await itemService.createItem(itemData, structuredFiles);
 
   res.status(httpStatus.CREATED).json({
@@ -54,25 +66,39 @@ const createItem = catchAsync(async (req, res) => {
 });
 
 // Update Item
+// Update Item
+// Update Item
 const updateItem = catchAsync(async (req, res) => {
-  // Structure files by field name (same pattern as material)
+
+  // Structure files by field name
   const structuredFiles = {};
 
-  if (Array.isArray(req.files)) {
-    req.files.forEach((file) => {
-      if (!structuredFiles[file.fieldname]) {
-        structuredFiles[file.fieldname] = [];
-      }
-      structuredFiles[file.fieldname].push(file);
-    });
-  } else if (req.files) {
-    Object.entries(req.files).forEach(([fieldname, files]) => {
-      structuredFiles[fieldname] = Array.isArray(files) ? files : [files];
-    });
+  // When using .fields(), req.files is an object with field names as keys
+  if (req.files) {
+    // Handle both formats (object from .fields() or array from .any())
+    if (Array.isArray(req.files)) {
+      // If using .any(), files come as array
+      req.files.forEach((file) => {
+        if (!structuredFiles[file.fieldname]) {
+          structuredFiles[file.fieldname] = [];
+        }
+        structuredFiles[file.fieldname].push(file);
+      });
+    } else {
+      // If using .fields(), files come as object
+      Object.keys(req.files).forEach((fieldname) => {
+        const files = req.files[fieldname];
+        if (files && files.length > 0) {
+          structuredFiles[fieldname] = files;
+        }
+      });
+    }
   }
 
-  // Ensure image field exists even if no file was uploaded
+  // Ensure image fields exist
   structuredFiles.image = structuredFiles.image || undefined;
+  structuredFiles.images = structuredFiles.images || undefined;
+
 
   // Parse update body
   const updateBody = { ...req.body };
@@ -89,15 +115,28 @@ const updateItem = catchAsync(async (req, res) => {
     }
   }
 
+  // Parse imagesToDelete if it's a string
+  if (updateBody.imagesToDelete && typeof updateBody.imagesToDelete === 'string') {
+    try {
+      updateBody.imagesToDelete = JSON.parse(updateBody.imagesToDelete);
+    } catch (error) {
+      return res.status(httpStatus.BAD_REQUEST).json({
+        success: false,
+        error: 'Invalid imagesToDelete format. Expected valid JSON string array.',
+      });
+    }
+  }
+
   // Parse price to number if it's a string
   if (updateBody.price && typeof updateBody.price === 'string') {
     updateBody.price = parseFloat(updateBody.price);
   }
 
-  // Handle image removal (if imageUrl is explicitly set to null or empty string)
+  // Handle image removal
   if (updateBody.imageUrl === 'null' || updateBody.imageUrl === '') {
     updateBody.imageUrl = null;
   }
+
 
   const item = await itemService.updateItem(
     req.params.id,

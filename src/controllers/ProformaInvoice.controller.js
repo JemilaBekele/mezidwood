@@ -5,14 +5,7 @@ const { proformaInvoiceService } = require('../services');
 // Create Proforma Invoice
 // Create Proforma Invoice
 const createProformaInvoice = catchAsync(async (req, res) => {
-  console.log('=== CREATE PROFORMA INVOICE CONTROLLER START ===');
-  console.log('1. Request received at:', new Date().toISOString());
-  console.log('2. Request method:', req.method);
-  console.log('3. Request URL:', req.originalUrl);
-  console.log('4. Content-Type:', req.headers['content-type']);
-
   // Log body fields (excluding files)
-  console.log('5. Request body fields:');
   Object.keys(req.body).forEach((key) => {
     if (key !== 'items') {
       console.log(
@@ -26,9 +19,6 @@ const createProformaInvoice = catchAsync(async (req, res) => {
 
   // Structure files by field name with detailed logging
   const structuredFiles = {};
-  console.log('6. Checking for files...');
-  console.log('   - req.files exists:', !!req.files);
-  console.log('   - req.files type:', typeof req.files);
 
   if (Array.isArray(req.files)) {
     console.log('   - Files found as array, count:', req.files.length);
@@ -175,20 +165,11 @@ const createProformaInvoice = catchAsync(async (req, res) => {
   }
 
   try {
-    console.log('11. Calling service to create proforma invoice...');
-    console.log('   - Request body keys:', Object.keys(req.body));
-    console.log('   - Files keys:', Object.keys(structuredFiles));
-
     const proformaInvoice = await proformaInvoiceService.createProformaInvoice(
       req.body,
       req.user.id,
       structuredFiles,
     );
-
-    console.log('12. Service call successful');
-    console.log('13. Response data - Invoice ID:', proformaInvoice?.id);
-    console.log('14. Response data - PI Number:', proformaInvoice?.piNumber);
-    console.log('15. Items created:', proformaInvoice?.items?.length);
 
     // Log image counts per item
     if (proformaInvoice?.items) {
@@ -197,24 +178,12 @@ const createProformaInvoice = catchAsync(async (req, res) => {
       });
     }
 
-    console.log(
-      '16. Attachments created:',
-      proformaInvoice?.attachments?.length,
-    );
-
     res.status(httpStatus.CREATED).send({
       success: true,
       message: 'Proforma invoice created successfully',
       proformaInvoice,
     });
-
-    console.log('17. Response sent successfully');
   } catch (error) {
-    console.error('ERROR in createProformaInvoice controller:', error);
-    console.error('Error name:', error.name);
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-
     // Check if it's already an ApiError
     if (error instanceof ApiError) {
       throw error;
@@ -232,15 +201,6 @@ const createProformaInvoice = catchAsync(async (req, res) => {
 
 // Update Proforma Invoice
 const updateProformaInvoice = catchAsync(async (req, res) => {
-  console.log('=== UPDATE PROFORMA INVOICE CONTROLLER START ===');
-  console.log('1. Request received at:', new Date().toISOString());
-  console.log('2. Request method:', req.method);
-  console.log('3. Request URL:', req.originalUrl);
-  console.log('4. Content-Type:', req.headers['content-type']);
-  console.log('5. Invoice ID to update:', req.params.id);
-
-  // Log body fields (excluding items)
-  console.log('6. Request body fields:');
   Object.keys(req.body).forEach((key) => {
     if (key !== 'items') {
       console.log(
@@ -293,15 +253,6 @@ const updateProformaInvoice = catchAsync(async (req, res) => {
 
   // Parse items if it's a string (from form-data)
   if (req.body.items) {
-    console.log('9. Items field found, type:', typeof req.body.items);
-    console.log(
-      '   Raw items value (first 200 chars):',
-      req.body.items.substring
-        ? req.body.items.substring(0, 200) +
-            (req.body.items.length > 200 ? '...' : '')
-        : req.body.items,
-    );
-
     if (typeof req.body.items === 'string') {
       try {
         req.body.items = JSON.parse(req.body.items);
@@ -433,6 +384,29 @@ const getProformaInvoices = catchAsync(async (req, res) => {
   };
 
   const result = await proformaInvoiceService.getAllProformaInvoices(filters);
+
+  res.status(httpStatus.OK).send({
+    success: true,
+    ...result,
+  });
+});
+const getAllProformaInvoicesmy = catchAsync(async (req, res) => {
+  const filters = {
+    search: req.query.search,
+    status: req.query.status,
+    customerId: req.query.customerId,
+    startDate: req.query.startDate,
+    endDate: req.query.endDate,
+    page: parseInt(req.query.page, 10) || 1,
+    limit: parseInt(req.query.limit, 10) || 10,
+    sortBy: req.query.sortBy || 'createdAt',
+    sortOrder: req.query.sortOrder || 'desc',
+  };
+
+  const result = await proformaInvoiceService.getAllProformaInvoicesmy(
+    filters,
+    req.user.id,
+  );
 
   res.status(httpStatus.OK).send({
     success: true,
@@ -690,4 +664,5 @@ module.exports = {
   generateInvoiceReport,
   validatePINumber,
   updateProformaInvoiceAdditionalQuantity,
+  getAllProformaInvoicesmy,
 };

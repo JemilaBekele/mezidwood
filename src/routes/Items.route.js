@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { itemController } = require('../controllers');
 const auth = require('../middlewares/auth');
-const { uploadImage } = require('../utils/multer');
+const { uploadImageitem } = require('../utils/multer');
 
 const checkPermission = require('../middlewares/permission.middleware');
 
@@ -11,7 +11,7 @@ const checkPermission = require('../middlewares/permission.middleware');
 router.post(
   '/api/items',
   auth,
-  uploadImage,
+  uploadImageitem,
   checkPermission('CREATE_PRODUCT'),
   itemController.createItem,
 );
@@ -55,7 +55,7 @@ router.get(
 router.put(
   '/api/items/:id',
   auth,
-  uploadImage,
+  uploadImageitem,
 
   checkPermission('UPDATE_PRODUCT'),
   itemController.updateItem,

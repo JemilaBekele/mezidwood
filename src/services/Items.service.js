@@ -44,6 +44,7 @@ const getItemByIddetail = async (id) => {
             },
           },
         },
+        itemImages: true, // Include additional images
 
         // ✅ Fixed: No orderBy since ProformaInvoiceItem doesn't have createdAt
         proformaInvoiceItems: {
@@ -242,6 +243,7 @@ const getItemByIddetail = async (id) => {
 const createItem = async (itemData, files) => {
   const { name, price, materials, categoryId, typeId, sizeId, color } =
     itemData;
+
   // Validate required fields
   if (!name) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Item name is required');
@@ -330,19 +332,51 @@ const createItem = async (itemData, files) => {
     );
   }
 
-  // Handle image upload
+  // Handle main image upload
   let imageUrl = null;
-  const imageFile = Array.isArray(files?.image) ? files.image[0] : files?.image;
+  const mainImageFile = files?.image
+    ? Array.isArray(files.image)
+      ? files.image[0]
+      : files.image
+    : undefined;
 
-  if (imageFile) {
+  if (mainImageFile) {
     try {
-      imageUrl = await uploadImage(imageFile, 'item_images');
+      imageUrl = await uploadImage(mainImageFile, 'item_images');
     } catch (err) {
       throw new ApiError(
         httpStatus.INTERNAL_SERVER_ERROR,
-        'Item image processing failed',
+        'Item main image processing failed',
       );
     }
+  }
+
+  // Handle additional images upload
+  const additionalFiles = files?.images || [];
+  const additionalFileArray = Array.isArray(additionalFiles)
+    ? additionalFiles
+    : [additionalFiles];
+
+  const additionalImageUrls = [];
+  if (additionalFileArray.length > 0) {
+    try {
+      for (const imageFile of additionalFileArray) {
+        if (imageFile) {
+          console.log('Uploading image:', imageFile.originalname || 'unnamed');
+          const uploadedUrl = await uploadImage(imageFile, 'item_images');
+          console.log('Uploaded URL:', uploadedUrl);
+          additionalImageUrls.push({ imageUrl: uploadedUrl });
+        }
+      }
+    } catch (err) {
+      console.error('Additional images processing error:', err);
+      throw new ApiError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        'Additional images processing failed',
+      );
+    }
+  } else {
+    console.log('No additional images to process');
   }
 
   // Validate materials if provided
@@ -375,12 +409,13 @@ const createItem = async (itemData, files) => {
     }
   }
 
-  // Create item with materials, image, color, and relations
+  // Create item with materials, main image, additional images, color, and relations
+
   const item = await prisma.items.create({
     data: {
       name: trimmedName,
       price: price !== undefined ? price : 0,
-      imageUrl,
+      imageUrl, // Main image
       color: color || null,
       categoryId: categoryId || null,
       typeId: typeId || null,
@@ -393,6 +428,12 @@ const createItem = async (itemData, files) => {
                 quantity: material.quantity,
                 note: material.note || null,
               })),
+            }
+          : undefined,
+      itemImages:
+        additionalImageUrls.length > 0
+          ? {
+              create: additionalImageUrls,
             }
           : undefined,
     },
@@ -413,6 +454,7 @@ const createItem = async (itemData, files) => {
           material: true,
         },
       },
+      itemImages: true, // Include additional images
     },
   });
 
@@ -422,9 +464,20 @@ const createItem = async (itemData, files) => {
 /**
  * Update Item with Image Upload Support and Relations
  */
+/**
+ * Update Item with Main Image and Additional Images Support
+ */
 const updateItem = async (id, updateBody, files) => {
-  const { materials, price, categoryId, typeId, sizeId, color, ...itemData } =
-    updateBody;
+  const {
+    materials,
+    price,
+    categoryId,
+    typeId,
+    sizeId,
+    color,
+    imagesToDelete,
+    ...itemData
+  } = updateBody;
 
   // Check if item exists
   const existingItem = await prisma.items.findUnique({
@@ -434,6 +487,7 @@ const updateItem = async (id, updateBody, files) => {
       category: true,
       type: true,
       size: true,
+      itemImages: true,
     },
   });
 
@@ -495,56 +549,122 @@ const updateItem = async (id, updateBody, files) => {
     }
   }
 
-  // Handle image upload if new image is provided
+  // Handle main image upload
   let { imageUrl } = existingItem;
-  const imageFile = Array.isArray(files?.image) ? files.image[0] : files?.image;
+  const mainImageFile = files?.image
+    ? Array.isArray(files.image)
+      ? files.image[0]
+      : files.image
+    : undefined;
 
-  if (imageFile) {
+  if (mainImageFile) {
     try {
-      imageUrl = await uploadImage(imageFile, 'item_images');
+      imageUrl = await uploadImage(mainImageFile, 'item_images');
 
-      // Delete old image if exists
+      // Delete old main image if exists
       if (existingItem.imageUrl) {
         try {
           await deleteImage(existingItem.imageUrl);
         } catch (err) {
-          console.warn('Failed to delete old image:', err);
+          console.warn('Failed to delete old main image:', err);
         }
       }
     } catch (err) {
       throw new ApiError(
         httpStatus.INTERNAL_SERVER_ERROR,
-        'Item image processing failed',
+        'Item main image processing failed',
       );
     }
-  } else if (updateBody.imageUrl === null) {
-    // If explicitly set to null, remove the image
+  } else if (updateBody.imageUrl === null || updateBody.imageUrl === 'null') {
+    // If explicitly set to null, remove the main image
     imageUrl = null;
 
     if (existingItem.imageUrl) {
       try {
         await deleteImage(existingItem.imageUrl);
       } catch (err) {
-        console.warn('Failed to delete old image:', err);
+        console.warn('Failed to delete old main image:', err);
       }
     }
   }
 
-  // Clean update body
+  // Handle additional images upload
+  const additionalFiles = files?.images || [];
+  const additionalFileArray = Array.isArray(additionalFiles)
+    ? additionalFiles
+    : [additionalFiles];
+
+  if (additionalFileArray.length > 0) {
+    try {
+      const newImages = [];
+      for (const imageFile of additionalFileArray) {
+        if (imageFile) {
+          const uploadedUrl = await uploadImage(imageFile, 'item_images');
+          newImages.push({
+            itemId: id,
+            imageUrl: uploadedUrl,
+          });
+        }
+      }
+
+      // Create new additional images
+      if (newImages.length > 0) {
+        const createdImages = await prisma.itemImage.createMany({
+          data: newImages,
+        });
+        console.log('Created images count:', createdImages.count);
+      }
+    } catch (err) {
+      throw new ApiError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        'Additional images processing failed',
+      );
+    }
+  } else {
+    console.log('No additional images to process');
+  }
+
+  // Handle deletion of additional images
+  if (
+    imagesToDelete &&
+    Array.isArray(imagesToDelete) &&
+    imagesToDelete.length > 0
+  ) {
+    for (const imageId of imagesToDelete) {
+      const imageToDelete = existingItem.itemImages.find(
+        (img) => img.id === imageId,
+      );
+
+      if (imageToDelete) {
+        try {
+          await deleteImage(imageToDelete.imageUrl);
+        } catch (err) {
+          console.warn(`Failed to delete additional image ${imageId}:`, err);
+        }
+      }
+    }
+
+    const deleted = await prisma.itemImage.deleteMany({
+      where: {
+        id: { in: imagesToDelete },
+        itemId: id,
+      },
+    });
+  }
+
+  // Clean update body - IMPORTANT: Keep only the fields we want to update
   const cleanedUpdateBody = {};
-  for (const [key, value] of Object.entries(itemData)) {
-    if (value !== undefined && value !== null) {
-      const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '');
 
-      if (typeof value === 'string') {
-        cleanedUpdateBody[cleanKey] = value.trim();
-      } else {
-        cleanedUpdateBody[cleanKey] = value;
-      }
+  // Add name if provided
+  if (itemData.name !== undefined) {
+    const trimmedName = itemData.name.trim();
+    if (trimmedName.length === 0) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Item name cannot be empty');
     }
+    cleanedUpdateBody.name = trimmedName;
   }
 
-  // Add fields to cleaned update body if provided
+  // Add price if provided
   if (price !== undefined) {
     if (typeof price !== 'number' || price < 0) {
       throw new ApiError(
@@ -555,10 +675,12 @@ const updateItem = async (id, updateBody, files) => {
     cleanedUpdateBody.price = price;
   }
 
+  // Add color if provided
   if (color !== undefined) {
     cleanedUpdateBody.color = color || null;
   }
 
+  // Add relations if provided
   if (categoryId !== undefined) {
     cleanedUpdateBody.categoryId = categoryId || null;
   }
@@ -571,15 +693,8 @@ const updateItem = async (id, updateBody, files) => {
     cleanedUpdateBody.sizeId = sizeId || null;
   }
 
+  // Add imageUrl
   cleanedUpdateBody.imageUrl = imageUrl;
-
-  // Validate name if provided
-  if (
-    cleanedUpdateBody.name !== undefined &&
-    cleanedUpdateBody.name.length === 0
-  ) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Item name cannot be empty');
-  }
 
   // Check duplicate name and color combination if updating name or color
   const newName =
@@ -663,7 +778,7 @@ const updateItem = async (id, updateBody, files) => {
     });
   }
 
-  // Update item
+  // Update item - Only update if there are changes
   const updatedItem = await prisma.items.update({
     where: { id },
     data: cleanedUpdateBody,
@@ -684,12 +799,11 @@ const updateItem = async (id, updateBody, files) => {
           material: true,
         },
       },
+      itemImages: true,
     },
   });
-
   return updatedItem;
 };
-
 /**
  * Delete Item
  */
@@ -782,6 +896,12 @@ const getAllItems = async (filter = {}) => {
         select: {
           id: true,
           name: true,
+        },
+      },
+      itemImages: {
+        select: {
+          id: true,
+          imageUrl: true,
         },
       },
       type: {
@@ -896,6 +1016,7 @@ const getAllItems = async (filter = {}) => {
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
       itemMaterials: item.itemMaterials,
+      itemImages: item.itemImages, // ✅ ADD THIS - Include itemImages in the response
 
       // Stock details with only locations that have stock
       stockDetails: {
@@ -928,6 +1049,8 @@ const getAllItemslist = async (filter = {}) => {
           name: true,
         },
       },
+      itemImages: true, // Include additional images
+
       type: {
         select: {
           id: true,
@@ -1079,6 +1202,8 @@ const getAllItemsimple = async (filter = {}) => {
           name: true,
         },
       },
+      itemImages: true, // Include additional images
+
       type: {
         select: {
           id: true,
@@ -1130,6 +1255,8 @@ const getItemById = async (id) => {
           name: true,
         },
       },
+      itemImages: true, // Include additional images
+
       type: {
         include: {
           size: {
@@ -1821,7 +1948,8 @@ const acceptInitialItemStockBulk = async (items, userId) => {
 
         if (storeId) {
           store = await tx.store.findUnique({ where: { id: storeId } });
-          if (!store) throw new ApiError(httpStatus.NOT_FOUND, 'Store not found');
+          if (!store)
+            throw new ApiError(httpStatus.NOT_FOUND, 'Store not found');
         }
 
         if (showroomId) {

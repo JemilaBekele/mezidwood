@@ -511,8 +511,23 @@ model Items {
   sellItems            SellItem[]
   transferItems        TransferItem[]
   stockCorrectionItems StockCorrectionItem[]
+  itemImages           ItemImage[]
 
   @@map("items")
+}
+
+model ItemImage {
+  id String @id @default(uuid())
+
+  imageUrl String
+
+  itemId String
+  item   Items  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("item_images")
 }
 
 model ItemStock {
@@ -761,7 +776,7 @@ model ProformaInvoiceItem {
   invoiceId String
   invoice   ProformaInvoice @relation(fields: [invoiceId], references: [id])
 
-  description String
+  description String  @db.Text
   size        String?
   quantity    Int
   unitPrice   Float

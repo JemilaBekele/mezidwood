@@ -51,8 +51,14 @@ router.post(
 router.get(
   '/api/proforma-invoices',
   auth,
-  checkPermission('VIEW_PROFORMA'),
+  checkPermission('VIEW_ALL_PROFORMA'),
   proformaInvoiceController.getProformaInvoices,
+);
+router.get(
+  '/api/proforma-invoices/mypiinvoices',
+  auth,
+  checkPermission('VIEW_PROFORMA'),
+  proformaInvoiceController.getAllProformaInvoicesmy,
 );
 
 // Get Proforma Invoice by ID

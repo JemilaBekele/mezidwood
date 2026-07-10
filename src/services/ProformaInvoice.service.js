@@ -30,7 +30,7 @@ const generatePINumber = async () => {
     sequence = lastSequence + 1;
   }
 
-  return `PI-${year}${month}-${sequence.toString().padStart(4, '0')}`;
+  return `PI-${sequence.toString().padStart(4, '0')}`;
 };
 
 // Calculate invoice totals
@@ -161,13 +161,9 @@ const createProformaInvoice = async (
     throw new ApiError(httpStatus.BAD_REQUEST, 'At least one item is required');
   }
 
-  // Log store status
-  console.log(`Creating proforma invoice with store: ${isStore}`);
-  console.log(`Customer ID: ${finalCustomerId || 'NOT PROVIDED'}`);
   if (isStore) {
     console.log(`Store invoice: Balance will be set to ZERO`);
   }
-  console.log(`Note: amountPaid is always 0 for new proforma invoices`);
 
   // Validate items
   for (const [index, item] of items.entries()) {
@@ -275,7 +271,6 @@ const createProformaInvoice = async (
   let balance;
   if (isStore) {
     balance = 0;
-    console.log(`Store invoice: Setting balance to 0`);
   } else {
     balance = total; // Since amountPaid is 0, balance equals total
     console.log(
@@ -285,10 +280,8 @@ const createProformaInvoice = async (
   let paymentStatus;
   if (isStore) {
     paymentStatus = 'NONE'; // Store invoices don't require payment tracking
-    console.log(`Store invoice: Setting paymentStatus to NONE`);
   } else {
     paymentStatus = 'PENDING'; // Regular invoices start as PENDING
-    console.log(`Regular invoice: Setting paymentStatus to PENDING`);
   }
   // Generate PI number
   const piNumber = await generatePINumber();
@@ -313,19 +306,12 @@ const createProformaInvoice = async (
       // ✅ ALWAYS add customerId if we have one (even for store invoices)
       if (finalCustomerId) {
         invoiceData.customerId = finalCustomerId;
-        console.log(`Adding customer ID to invoice: ${finalCustomerId}`);
       }
 
       const invoice = await prismaTx.proformaInvoice.create({
         data: invoiceData,
       });
 
-      console.log(
-        `Created proforma invoice with ID: ${invoice.id}, Store: ${isStore}`,
-      );
-      console.log(
-        `  Amount Paid: ${invoice.amountPaid} (always 0 for new invoices)`,
-      );
       if (isStore) {
         console.log(
           `  Store invoice balance: ${invoice.balance} (forced to zero)`,
@@ -700,6 +686,7 @@ const rescheduleProjectStages = async (
     byUserId,
     startInstant: new Date(),
   });
+
 const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
   // Check if invoice exists with all relations including project
   const existingInvoice = await prisma.proformaInvoice.findUnique({
@@ -716,7 +703,7 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
       customer: true,
       project: {
         include: {
-          stages: true, // ✅ Add this to get stages
+          stages: true,
         },
       },
     },
@@ -734,12 +721,90 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
     );
   }
 
+  // 🔥 DETECT IF THIS IS AN EDIT OPERATION
+  // Check if items are being updated
+  const hasItems =
+    updateData.items !== undefined && Array.isArray(updateData.items);
+
+  // Check if there are actual changes to items
+  let hasItemChanges = false;
+  if (hasItems) {
+    const existingItemsStr = JSON.stringify(
+      existingInvoice.items.map((item) => ({
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        size: item.size,
+        additionalDescription: item.additionalDescription,
+        materials:
+          item.proformaItemMaterials?.map((m) => ({
+            materialId: m.materialId,
+            quantity: m.quantity,
+            note: m.note,
+          })) || [],
+      })),
+    );
+
+    const newItemsStr = JSON.stringify(
+      updateData.items.map((item) => ({
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        size: item.size,
+        additionalDescription: item.additionalDescription,
+        materials:
+          item.materials?.map((m) => ({
+            materialId: m.materialId,
+            quantity: m.quantity,
+            note: m.note,
+          })) || [],
+      })),
+    );
+
+    hasItemChanges = existingItemsStr !== newItemsStr;
+  }
+
+  // Check if any other important fields are being updated
+  const hasCustomerChange =
+    updateData.customerId !== undefined &&
+    updateData.customerId !== existingInvoice.customerId;
+  const hasBankChange = updateData.banks !== undefined;
+  const hasAttachmentChange =
+    structuredFiles.attachments && structuredFiles.attachments.length > 0;
+
+  // This is an edit if any of these are true
+  const isEditing =
+    hasItemChanges || hasCustomerChange || hasBankChange || hasAttachmentChange;
+
+  console.log('🔍 EDIT DETECTION:', {
+    isEditing,
+    hasItemChanges,
+    hasCustomerChange,
+    hasBankChange,
+    hasAttachmentChange,
+    currentStatus: existingInvoice.status,
+  });
+
+  // Determine the final status
+  let finalStatus = existingInvoice.status;
+
+  // If editing and status is NOT PENDING_ST, set to REVISION
+  if (isEditing && existingInvoice.status !== 'PENDING_ST') {
+    // Only set to REVISION if the invoice is not already in REVISION or CANCELLED
+    if (!['REVISION', 'CANCELLED'].includes(existingInvoice.status)) {
+      finalStatus = 'REVISION';
+      console.log(
+        `🔄 Status changed from ${existingInvoice.status} to REVISION`,
+      );
+    }
+  }
+
   // Extract fields from updateData
   const {
     customerId = existingInvoice.customerId,
     items,
     amountPaid = existingInvoice.amountPaid || 0,
-    status = existingInvoice.status,
+    status = finalStatus, // Use the computed status
     preparedById = existingInvoice.preparedById,
     approvedById = existingInvoice.approvedById,
     amountDate = existingInvoice.amountDate,
@@ -794,6 +859,20 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
           httpStatus.BAD_REQUEST,
           `Item ${index + 1}: unit price must be greater than 0`,
         );
+      }
+
+      // ✅ Validate that itemId exists in the items table (if provided)
+      if (item.itemId) {
+        const existingItem = await prisma.items.findUnique({
+          where: { id: item.itemId },
+        });
+
+        if (!existingItem) {
+          throw new ApiError(
+            httpStatus.NOT_FOUND,
+            `Item ${index + 1}: Item with ID ${item.itemId} not found`,
+          );
+        }
       }
 
       // Validate materials if provided
@@ -959,14 +1038,14 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
 
   const balance = total - parsedAmountPaid;
 
-  // Handle status transitions if status is being updated
+  // 🔥 UPDATED: Handle status transitions if status is being updated
   if (status && status !== existingInvoice.status) {
     const allowedTransitions = {
-      PENDING_ST: ['APPROVED_ST', 'CANCELLED'],
-      APPROVED_ST: ['SENT_TO_CLIENT', 'CANCELLED'],
+      PENDING_ST: ['APPROVED_ST', 'CANCELLED', 'REVISION'],
+      APPROVED_ST: ['SENT_TO_CLIENT', 'CANCELLED', 'REVISION'],
       SENT_TO_CLIENT: ['APPROVED_CLIENT', 'REVISION', 'CANCELLED'],
       REVISION: ['APPROVED_ST', 'SENT_TO_CLIENT', 'CANCELLED'],
-      APPROVED_CLIENT: ['CANCELLED'],
+      APPROVED_CLIENT: ['CANCELLED', 'REVISION'],
       CANCELLED: [],
     };
 
@@ -1026,6 +1105,20 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
           data: invoiceUpdateData,
         });
 
+        // 🔥 NEW: Create a log entry for status change
+        if (status !== existingInvoice.status) {
+          const userId =
+            approvedById || preparedById || existingInvoice.preparedById;
+
+          await prismaTx.piLog.create({
+            data: {
+              action: `Status changed from ${existingInvoice.status} to ${status}`,
+              proformaId: id,
+              piuserId: userId,
+            },
+          });
+        }
+
         // Update banks if provided
         if (banks !== undefined) {
           // Delete existing bank relations
@@ -1070,12 +1163,44 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
 
         // Update items if provided
         if (itemsToUpdate) {
-          // Delete existing items (cascade will delete materials and images)
-          await prismaTx.proformaInvoiceItem.deleteMany({
+          // ✅ Get existing items to preserve itemId references
+          const existingItems = await prismaTx.proformaInvoiceItem.findMany({
             where: { invoiceId: id },
+            include: {
+              images: true,
+              proformaItemMaterials: true,
+            },
           });
 
-          // Create new items
+          // ✅ Map existing items by index or id for matching
+          const existingItemsMap = new Map();
+          existingItems.forEach((existingItem, index) => {
+            existingItemsMap.set(index, existingItem);
+          });
+
+          // ✅ Delete items that are NOT in the update list (removed items)
+          const updateItemIds = itemsToUpdate
+            .map((item, index) => {
+              // If item has an id, use it to identify existing items
+              if (item.id) return item.id;
+              // Otherwise use index as fallback
+              return index;
+            })
+            .filter(Boolean);
+
+          // Find items to delete (those not in the update list)
+          const itemsToDelete = existingItems.filter(
+            (existingItem) => !updateItemIds.includes(existingItem.id),
+          );
+
+          // Delete removed items
+          for (const itemToDelete of itemsToDelete) {
+            await prismaTx.proformaInvoiceItem.delete({
+              where: { id: itemToDelete.id },
+            });
+          }
+
+          // ✅ Create or update items from the update list
           await Promise.all(
             itemsToUpdate.map(async (item, index) => {
               // Convert item numeric fields
@@ -1089,18 +1214,54 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
                   ? parseFloat(item.unitPrice)
                   : item.unitPrice;
 
-              // Create the invoice item
-              const createdItem = await prismaTx.proformaInvoiceItem.create({
-                data: {
-                  invoiceId: id,
-                  description: item.description.trim(),
-                  size: item.size?.trim(),
-                  quantity,
-                  unitPrice,
-                  amount: unitPrice * quantity,
-                  additionalDescription: item.additionalDescription?.trim(),
-                },
-              });
+              // ✅ Check if this item already exists (by id or index)
+              let existingItem = null;
+              if (item.id) {
+                existingItem = await prismaTx.proformaInvoiceItem.findUnique({
+                  where: { id: item.id },
+                });
+              }
+
+              let createdItem;
+
+              if (existingItem) {
+                // ✅ UPDATE existing item - preserve itemId
+                createdItem = await prismaTx.proformaInvoiceItem.update({
+                  where: { id: existingItem.id },
+                  data: {
+                    // ✅ Keep existing itemId, or update if provided
+                    itemId: item.itemId || existingItem.itemId || null,
+                    description: item.description.trim(),
+                    size: item.size?.trim(),
+                    quantity,
+                    unitPrice,
+                    amount: unitPrice * quantity,
+                    additionalDescription: item.additionalDescription?.trim(),
+                  },
+                });
+
+                // ✅ Delete existing images and materials for this item
+                await prismaTx.proformaInvoiceItemImage.deleteMany({
+                  where: { itemId: existingItem.id },
+                });
+                await prismaTx.proformaItemMaterial.deleteMany({
+                  where: { itemId: existingItem.id },
+                });
+              } else {
+                // ✅ CREATE new item - include itemId
+                createdItem = await prismaTx.proformaInvoiceItem.create({
+                  data: {
+                    invoiceId: id,
+                    itemId: item.itemId || null, // ✅ Link to Items table if provided
+                    description: item.description.trim(),
+                    size: item.size?.trim(),
+                    quantity,
+                    unitPrice,
+                    amount: unitPrice * quantity,
+                    additionalDescription: item.additionalDescription?.trim(),
+                  },
+                });
+              }
 
               // Handle images from the item
               const uploadedImages = [];
@@ -1393,7 +1554,15 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
             },
             items: {
               include: {
-                images: true, // Include multiple images
+                item: {
+                  // ✅ Include the linked item details
+                  select: {
+                    id: true,
+                    name: true,
+                    price: true,
+                  },
+                },
+                images: true,
                 proformaItemMaterials: {
                   include: {
                     material: true,
@@ -1639,6 +1808,17 @@ const getAllProformaInvoices = async (filters = {}) => {
           select: {
             id: true,
             name: true,
+            companyName: true,
+            phone1: true,
+            phone2: true,
+            tinNumber: true,
+            address: true,
+          },
+        },
+        banks: {
+          include: {
+            bank: true,
+            createdBy: true, // Include all bank fields
           },
         },
         preparedBy: {
@@ -1656,17 +1836,61 @@ const getAllProformaInvoices = async (filters = {}) => {
           },
         },
         items: {
-          select: {
-            id: true,
-            description: true,
-            quantity: true,
-            unitPrice: true,
-            amount: true,
+          include: {
+            proformaItemMaterials: {
+              include: {
+                material: true,
+                materialIssues: {
+                  // 👈 Include material issues
+                  include: {
+                    issuedBy: {
+                      // 👈 Who issued the material
+                      select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                      },
+                    },
+                    givenTo: {
+                      // 👈 Who received the material
+                      select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                      },
+                    },
+                  },
+                  orderBy: {
+                    issuedAt: 'desc', // 👈 Latest issues first
+                  },
+                },
+              },
+            },
+            item: true, // Include item details (like name) if it's a relation to a product/item table
+            images: true,
           },
         },
-        _count: {
+        piLogs: {
+          // 👈 Include all logs for this proforma invoice
+          include: {
+            piuser: {
+              // 👈 Include user who performed the action
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+        },
+        attachments: true,
+        project: {
           select: {
-            attachments: true,
+            id: true,
+            status: true,
+            difficulty: true,
+            requestedDelivery: true,
+            calculatedDelivery: true,
           },
         },
       },
@@ -1690,6 +1914,177 @@ const getAllProformaInvoices = async (filters = {}) => {
   };
 };
 
+const getAllProformaInvoicesmy = async (filters = {}, userId) => {
+  const {
+    search,
+    status,
+    customerId,
+    startDate,
+    endDate,
+    page = 1,
+    limit = 10,
+    sortBy = 'createdAt',
+    sortOrder = 'desc',
+  } = filters;
+
+  // Build where clause
+  const where = {};
+
+  // 🔥 Filter by creator (preparedBy)
+  if (userId) {
+    where.preparedById = userId;
+  }
+
+  if (search) {
+    where.OR = [
+      {
+        piNumber: {
+          contains: search,
+          mode: 'insensitive',
+        },
+      },
+      {
+        customer: {
+          name: {
+            contains: search,
+            mode: 'insensitive',
+          },
+        },
+      },
+    ];
+  }
+
+  if (status) {
+    where.status = status;
+  }
+
+  if (customerId) {
+    where.customerId = customerId;
+  }
+
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) {
+      where.createdAt.gte = new Date(startDate);
+    }
+    if (endDate) {
+      where.createdAt.lte = new Date(endDate);
+    }
+  }
+
+  // Calculate pagination
+  const skip = (page - 1) * limit;
+
+  // Get invoices with pagination
+  const [invoices, total] = await Promise.all([
+    prisma.proformaInvoice.findMany({
+      where,
+      include: {
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            companyName: true,
+            phone1: true,
+            phone2: true,
+            tinNumber: true,
+            address: true,
+          },
+        },
+        banks: {
+          include: {
+            bank: true,
+            createdBy: true,
+          },
+        },
+        preparedBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        approvedBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        items: {
+          include: {
+            proformaItemMaterials: {
+              include: {
+                material: true,
+                materialIssues: {
+                  include: {
+                    issuedBy: {
+                      select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                      },
+                    },
+                    givenTo: {
+                      select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                      },
+                    },
+                  },
+                  orderBy: {
+                    issuedAt: 'desc',
+                  },
+                },
+              },
+            },
+            item: true,
+            images: true,
+          },
+        },
+        piLogs: {
+          include: {
+            piuser: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+        },
+        attachments: true,
+        project: {
+          select: {
+            id: true,
+            status: true,
+            difficulty: true,
+            requestedDelivery: true,
+            calculatedDelivery: true,
+          },
+        },
+      },
+      orderBy: {
+        [sortBy]: sortOrder,
+      },
+      skip,
+      take: parseInt(limit, 10),
+    }),
+    prisma.proformaInvoice.count({ where }),
+  ]);
+
+  return {
+    invoices,
+    count: invoices.length,
+    pagination: {
+      total,
+      page: parseInt(page, 10),
+      limit: parseInt(limit, 10),
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+};
 const getProformaInvoiceById = async (id) => {
   const invoice = await prisma.proformaInvoice.findUnique({
     where: { id },
@@ -1756,6 +2151,7 @@ const getProformaInvoiceById = async (id) => {
               },
             },
           },
+          item: true, // Include item details (like name) if it's a relation to a product/item table
           images: true,
         },
       },
@@ -1819,33 +2215,17 @@ const getProformaInvoiceByPInumber = async (piNumber) => {
   return invoice;
 };
 
-const updateProformaInvoiceStatus = async (
-  id,
-  status,
-  approvedById = null,
-) => {
+const updateProformaInvoiceStatus = async (id, status, approvedById = null) => {
   try {
-    console.log('===== UPDATE PI STATUS =====');
-    console.log('Invoice ID:', id);
-    console.log('New Status:', status);
-    console.log('Approved By:', approvedById);
-
     const invoice = await prisma.proformaInvoice.findUnique({
       where: { id },
     });
 
-    console.log('Current Invoice:', invoice);
-
     if (!invoice) {
-      console.log('Invoice not found');
-      throw new ApiError(
-        httpStatus.NOT_FOUND,
-        'Proforma invoice not found',
-      );
+      throw new ApiError(httpStatus.NOT_FOUND, 'Proforma invoice not found');
     }
 
     if (invoice.status === 'CANCELLED') {
-      console.log('Invoice is cancelled');
       throw new ApiError(
         httpStatus.BAD_REQUEST,
         'Cannot update status of a cancelled invoice',
@@ -1860,14 +2240,10 @@ const updateProformaInvoiceStatus = async (
       updateData.approvedById = approvedById;
     }
 
-    console.log('Update Data:', updateData);
-
     const updatedInvoice = await prisma.proformaInvoice.update({
       where: { id },
       data: updateData,
     });
-
-    console.log('Updated Invoice:', updatedInvoice);
 
     const log = await prisma.piLog.create({
       data: {
@@ -1877,15 +2253,8 @@ const updateProformaInvoiceStatus = async (
       },
     });
 
-    console.log('Created Log:', log);
-
-    console.log('===== STATUS UPDATE SUCCESS =====');
-
     return updatedInvoice;
   } catch (error) {
-    console.error('===== STATUS UPDATE FAILED =====');
-    console.error(error);
-
     if (error.code) {
       console.error('Prisma Error Code:', error.code);
     }
@@ -2233,5 +2602,6 @@ module.exports = {
   getProformaInvoiceByPInumber,
   updateProformaInvoiceStatus,
   addPayment,
+  getAllProformaInvoicesmy,
   updateProformaInvoiceAdditionalQuantity,
 };

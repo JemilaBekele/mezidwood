@@ -250,69 +250,23 @@ const getbyDesignProject = async (status = 'all', currentUserId) => {
       );
     }
 
-    // Filter by design stage completion status
+    // Filter by design status FINISHED
     let eligibleProjects = verifiedProjects;
 
-    if (status !== 'all') {
+    if (status === 'finished') {
       eligibleProjects = verifiedProjects.filter((project) => {
-        const designStage = project.stages.find(
-          (stage) => stage.stage === 'DESIGN',
-        );
-
-        if (status === 'finished') {
-          return designStage && designStage.finished === true;
-        }
-
-        if (status === 'not-finished') {
-          return designStage && designStage.finished !== true;
-        }
-
-        return true;
+        return project.designStatus === 'FINISHED';
+      });
+    } else if (status === 'not-finished') {
+      eligibleProjects = verifiedProjects.filter((project) => {
+        return project.designStatus !== 'FINISHED';
       });
     }
-
-    // Add additional metrics
-    const projectsWithMetrics = eligibleProjects.map((project) => {
-      const designStage = project.stages.find(
-        (stage) => stage.stage === 'DESIGN',
-      );
-      const totalWorkUnits = project.stages.reduce(
-        (sum, stage) => sum + (stage.workUnits || 0),
-        0,
-      );
-      const completedWorkUnits = project.stages.reduce(
-        (sum, stage) => sum + (stage.actualWorkUnits || 0),
-        0,
-      );
-
-      return {
-        ...project,
-        metrics: {
-          designStageStatus: designStage?.finished
-            ? 'Completed'
-            : designStage
-            ? 'In Progress'
-            : 'Not Started',
-          totalWorkUnits,
-          completedWorkUnits,
-          completionPercentage:
-            totalWorkUnits > 0
-              ? (completedWorkUnits / totalWorkUnits) * 100
-              : 0,
-          designProgress: designStage?.finished
-            ? 100
-            : designStage?.workUnits
-            ? ((designStage.actualWorkUnits || 0) / designStage.workUnits) * 100
-            : 0,
-        },
-      };
-    });
-
-    console.log('Filtered projects for user:', projectsWithMetrics.length);
+    // If status === 'all', return all projects
 
     return {
-      projects: projectsWithMetrics,
-      count: projectsWithMetrics.length,
+      projects: eligibleProjects,
+      count: eligibleProjects.length,
       total: verifiedProjects.length,
       userId: currentUserId,
     };

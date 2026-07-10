@@ -374,7 +374,27 @@ const uploadImage = multer({
   },
   limits: { fileSize: 40 * 1024 * 1024 }, // 🔺 40MB limit
 }).any();
-
+const uploadImageitem = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    // Accept image files only
+    if (file.fieldname === 'image' || file.fieldname === 'images') {
+      if (!file.mimetype.startsWith('image/')) {
+        return cb(
+          new ApiError(httpStatus.BAD_REQUEST, 'Only images allowed'),
+          false,
+        );
+      }
+      return cb(null, true);
+    }
+    // Ignore other fields
+    return cb(null, false);
+  },
+  limits: { 
+    fileSize: 40 * 1024 * 1024, // 40MB limit
+    files: 11 // Max files
+  },
+}).any();
 const uploadProformaInvoice = multer({
   storage: multer.memoryStorage(),
   fileFilter: (req, file, cb) => {
@@ -487,4 +507,5 @@ module.exports = {
   uploadImacamp,
   uploadProformaInvoice,
   debugUploadSellFiles,
+  uploadImageitem,
 };
