@@ -1341,6 +1341,7 @@ const getDetailedFinishedProductsReportFunctional = async (
                     material: true,
                   },
                 },
+                item: true, // Include the related item for additional details
               },
             },
           },
@@ -1386,7 +1387,7 @@ const getDetailedFinishedProductsReportFunctional = async (
 
       return project.invoice.items.map((invoiceItem) => ({
         productId: invoiceItem.id,
-        productName: invoiceItem.description,
+        productName: invoiceItem.item?.name || invoiceItem.description || '',
         productDescription: invoiceItem.description,
         size: invoiceItem.size,
         productQuantity: invoiceItem.quantity,
@@ -1707,8 +1708,7 @@ const getDeliveryDateComparisonReportFunctional = async () => {
           ...acc,
           summary: {
             ...acc.summary,
-            projectsWithMissingDates:
-              acc.summary.projectsWithMissingDates + 1,
+            projectsWithMissingDates: acc.summary.projectsWithMissingDates + 1,
           },
           missingDatesProjects: [
             ...acc.missingDatesProjects,

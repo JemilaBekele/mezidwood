@@ -415,6 +415,7 @@ const getUnassignedDesignProjects = async (status = 'all') => {
     };
   }
 };
+
 const getPurchasingProjects = async (status = 'all') => {
   try {
     // Get all projects that have PURCHASING stage (no eligibility/prerequisite checks)
@@ -505,7 +506,6 @@ const getPurchasingProjects = async (status = 'all') => {
         return true;
       });
     }
-
     return {
       projects: eligibleProjects,
       count: eligibleProjects.length,
@@ -521,6 +521,9 @@ const getPurchasingProjects = async (status = 'all') => {
     };
   }
 };
+
+
+
 // Function to get metal work projects with design completion requirement
 const getMetalWorkProjects = async (status = 'all') => {
   try {
