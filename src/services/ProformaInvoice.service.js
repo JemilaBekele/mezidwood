@@ -102,563 +102,666 @@ const saveImageToProformaPath = async (file, invoiceId, itemId, index) => {
   return `/uploads/proforma/images/${newFilename}`;
 };
 // Create Proforma Invoice
-// Create Proforma Invoice
+
 const createProformaInvoice = async (
   invoiceData,
   userId,
   structuredFiles = {},
 ) => {
-  // Extract fields including store (remove amountPaid from extraction)
-  const {
-    customerId,
-    items,
-    status = 'PENDING_ST',
-    preparedById,
-    approvedById,
-    amountDate,
-    store = false,
-    ...otherData
-  } = invoiceData;
-
-  // ✅ IMPORTANT: Convert store from string to boolean if needed
-  const isStore =
-    store === true || store === 'true' || store === '1' || store === 1;
-
-  // ✅ Get default customer if customerId not provided (regardless of store)
-  let finalCustomerId = customerId;
-
-  if (!customerId || customerId === '') {
-    // Find the default customer
-    const defaultCustomer = await prisma.customer.findFirst({
-      where: { isdefault: true },
-    });
-
-    if (!defaultCustomer) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'No default customer configured. Please select a customer or configure a default customer.',
-      );
-    }
-
-    finalCustomerId = defaultCustomer.id;
-    console.log(
-      `Using default customer: ${defaultCustomer.name} (${defaultCustomer.id})`,
-    );
-  }
-
-  // ✅ Validate customer if we have a customerId (for both store and non-store)
-  if (finalCustomerId) {
-    const customerExists = await prisma.customer.findUnique({
-      where: { id: finalCustomerId },
-    });
-
-    if (!customerExists) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Customer not found');
-    }
-  }
-
-  if (!items || !Array.isArray(items) || items.length === 0) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'At least one item is required');
-  }
-
-  if (isStore) {
-    console.log(`Store invoice: Balance will be set to ZERO`);
-  }
-
-  // Validate items
-  for (const [index, item] of items.entries()) {
-    if (!item.description || item.description.trim().length === 0) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        `Item ${index + 1}: description is required`,
-      );
-    }
-    if (!item.quantity || item.quantity <= 0) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        `Item ${index + 1}: quantity must be greater than 0`,
-      );
-    }
-    if (!item.unitPrice || item.unitPrice <= 0) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        `Item ${index + 1}: unit price must be greater than 0`,
-      );
-    }
-
-    // ✅ Validate that itemId exists in the items table (if provided)
-    if (item.itemId) {
-      const existingItem = await prisma.items.findUnique({
-        where: { id: item.itemId },
-      });
-
-      if (!existingItem) {
-        throw new ApiError(
-          httpStatus.NOT_FOUND,
-          `Item ${index + 1}: Item with ID ${item.itemId} not found`,
-        );
-      }
-    }
-
-    // Validate materials if provided
-    if (item.materials && Array.isArray(item.materials)) {
-      for (const [matIndex, material] of item.materials.entries()) {
-        if (!material.materialId) {
-          throw new ApiError(
-            httpStatus.BAD_REQUEST,
-            `Item ${index + 1}: Material ${
-              matIndex + 1
-            }: materialId is required`,
-          );
-        }
-        if (!material.quantity || material.quantity <= 0) {
-          throw new ApiError(
-            httpStatus.BAD_REQUEST,
-            `Item ${index + 1}: Material ${
-              matIndex + 1
-            }: quantity must be greater than 0`,
-          );
-        }
-      }
-    }
-  }
-
-  // Check if materials exist
-  const allMaterialIds = [];
-  items.forEach((item) => {
-    if (item.materials && Array.isArray(item.materials)) {
-      item.materials.forEach((material) => {
-        if (material.materialId) {
-          allMaterialIds.push(material.materialId);
-        }
-      });
-    }
-  });
-
-  if (allMaterialIds.length > 0) {
-    const uniqueMaterialIds = [...new Set(allMaterialIds)];
-    const existingMaterials = await prisma.material.findMany({
-      where: {
-        id: {
-          in: uniqueMaterialIds,
-        },
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    const existingMaterialIds = existingMaterials.map((m) => m.id);
-    const missingMaterialIds = uniqueMaterialIds.filter(
-      (id) => !existingMaterialIds.includes(id),
-    );
-
-    if (missingMaterialIds.length > 0) {
-      throw new ApiError(
-        httpStatus.NOT_FOUND,
-        `Materials not found with IDs: ${missingMaterialIds.join(', ')}`,
-      );
-    }
-  }
-
-  // Calculate totals
-  const { subtotal, vat, total } = calculateTotals(items);
-
-  // ✅ amountPaid is always 0 for new proforma invoices
-  const amountPaid = 0;
-
-  // ✅ Set balance: always total for non-store, zero for store invoices
-  let balance;
-  if (isStore) {
-    balance = 0;
-  } else {
-    balance = total; // Since amountPaid is 0, balance equals total
-    console.log(
-      `Regular invoice: Balance = total (${total}) since no payment made`,
-    );
-  }
-  let paymentStatus;
-  if (isStore) {
-    paymentStatus = 'NONE'; // Store invoices don't require payment tracking
-  } else {
-    paymentStatus = 'PENDING'; // Regular invoices start as PENDING
-  }
-  // Generate PI number
-  const piNumber = await generatePINumber();
-
   try {
-    const proformaInvoice = await prisma.$transaction(async (prismaTx) => {
-      // Create the invoice with store field
-      const invoiceData = {
-        piNumber,
-        status,
-        subtotal: Number(subtotal.toFixed(2)),
-        vat: Number(vat.toFixed(2)),
-        total: Number(total.toFixed(2)),
-        amountPaid: Number(amountPaid.toFixed(2)), // Always 0
-        balance: Number(balance.toFixed(2)),
-        amountDate: amountDate ? new Date(amountDate) : null,
-        preparedById: userId,
-        store: isStore,
-        paymentStatus,
-      };
+    // Extract fields including store (remove amountPaid from extraction)
+    const {
+      customerId,
+      items,
+      status = 'PENDING_ST',
+      preparedById,
+      approvedById,
+      amountDate,
+      store = false,
+      ...otherData
+    } = invoiceData;
 
-      // ✅ ALWAYS add customerId if we have one (even for store invoices)
-      if (finalCustomerId) {
-        invoiceData.customerId = finalCustomerId;
-      }
+    // ✅ IMPORTANT: Convert store from string to boolean if needed
+    const isStore =
+      store === true || store === 'true' || store === '1' || store === 1;
 
-      const invoice = await prismaTx.proformaInvoice.create({
-        data: invoiceData,
-      });
+    // ✅ Get default customer if customerId not provided (regardless of store)
+    let finalCustomerId = customerId;
 
-      if (isStore) {
+    if (!customerId || customerId === '') {
+      try {
+        // Find the default customer
+        const defaultCustomer = await prisma.customer.findFirst({
+          where: { isdefault: true },
+        });
+
+        if (!defaultCustomer) {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            'No default customer configured. Please select a customer or configure a default customer.',
+          );
+        }
+
+        finalCustomerId = defaultCustomer.id;
         console.log(
-          `  Store invoice balance: ${invoice.balance} (forced to zero)`,
+          `Using default customer: ${defaultCustomer.name} (${defaultCustomer.id})`,
         );
-      } else {
-        console.log(
-          `  Balance: ${invoice.balance} (full amount, no payment received)`,
-        );
+      } catch (error) {
+        console.error('Error fetching default customer:', error);
+        throw error;
       }
+    }
 
-      // Log customer association
-      if (finalCustomerId) {
-        console.log(
-          `  Associated with customer ID: ${finalCustomerId}${
-            !customerId || customerId === '' ? ' (default)' : ''
-          }`,
-        );
-      } else {
-        console.log(`  No customer associated with this invoice`);
+    // ✅ Validate customer if we have a customerId (for both store and non-store)
+    if (finalCustomerId) {
+      try {
+        const customerExists = await prisma.customer.findUnique({
+          where: { id: finalCustomerId },
+        });
+
+        if (!customerExists) {
+          throw new ApiError(httpStatus.NOT_FOUND, 'Customer not found');
+        }
+      } catch (error) {
+        console.error(`Error validating customer ${finalCustomerId}:`, error);
+        throw error;
       }
+    }
 
-      // Create invoice items with materials and multiple images
-      await Promise.all(
-        items.map(async (item, index) => {
-          // Convert item numeric fields
-          const quantity =
-            typeof item.quantity === 'string'
-              ? parseInt(item.quantity, 10)
-              : item.quantity;
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'At least one item is required',
+      );
+    }
 
-          const unitPrice =
-            typeof item.unitPrice === 'string'
-              ? parseFloat(item.unitPrice)
-              : item.unitPrice;
+    if (isStore) {
+      console.log(`Store invoice: Balance will be set to ZERO`);
+    }
 
-          // ✅ Create the invoice item WITH itemId if provided
-          const createdItem = await prismaTx.proformaInvoiceItem.create({
-            data: {
-              invoiceId: invoice.id,
-              itemId: item.itemId || null, // ✅ Link to Items table if provided
-              description: item.description.trim(),
-              size: item.size?.trim(),
-              quantity,
-              unitPrice,
-              amount: unitPrice * quantity,
-              additionalDescription: item.additionalDescription?.trim(),
+    // Validate items
+    for (const [index, item] of items.entries()) {
+      try {
+        if (!item.description || item.description.trim().length === 0) {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `Item ${index + 1}: description is required`,
+          );
+        }
+        if (!item.quantity || item.quantity <= 0) {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `Item ${index + 1}: quantity must be greater than 0`,
+          );
+        }
+        if (!item.unitPrice || item.unitPrice <= 0) {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `Item ${index + 1}: unit price must be greater than 0`,
+          );
+        }
+
+        // ✅ Validate that itemId exists in the items table (if provided)
+        if (item.itemId) {
+          try {
+            const existingItem = await prisma.items.findUnique({
+              where: { id: item.itemId },
+            });
+
+            if (!existingItem) {
+              throw new ApiError(
+                httpStatus.NOT_FOUND,
+                `Item ${index + 1}: Item with ID ${item.itemId} not found`,
+              );
+            }
+          } catch (error) {
+            console.error(`Error validating item ${item.itemId}:`, error);
+            throw error;
+          }
+        }
+
+        // Validate materials if provided
+        if (item.materials && Array.isArray(item.materials)) {
+          for (const [matIndex, material] of item.materials.entries()) {
+            if (!material.materialId) {
+              throw new ApiError(
+                httpStatus.BAD_REQUEST,
+                `Item ${index + 1}: Material ${
+                  matIndex + 1
+                }: materialId is required`,
+              );
+            }
+            if (!material.quantity || material.quantity <= 0) {
+              throw new ApiError(
+                httpStatus.BAD_REQUEST,
+                `Item ${index + 1}: Material ${
+                  matIndex + 1
+                }: quantity must be greater than 0`,
+              );
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Error validating item at index ${index}:`, error);
+        throw error;
+      }
+    }
+
+    // Check if materials exist
+    const allMaterialIds = [];
+    items.forEach((item) => {
+      if (item.materials && Array.isArray(item.materials)) {
+        item.materials.forEach((material) => {
+          if (material.materialId) {
+            allMaterialIds.push(material.materialId);
+          }
+        });
+      }
+    });
+
+    if (allMaterialIds.length > 0) {
+      try {
+        const uniqueMaterialIds = [...new Set(allMaterialIds)];
+        const existingMaterials = await prisma.material.findMany({
+          where: {
+            id: {
+              in: uniqueMaterialIds,
             },
-          });
+          },
+          select: {
+            id: true,
+          },
+        });
 
-          console.log(`Created invoice item with ID: ${createdItem.id}`);
-          if (item.itemId) {
-            console.log(`  Linked to Item ID: ${item.itemId}`);
-          }
+        const existingMaterialIds = existingMaterials.map((m) => m.id);
+        const missingMaterialIds = uniqueMaterialIds.filter(
+          (id) => !existingMaterialIds.includes(id),
+        );
 
-          // Handle images from the item
-          const uploadedImages = [];
-          const existingImageUrls = [];
+        if (missingMaterialIds.length > 0) {
+          throw new ApiError(
+            httpStatus.NOT_FOUND,
+            `Materials not found with IDs: ${missingMaterialIds.join(', ')}`,
+          );
+        }
+      } catch (error) {
+        console.error('Error validating materials:', error);
+        throw error;
+      }
+    }
 
-          // Check for uploaded files and save to proforma/images path
-          if (item.itemIndex !== undefined) {
-            // Look for multiple image fields
-            const imageFields = Object.keys(structuredFiles).filter(
-              (key) =>
-                key.startsWith(`items[${item.itemIndex}].images[`) ||
-                key === `items[${item.itemIndex}].image`,
-            );
+    // Calculate totals
+    const { subtotal, vat, total } = calculateTotals(items);
 
-            for (const fieldName of imageFields) {
-              const uploadedFile = structuredFiles[fieldName];
+    // ✅ amountPaid is always 0 for new proforma invoices
+    const amountPaid = 0;
 
-              if (uploadedFile && uploadedFile.length > 0) {
-                // Process each uploaded file
-                for (const [imgIndex, file] of uploadedFile.entries()) {
-                  try {
-                    // Validate file is actually an image
-                    if (!file.mimetype || !file.mimetype.startsWith('image/')) {
-                      console.warn(
-                        `Skipping non-image file: ${file.originalname} (${file.mimetype})`,
-                      );
-                      continue;
+    // ✅ Set balance: always total for non-store, zero for store invoices
+    let balance;
+    if (isStore) {
+      balance = 0;
+    } else {
+      balance = total; // Since amountPaid is 0, balance equals total
+      console.log(
+        `Regular invoice: Balance = total (${total}) since no payment made`,
+      );
+    }
+    let paymentStatus;
+    if (isStore) {
+      paymentStatus = 'NONE'; // Store invoices don't require payment tracking
+    } else {
+      paymentStatus = 'PENDING'; // Regular invoices start as PENDING
+    }
+    // Generate PI number
+    const piNumber = await generatePINumber();
+
+    try {
+      const proformaInvoice = await prisma.$transaction(async (prismaTx) => {
+        // Create the invoice with store field
+        const invoiceData = {
+          piNumber,
+          status,
+          subtotal: Number(subtotal.toFixed(2)),
+          vat: Number(vat.toFixed(2)),
+          total: Number(total.toFixed(2)),
+          amountPaid: Number(amountPaid.toFixed(2)), // Always 0
+          balance: Number(balance.toFixed(2)),
+          amountDate: amountDate ? new Date(amountDate) : null,
+          preparedById: userId,
+          store: isStore,
+          paymentStatus,
+        };
+
+        // ✅ ALWAYS add customerId if we have one (even for store invoices)
+        if (finalCustomerId) {
+          invoiceData.customerId = finalCustomerId;
+        }
+
+        const invoice = await prismaTx.proformaInvoice.create({
+          data: invoiceData,
+        });
+
+        if (isStore) {
+          console.log(
+            `  Store invoice balance: ${invoice.balance} (forced to zero)`,
+          );
+        } else {
+          console.log(
+            `  Balance: ${invoice.balance} (full amount, no payment received)`,
+          );
+        }
+
+        // Log customer association
+        if (finalCustomerId) {
+          console.log(
+            `  Associated with customer ID: ${finalCustomerId}${
+              !customerId || customerId === '' ? ' (default)' : ''
+            }`,
+          );
+        } else {
+          console.log(`  No customer associated with this invoice`);
+        }
+
+        // Create invoice items with materials and multiple images
+        await Promise.all(
+          items.map(async (item, index) => {
+            try {
+              // Convert item numeric fields
+              const quantity =
+                typeof item.quantity === 'string'
+                  ? parseInt(item.quantity, 10)
+                  : item.quantity;
+
+              const unitPrice =
+                typeof item.unitPrice === 'string'
+                  ? parseFloat(item.unitPrice)
+                  : item.unitPrice;
+
+              // ✅ Handle size properly - extract name from object
+              let sizeValue = null;
+              if (item.size) {
+                if (typeof item.size === 'string') {
+                  sizeValue = item.size.trim();
+                } else if (typeof item.size === 'object') {
+                  // If size is an object with name property
+                  sizeValue = item.size.name?.trim() || null;
+                  // OR use the ID if you want to store that
+                  // sizeValue = item.size.id || null;
+                }
+              }
+
+              // ✅ Create the invoice item WITH itemId if provided
+              const createdItem = await prismaTx.proformaInvoiceItem.create({
+                data: {
+                  invoiceId: invoice.id,
+                  itemId: item.itemId || null, // ✅ Link to Items table if provided
+                  description: item.description.trim(),
+                  size: sizeValue, // ✅ Use the extracted size value
+                  quantity,
+                  unitPrice,
+                  amount: unitPrice * quantity,
+                  additionalDescription: item.additionalDescription?.trim(),
+                },
+              });
+
+              console.log(`Created invoice item with ID: ${createdItem.id}`);
+              if (item.itemId) {
+                console.log(`  Linked to Item ID: ${item.itemId}`);
+              }
+
+              // Handle images from the item
+              const uploadedImages = [];
+              const existingImageUrls = [];
+
+              // Check for uploaded files and save to proforma/images path
+              if (item.itemIndex !== undefined) {
+                // Look for multiple image fields
+                const imageFields = Object.keys(structuredFiles).filter(
+                  (key) =>
+                    key.startsWith(`items[${item.itemIndex}].images[`) ||
+                    key === `items[${item.itemIndex}].image`,
+                );
+
+                for (const fieldName of imageFields) {
+                  const uploadedFile = structuredFiles[fieldName];
+
+                  if (uploadedFile && uploadedFile.length > 0) {
+                    // Process each uploaded file
+                    for (const [imgIndex, file] of uploadedFile.entries()) {
+                      try {
+                        // Validate file is actually an image
+                        if (!file.mimetype || !file.mimetype.startsWith('image/')) {
+                          console.warn(
+                            `Skipping non-image file: ${file.originalname} (${file.mimetype})`,
+                          );
+                          continue;
+                        }
+
+                        // Save image to proforma/images path
+                        const imageUrl = await saveImageToProformaPath(
+                          file,
+                          invoice.id,
+                          createdItem.id,
+                          imgIndex,
+                        );
+                        uploadedImages.push(imageUrl);
+                      } catch (imageError) {
+                        console.error(
+                          `Failed to save image ${file.originalname}:`,
+                          imageError,
+                        );
+                        // Continue with other images, don't fail the whole request
+                      }
                     }
-
-                    // Save image to proforma/images path
-                    const imageUrl = await saveImageToProformaPath(
-                      file,
-                      invoice.id,
-                      createdItem.id,
-                      imgIndex,
-                    );
-                    uploadedImages.push(imageUrl);
-                  } catch (imageError) {
-                    console.error(
-                      `Failed to save image ${file.originalname}:`,
-                      imageError,
-                    );
-                    // Continue with other images, don't fail the whole request
                   }
                 }
               }
-            }
-          }
 
-          // Check for existing image URLs from the item data (when selecting an item)
-          if (
-            item.images &&
-            Array.isArray(item.images) &&
-            item.images.length > 0
-          ) {
-            for (const image of item.images) {
-              if (image.imageUrl && typeof image.imageUrl === 'string') {
-                let { imageUrl } = image;
+              // Check for existing image URLs from the item data (when selecting an item)
+              if (
+                item.images &&
+                Array.isArray(item.images) &&
+                item.images.length > 0
+              ) {
+                for (const image of item.images) {
+                  if (image.imageUrl && typeof image.imageUrl === 'string') {
+                    let { imageUrl } = image;
 
-                // Don't store raw filenames that aren't proper paths
-                if (!imageUrl.startsWith('/') && !imageUrl.startsWith('http')) {
-                  // Check if it's just a filename without path
-                  if (!imageUrl.includes('/') && !imageUrl.includes('\\')) {
-                    // This is a raw filename - we need to process it properly
-                    console.warn(
-                      `Found raw filename without path: ${imageUrl}, skipping...`,
-                    );
-                    continue;
+                    // Don't store raw filenames that aren't proper paths
+                    if (!imageUrl.startsWith('/') && !imageUrl.startsWith('http')) {
+                      // Check if it's just a filename without path
+                      if (!imageUrl.includes('/') && !imageUrl.includes('\\')) {
+                        // This is a raw filename - we need to process it properly
+                        console.warn(
+                          `Found raw filename without path: ${imageUrl}, skipping...`,
+                        );
+                        continue;
+                      }
+                      // Normalize the path
+                      imageUrl = `/${imageUrl.replace(/\\/g, '/')}`;
+                    }
+                    existingImageUrls.push(imageUrl);
                   }
-                  // Normalize the path
-                  imageUrl = `/${imageUrl.replace(/\\/g, '/')}`;
                 }
-                existingImageUrls.push(imageUrl);
               }
+
+              // Combine both sources of images
+              const allImageUrls = [...uploadedImages, ...existingImageUrls];
+
+              // Create image records for all images
+              if (allImageUrls.length > 0) {
+                try {
+                  await Promise.all(
+                    allImageUrls.map(async (imageUrl) => {
+                      await prismaTx.proformaInvoiceItemImage.create({
+                        data: {
+                          itemId: createdItem.id,
+                          imageUrl,
+                        },
+                      });
+                    }),
+                  );
+                  console.log(
+                    `Created ${allImageUrls.length} images for item ${createdItem.id} in /uploads/proforma/images/`,
+                  );
+                } catch (imageCreateError) {
+                  console.error('Error creating image records:', imageCreateError);
+                  throw imageCreateError;
+                }
+              }
+
+              // Create materials for this item if provided
+              if (
+                item.materials &&
+                Array.isArray(item.materials) &&
+                item.materials.length > 0
+              ) {
+                try {
+                  await Promise.all(
+                    item.materials.map(async (material) => {
+                      const materialQuantity =
+                        typeof material.quantity === 'string'
+                          ? parseInt(material.quantity, 10)
+                          : material.quantity;
+
+                      try {
+                        await prismaTx.proformaItemMaterial.create({
+                          data: {
+                            itemId: createdItem.id,
+                            materialId: material.materialId,
+                            quantity: materialQuantity,
+                            note: material.note?.trim(),
+                          },
+                        });
+                      } catch (materialError) {
+                        if (materialError.code === 'P2002') {
+                          throw new ApiError(
+                            httpStatus.BAD_REQUEST,
+                            `Duplicate material ${material.materialId} for item ${item.description}. Each material can only be added once per item.`,
+                          );
+                        }
+                        throw new ApiError(
+                          httpStatus.INTERNAL_SERVER_ERROR,
+                          `Failed to create material record: ${materialError.message}`,
+                        );
+                      }
+                    }),
+                  );
+                } catch (materialCreateError) {
+                  console.error('Error creating materials for item:', materialCreateError);
+                  throw materialCreateError;
+                }
+              }
+
+              return createdItem;
+            } catch (itemError) {
+              console.error(
+                `Error processing item at index ${index}:`,
+                itemError,
+              );
+              throw itemError;
             }
-          }
+          }),
+        );
 
-          // Combine both sources of images
-          const allImageUrls = [...uploadedImages, ...existingImageUrls];
-
-          // Create image records for all images
-          if (allImageUrls.length > 0) {
+        // Handle bank relationships
+        if (
+          otherData.banks &&
+          Array.isArray(otherData.banks) &&
+          otherData.banks.length > 0
+        ) {
+          try {
             await Promise.all(
-              allImageUrls.map(async (imageUrl) => {
-                await prismaTx.proformaInvoiceItemImage.create({
+              otherData.banks.map(async (bankData) => {
+                if (!bankData.bankId) {
+                  throw new ApiError(
+                    httpStatus.BAD_REQUEST,
+                    'Bank ID is required for bank relation',
+                  );
+                }
+
+                const bankExists = await prismaTx.bank.findUnique({
+                  where: { id: bankData.bankId },
+                });
+
+                if (!bankExists) {
+                  throw new ApiError(
+                    httpStatus.NOT_FOUND,
+                    `Bank not found with ID: ${bankData.bankId}`,
+                  );
+                }
+
+                await prismaTx.proformaInvoiceBank.create({
                   data: {
-                    itemId: createdItem.id,
-                    imageUrl,
+                    proformaInvoiceId: invoice.id,
+                    bankId: bankData.bankId,
+                    amount: bankData.amount ? Number(bankData.amount) : null,
                   },
                 });
               }),
             );
-            console.log(
-              `Created ${allImageUrls.length} images for item ${createdItem.id} in /uploads/proforma/images/`,
-            );
+          } catch (bankError) {
+            console.error('Error processing bank relationships:', bankError);
+            throw bankError;
           }
+        }
 
-          // Create materials for this item if provided
-          if (
-            item.materials &&
-            Array.isArray(item.materials) &&
-            item.materials.length > 0
-          ) {
+        // Handle attachments upload - save to attachments folder
+        if (
+          structuredFiles.attachments &&
+          structuredFiles.attachments.length > 0
+        ) {
+          try {
             await Promise.all(
-              item.materials.map(async (material) => {
-                const materialQuantity =
-                  typeof material.quantity === 'string'
-                    ? parseInt(material.quantity, 10)
-                    : material.quantity;
+              structuredFiles.attachments.map(async (file) => {
+                // Save attachment to appropriate path
+                const targetDir = path.join(
+                  __dirname,
+                  '../../uploads/proforma/attachments',
+                );
 
+                // Create directory if it doesn't exist using native fs
                 try {
-                  await prismaTx.proformaItemMaterial.create({
-                    data: {
-                      itemId: createdItem.id,
-                      materialId: material.materialId,
-                      quantity: materialQuantity,
-                      note: material.note?.trim(),
-                    },
-                  });
-                } catch (materialError) {
-                  if (materialError.code === 'P2002') {
-                    throw new ApiError(
-                      httpStatus.BAD_REQUEST,
-                      `Duplicate material ${material.materialId} for item ${item.description}. Each material can only be added once per item.`,
-                    );
+                  await fs.mkdir(targetDir, { recursive: true });
+                } catch (err) {
+                  if (err.code !== 'EEXIST') {
+                    console.error('Error creating directory:', err);
+                    throw err;
                   }
-                  throw new ApiError(
-                    httpStatus.INTERNAL_SERVER_ERROR,
-                    `Failed to create material record: ${materialError.message}`,
-                  );
                 }
+
+                const timestamp = Date.now();
+                const randomString = Math.random().toString(36).substring(2, 8);
+                const fileExt = path.extname(file.originalname);
+                const baseName = path.basename(file.originalname, fileExt);
+
+                // Sanitize filename (remove spaces and special characters)
+                const sanitizedBaseName = baseName.replace(/[^a-zA-Z0-9]/g, '_');
+                const newFilename = `${timestamp}_${randomString}_${sanitizedBaseName}${fileExt}`;
+                const targetPath = path.join(targetDir, newFilename);
+
+                // Copy file using native fs
+                await fs.copyFile(file.path, targetPath);
+
+                // Clean up temporary file
+                await fs.unlink(file.path);
+
+                const fileUrl = `/uploads/proforma/attachments/${newFilename}`;
+
+                await prismaTx.attachment.create({
+                  data: {
+                    proformaInvoiceId: invoice.id,
+                    fileUrl,
+                  },
+                });
+
+                console.log(`Attachment saved: ${targetPath}`);
+                console.log(`Attachment URL: ${fileUrl}`);
               }),
             );
+          } catch (attachmentError) {
+            console.error('Error processing attachments:', attachmentError);
+            throw attachmentError;
           }
+        }
 
-          return createdItem;
-        }),
-      );
-
-      // Handle bank relationships
-      if (
-        otherData.banks &&
-        Array.isArray(otherData.banks) &&
-        otherData.banks.length > 0
-      ) {
-        await Promise.all(
-          otherData.banks.map(async (bankData) => {
-            if (!bankData.bankId) {
-              throw new ApiError(
-                httpStatus.BAD_REQUEST,
-                'Bank ID is required for bank relation',
-              );
-            }
-
-            const bankExists = await prismaTx.bank.findUnique({
-              where: { id: bankData.bankId },
-            });
-
-            if (!bankExists) {
-              throw new ApiError(
-                httpStatus.NOT_FOUND,
-                `Bank not found with ID: ${bankData.bankId}`,
-              );
-            }
-
-            await prismaTx.proformaInvoiceBank.create({
-              data: {
-                proformaInvoiceId: invoice.id,
-                bankId: bankData.bankId,
-                amount: bankData.amount ? Number(bankData.amount) : null,
-              },
-            });
-          }),
-        );
-      }
-
-      // Handle attachments upload - save to attachments folder
-      if (
-        structuredFiles.attachments &&
-        structuredFiles.attachments.length > 0
-      ) {
-        await Promise.all(
-          structuredFiles.attachments.map(async (file) => {
-            // Save attachment to appropriate path
-            const targetDir = path.join(
-              __dirname,
-              '../../uploads/proforma/attachments',
-            );
-
-            // Create directory if it doesn't exist using native fs
-            try {
-              await fs.mkdir(targetDir, { recursive: true });
-            } catch (err) {
-              if (err.code !== 'EEXIST') {
-                throw err;
-              }
-            }
-
-            const timestamp = Date.now();
-            const randomString = Math.random().toString(36).substring(2, 8);
-            const fileExt = path.extname(file.originalname);
-            const baseName = path.basename(file.originalname, fileExt);
-
-            // Sanitize filename (remove spaces and special characters)
-            const sanitizedBaseName = baseName.replace(/[^a-zA-Z0-9]/g, '_');
-            const newFilename = `${timestamp}_${randomString}_${sanitizedBaseName}${fileExt}`;
-            const targetPath = path.join(targetDir, newFilename);
-
-            // Copy file using native fs
-            await fs.copyFile(file.path, targetPath);
-
-            // Clean up temporary file
-            await fs.unlink(file.path);
-
-            const fileUrl = `/uploads/proforma/attachments/${newFilename}`;
-
-            await prismaTx.attachment.create({
-              data: {
-                proformaInvoiceId: invoice.id,
-                fileUrl,
-              },
-            });
-
-            console.log(`Attachment saved: ${targetPath}`);
-            console.log(`Attachment URL: ${fileUrl}`);
-          }),
-        );
-      }
-
-      // Fetch the complete invoice with all relations including images
-      const completeInvoice = await prismaTx.proformaInvoice.findUnique({
-        where: { id: invoice.id },
-        include: {
-          customer: {
-            // ✅ Always include customer if exists
-            select: {
-              id: true,
-              name: true,
-              companyName: true,
-              isdefault: true,
-            },
-          },
-          preparedBy: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-          approvedBy: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-          items: {
+        // Fetch the complete invoice with all relations including images
+        try {
+          const completeInvoice = await prismaTx.proformaInvoice.findUnique({
+            where: { id: invoice.id },
             include: {
-              item: {
-                // ✅ Include the linked item
+              customer: {
+                // ✅ Always include customer if exists
                 select: {
                   id: true,
                   name: true,
-                  price: true,
+                  companyName: true,
+                  isdefault: true,
                 },
               },
-              images: true,
-              proformaItemMaterials: {
+              preparedBy: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                },
+              },
+              approvedBy: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                },
+              },
+              items: {
                 include: {
-                  material: true,
+                  item: {
+                    // ✅ Include the linked item
+                    select: {
+                      id: true,
+                      name: true,
+                      price: true,
+                    },
+                  },
+                  images: true,
+                  proformaItemMaterials: {
+                    include: {
+                      material: true,
+                    },
+                  },
                 },
               },
+              banks: {
+                include: {
+                  bank: true,
+                },
+              },
+              attachments: {
+                select: {
+                  id: true,
+                  fileUrl: true,
+                },
+              },
+              project: true,
             },
-          },
-          banks: {
-            include: {
-              bank: true,
-            },
-          },
-          attachments: {
-            select: {
-              id: true,
-              fileUrl: true,
-            },
-          },
-          project: true,
-        },
+          });
+
+          return completeInvoice;
+        } catch (fetchError) {
+          console.error('Error fetching complete invoice:', fetchError);
+          throw fetchError;
+        }
       });
 
-      return completeInvoice;
-    });
+      return proformaInvoice;
+    } catch (transactionError) {
+      console.error('Transaction failed:', transactionError);
 
-    return proformaInvoice;
+      // Log the full error details
+      if (transactionError.code) {
+        console.error('Error code:', transactionError.code);
+      }
+      if (transactionError.meta) {
+        console.error('Error meta:', transactionError.meta);
+      }
+
+      throw transactionError;
+    }
   } catch (error) {
+    // Log the error with full details
+    console.error('=== ERROR IN createProformaInvoice ===');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+
+    if (error.code) {
+      console.error('Error code:', error.code);
+    }
+    if (error.meta) {
+      console.error('Error meta:', JSON.stringify(error.meta, null, 2));
+    }
+    console.error('=== END ERROR ===');
+
     if (error instanceof ApiError) {
       throw error;
     }
@@ -676,6 +779,7 @@ const createProformaInvoice = async (
     );
   }
 };
+
 const rescheduleProjectStages = async (
   projectId,
   client = null,
