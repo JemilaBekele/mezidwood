@@ -509,7 +509,7 @@ model Items {
   sizeId     String?
   size       Size? @relation(fields: [sizeId], references: [id])
 
-
+ test Boolean? @default(false) // Add this field to indicate if the item is a test item
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -939,40 +939,7 @@ enum PIStatus {
 
 
 
-// model ProjectStage {
-//   id        String   @id @default(uuid())
-//   projectId String
-//   project   Project @relation(fields: [projectId], references: [id])
 
-//   stage        ProjectStatus
-//   capacityDays Int
-//   workUnits    Float? // planned work unit
-
-//   finished Boolean @default(false)
-
-//   startDate DateTime?
-//   endDate   DateTime?
-
-//   // MORNING   => 2:30 - 6:30
-//   // AFTERNOON => 7:30 - 11:00
-//   // FULL_DAY  => both shifts
-//   // CUSTOM    => any custom range like 2:30 - 3:00
-//   shift WorkShift? @default(FULL_DAY)
-
-//   // used only when shift = CUSTOM
-//   customStartTime DateTime?
-//   customEndTime   DateTime?
-
-//   actualWorkUnits Float? // track actual completed work units
-
-//   autoSchedule Boolean     @default(true)
-//   status       StageStatus @default(ACTIVE)
-
-//   @@map("project_stages")
-
-//   projectStageWorkLogs            ProjectStageWorkLog[]
-//   projectStageCapacityAllocations ProjectStageCapacityAllocation[]
-// }
 
 model ProjectLog {
   id        String   @id @default(uuid())
