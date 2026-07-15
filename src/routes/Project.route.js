@@ -129,7 +129,12 @@ router.delete(
   checkPermission('DELETE_PROJECT'),
   projectController.deleteProject,
 );
-
+router.delete(
+  '/api/projects/stage/delete/spe',
+  auth,
+  checkPermission('DELETE_PROJECT'),
+  projectController.deleteProjectStage,
+);
 // ============================================
 // UPDATE PROJECT STAGE
 // ============================================

@@ -488,6 +488,82 @@ const updateProjectStage = catchAsync(async (req, res) => {
   });
 });
 
+const deleteProjectStage = catchAsync(async (req, res) => {
+  const { projectId, stageName, deleteDownstream = false } = req.body;
+  const userId = req.user?.id;
+  console.log('Delete request received:', { projectId, stageName, deleteDownstream, userId });
+
+  // ===============================
+  // VALIDATION
+  // ===============================
+  if (!projectId || !stageName) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'projectId and stageName are required',
+    );
+  }
+
+  // Validate projectId format (UUID)
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(projectId)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid projectId format');
+  }
+
+  // Validate stageName is a valid enum value
+  const validStages = [
+    'INVOICE',
+    'DESIGN',
+    'PURCHASING',
+    'METAL_WORKS',
+    'CNC',
+    'CUTTING',
+    'EDGE_BANDING',
+    'ASSEMBLY',
+    'PAINTING',
+    'FINISHING',
+    'DELIVERY',
+    'INSTALLATION',
+    'COMPLETED',
+    'CANCELLED',
+  ];
+
+  if (!validStages.includes(stageName)) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Invalid stageName. Must be one of: ${validStages.join(', ')}`,
+    );
+  }
+
+  // Validate deleteDownstream is boolean
+  if (typeof deleteDownstream !== 'boolean') {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'deleteDownstream must be a boolean value',
+    );
+  }
+
+  // ===============================
+  // SERVICE CALL
+  // ===============================
+  const result = await projectService.deleteProjectStage(
+    projectId,
+    stageName,
+    userId,
+    deleteDownstream,
+  );
+
+  // ===============================
+  // RESPONSE
+  // ===============================
+  res.status(httpStatus.OK).send({
+    success: true,
+    message: deleteDownstream
+      ? `Stage ${stageName} and downstream stages deleted successfully`
+      : `Stage ${stageName} deleted successfully`,
+    data: result,
+  });
+});
 // ============================================
 // NEW CONTROLLER: Capacity Analysis
 // ============================================
@@ -685,6 +761,7 @@ const rescheduleFromCalendar = catchAsync(async (req, res) => {
 
 // Export controllers
 module.exports = {
+  deleteProjectStage,
   updateProjectStage,
   getCapacityAnalysis,
   getDailyCapacityStatus,

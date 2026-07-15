@@ -2883,6 +2883,144 @@ const updateProjectStage = async (
     },
   });
 };
+const deleteProjectStage = async (
+  projectId,
+  stageName,
+  userId,
+  deleteDownstream = false, // If true, deletes all downstream stages too
+) => {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    include: {
+      stages: {
+        orderBy: { startDate: 'asc' },
+      },
+    },
+  });
+
+  if (!project) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Project not found');
+  }
+
+  const stageToDelete = project.stages.find((s) => s.stage === stageName);
+  if (!stageToDelete) {
+    throw new ApiError(
+      httpStatus.NOT_FOUND,
+      `Stage ${stageName} not found on this project`,
+    );
+  }
+
+  // Get the index of the stage to delete
+  const stageIndex = project.stages.findIndex((s) => s.id === stageToDelete.id);
+
+  // Determine which stages will be affected
+  let downstreamStages = [];
+  if (deleteDownstream) {
+    // Delete all stages after the target stage
+    downstreamStages = project.stages.slice(stageIndex + 1);
+  } else {
+    // Only delete the specific stage, keep downstream stages
+    // They will need to be rescheduled
+    downstreamStages = [];
+  }
+
+  await prisma.$transaction(
+    async (tx) => {
+      // 1. Release all capacity allocations for the stage(s) being deleted
+
+      // Release capacity for the target stage
+      await reschedule.releaseStageCapacity(stageToDelete.id, null, tx);
+
+      // Release capacity for downstream stages if they're being deleted too
+      for (const downstreamStage of downstreamStages) {
+        await reschedule.releaseStageCapacity(downstreamStage.id, null, tx);
+      }
+
+      // 2. Delete the stage(s) and their associated records
+
+      // Delete the target stage (cascade will handle allocations and work logs)
+      await tx.projectStage.delete({
+        where: { id: stageToDelete.id },
+      });
+
+      // Delete downstream stages if requested
+      if (deleteDownstream) {
+        for (const downstreamStage of downstreamStages) {
+          await tx.projectStage.delete({
+            where: { id: downstreamStage.id },
+          });
+        }
+      }
+
+      // 3. Handle remaining downstream stages (if not deleting them)
+      if (!deleteDownstream) {
+        const remainingStages = project.stages.filter(
+          (s) =>
+            s.id !== stageToDelete.id &&
+            !downstreamStages.some((ds) => ds.id === s.id),
+        );
+
+        // Find the stage before the deleted one (or use project start date)
+        const previousStage =
+          stageIndex > 0 ? project.stages[stageIndex - 1] : null;
+        const startDate = previousStage
+          ? new Date(previousStage.endDateTime || previousStage.endDate)
+          : new Date(project.createdAt || Date.now());
+
+        // Reschedule remaining downstream stages after the deletion
+        if (remainingStages.length > 0) {
+          // The first remaining downstream stage becomes the "next" stage
+          const firstRemainingStage = remainingStages[0];
+
+          // Reschedule from this stage onwards
+          await reschedule.rescheduleDownstream(
+            projectId,
+            firstRemainingStage.stage,
+            startDate,
+            tx,
+            1.0, // Normal capacity factor (not manual override)
+          );
+        }
+      }
+
+      // 4. Recompute project delivery date
+      const recomputed = await reschedule.recomputeProjectDelivery(
+        projectId,
+        tx,
+      );
+
+      // 5. Log the deletion event
+      await reschedule.logScheduleEvent(tx, {
+        projectId,
+        event: 'STAGE_DELETED',
+        trigger: 'USER',
+        stage: stageName,
+        byUserId: userId,
+        oldDelivery: recomputed?.oldDelivery || project.calculatedDelivery,
+        newDelivery: recomputed?.newDelivery || undefined,
+        reason: deleteDownstream
+          ? `Stage ${stageName} and downstream stages deleted`
+          : `Stage ${stageName} deleted; downstream stages rescheduled`,
+        metadata: {
+          deletedStageId: stageToDelete.id,
+          deletedDownstreamCount: downstreamStages.length,
+          downstreamDeleted: deleteDownstream,
+        },
+      });
+    },
+    { timeout: 30000, maxWait: 15000 },
+  );
+
+  // Return the updated project
+  return prisma.project.findUnique({
+    where: { id: projectId },
+    include: {
+      stages: { orderBy: { startDate: 'asc' } },
+      customer: true,
+      invoice: true,
+    },
+  });
+};
 
 const VALID_SCHEDULE_MODES = ['AUTO', 'MANUAL', 'LOCKED'];
 
@@ -2967,6 +3105,7 @@ module.exports = {
   updateProjectDesignStatus,
   setProjectScheduleMode,
   cancelProjectStage,
+  deleteProjectStage,
   getProjectScheduleHistory,
   __private: {
     splitWorkingMinutes,

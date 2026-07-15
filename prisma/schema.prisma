@@ -1066,6 +1066,7 @@ enum ScheduleEventType {
   RESCHEDULED
   STAGE_COMPLETED
   STAGE_CANCELLED
+    STAGE_DELETED  // Add this
   PROJECT_CANCELLED
   MANUAL_OVERRIDE
   CAPACITY_RELEASED
@@ -1110,6 +1111,8 @@ model ScheduleHistory {
   newDelivery DateTime?
   reason      String?           @db.Text
   byUserId    String?           @db.Char(36)
+    metadata    Json?    // Add this field for storing additional data
+
   byUser      User?             @relation(fields: [byUserId], references: [id])
   createdAt   DateTime          @default(now())
 
