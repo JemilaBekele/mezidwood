@@ -52,8 +52,6 @@ const getCuttingProjects = catchAsync(async (req, res) => {
   });
 });
 const getEdgeBandingProjects = catchAsync(async (req, res) => {
-    console.log("hii jemei")
-
   let { status = 'all' } = req.query;
 
   const allowedStatus = ['finished', 'not-finished', 'all'];
@@ -63,7 +61,6 @@ const getEdgeBandingProjects = catchAsync(async (req, res) => {
   }
 
   const result = await stages.getEdgeBandingProjects(status);
-  console.log(result)
 
   res.status(httpStatus.OK).send({
     success: true,
