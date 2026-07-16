@@ -491,7 +491,6 @@ const updateProjectStage = catchAsync(async (req, res) => {
 const deleteProjectStage = catchAsync(async (req, res) => {
   const { projectId, stageName, deleteDownstream = false } = req.body;
   const userId = req.user?.id;
-  console.log('Delete request received:', { projectId, stageName, deleteDownstream, userId });
 
   // ===============================
   // VALIDATION
