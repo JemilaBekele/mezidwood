@@ -130,7 +130,7 @@ router.delete(
   projectController.deleteProject,
 );
 router.delete(
-  '/api/projects/stage/delete/spe',
+  '/api/projects/stage/delete/specific',
   auth,
   projectController.deleteProjectStage,
 );
