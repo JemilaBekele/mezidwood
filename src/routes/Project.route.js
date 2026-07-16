@@ -132,7 +132,6 @@ router.delete(
 router.delete(
   '/api/projects/stage/delete/spe',
   auth,
-  checkPermission('DELETE_PROJECT'),
   projectController.deleteProjectStage,
 );
 // ============================================
