@@ -1255,9 +1255,7 @@ const updateProjectStatus = async (id, status, userId) => {
 
 const updateProjectDesignStatus = async (id, designStatus, userId) => {
   // 1️⃣ Validate design status
-  console.log(
-    `🔄 Updating design status for project ${id} to ${designStatus} by user ${userId}`,
-  );
+
   const validDesignStatuses = [
     'INITIATED',
     'MODELING',
@@ -1265,6 +1263,7 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
     'CUTLIST',
     'BOQ',
     'FINISHED',
+    'DESIGN_FINISHED',
   ];
 
   if (!validDesignStatuses.includes(designStatus)) {
@@ -1328,21 +1327,9 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
     );
 
     if (designStage) {
-      // ===== STEP 1: SYNC ACTUAL WORK UNITS TO MATCH WORK UNITS =====
-      // IMPORTANT: We set actualWorkUnits to equal workUnits
-      // because workUnits represents the PLANNED work that should be done
-      console.log(
-        '🔄 Syncing actual work units to match planned work units...',
-      );
-
       // Get the current values
       const currentWorkUnits = designStage.workUnits || 0;
       const currentActualWorkUnits = designStage.actualWorkUnits || 0;
-
-      console.log(`📊 Current Work Units (planned): ${currentWorkUnits}`);
-      console.log(
-        `📊 Current Actual Work Units (actual): ${currentActualWorkUnits}`,
-      );
 
       // ALWAYS set actualWorkUnits to match workUnits when finishing
       // This ensures the actual work done equals the planned work
@@ -1358,13 +1345,8 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
       }
 
       // ===== STEP 2: GET ALL CAPACITY ALLOCATIONS FOR DESIGN STAGE =====
-      console.log('🔍 Fetching capacity allocations for DESIGN stage...');
       const stageAllocations =
         designStage.projectStageCapacityAllocations || [];
-
-      console.log(
-        `📊 Found ${stageAllocations.length} capacity allocations for DESIGN stage`,
-      );
 
       let totalFreedUnits = 0;
       let totalFreedHours = 0;
@@ -1373,12 +1355,6 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
       // ===== STEP 3: SUBTRACT ALLOCATED CAPACITY FROM DAILY CAPACITIES =====
       for (const allocation of stageAllocations) {
         const dateStr = allocation.allocationDate.toISOString().split('T')[0];
-        console.log(`\n🔄 Processing allocation from ${dateStr}:`);
-        console.log(`  Allocated Units: ${allocation.allocatedUnits}`);
-        console.log(`  Allocated Hours: ${allocation.allocatedHours}`);
-        console.log(
-          `  Current Daily UsedCapacity: ${allocation.dailyStageCapacity.usedCapacity}`,
-        );
 
         allocationDetails.push({
           date: dateStr,
@@ -1390,10 +1366,6 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
         totalFreedUnits += allocation.allocatedUnits;
         totalFreedHours += allocation.allocatedHours;
       }
-
-      console.log(
-        `\n📊 TOTAL CAPACITY TO FREE: ${totalFreedUnits} units, ${totalFreedHours} hours`,
-      );
 
       // Store capacity freed data for logging
       capacityFreedData = {
@@ -1611,20 +1583,6 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
 
     // The first result is the updated project
     const updatedProject = results[0];
-
-    console.log('✅ DESIGN stage completed successfully:', {
-      projectId: id,
-      designStatus,
-      actualWorkUnitsSynced: true,
-      workUnits: designStageUpdate?.workUnits || 'N/A',
-      actualWorkUnitsBefore: designStageUpdate?.actualWorkUnitsBefore || 'N/A',
-      actualWorkUnitsAfter: designStageUpdate?.actualWorkUnitsAfter || 'N/A',
-      capacityFreed: capacityFreedData
-        ? `${capacityFreedData.totalFreedUnits} units / ${capacityFreedData.totalFreedHours} hours`
-        : 'No capacity allocated',
-      allocationsRemoved: capacityFreedData?.allocationsCount || 0,
-      logsCreated: logs.length,
-    });
 
     return updatedProject;
   } catch (err) {
@@ -1983,8 +1941,6 @@ const checkAndScheduleStage = async (
         autoSchedule: !isManualSchedule, // false if manual, true if auto
       },
     });
-
-    console.log(`Stage ${stage.stage} scheduled successfully`);
   } catch (error) {
     console.error(
       `Error in checkAndScheduleStage for stage ${stageId}:`,
@@ -2057,14 +2013,6 @@ const recalculateProjectTimeline = async (
     totalWoodQuantity +
     totalMetalQuantity;
 
-  console.log('Material quantities:', {
-    laminatedMDF: totalLaminatedMDFQuantity,
-    plainMDF: totalPlainMDFQuantity,
-    wood: totalWoodQuantity,
-    metal: totalMetalQuantity,
-    total: totalProjectQuantity,
-  });
-
   // Helper function to calculate stage days
   const calculateStageDays = (stage, quantity) => {
     const capacityInfo = capacityMap[stage];
@@ -2077,7 +2025,6 @@ const recalculateProjectTimeline = async (
 
   // Determine if metal exists (for path selection)
   const hasMetal = totalMetalQuantity > 0;
-  console.log(`Production path: ${hasMetal ? 'METAL' : 'WOOD/MDF'}`);
 
   // Calculate stage days based on materials and path
   const stageDays = {};
@@ -2149,13 +2096,6 @@ const recalculateProjectTimeline = async (
     capacityTime + difficultyTime + contingency,
   );
 
-  console.log('Timeline calculation:', {
-    capacityTime,
-    difficultyTime,
-    contingency,
-    totalProjectDays,
-  });
-
   // Get project start date from first stage
   const sortedStages = project.stages.sort((a, b) => a.startDate - b.startDate);
   const projectStartDate = sortedStages[0]?.startDate || new Date();
@@ -2197,10 +2137,6 @@ const recalculateProjectTimeline = async (
     },
   });
 
-  console.log('✅ Project timeline recalculated');
-  console.log(`New delivery date: ${getDateKey(calculatedDelivery)}`);
-  console.log(`New total days: ${totalProjectDays}`);
-
   return updatedProject;
 };
 // Helper function - Define at the top level
@@ -2233,14 +2169,6 @@ const checkStageCapacityAvailability = async (
   startDate,
   endDate,
 ) => {
-  console.log(`\n📊 CHECKING CAPACITY for ${stage}`);
-  console.log(`   Required Quantity: ${requiredQuantity}`);
-  console.log(
-    `   Date Range: ${startDate.toISOString().split('T')[0]} - ${
-      endDate.toISOString().split('T')[0]
-    }`,
-  );
-
   const capacityInfo = await prisma.capacityLot.findUnique({
     where: { stage },
   });
@@ -2470,15 +2398,6 @@ const addOverCapacityAllocation = async (
 
     return updatedRecord;
   });
-
-  console.log(
-    `✅ Added to over-capacity: ${requiredUnits} units, ${requiredHours} hours on ${
-      normalizedDate.toISOString().split('T')[0]
-    }`,
-  );
-  console.log(
-    `   New over-capacity total: ${result.overCapacityUsed} units, ${result.overHoursCapacityUsed} hours`,
-  );
 
   return result;
 };

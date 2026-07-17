@@ -964,6 +964,7 @@ enum DesignStatus  {
   CUTLIST
   BOQ
   FINISHED
+  DESIGN_FINISHED
 }
 
 
