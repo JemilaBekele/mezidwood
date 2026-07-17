@@ -140,9 +140,7 @@ const createProformaInvoice = async (
         }
 
         finalCustomerId = defaultCustomer.id;
-        console.log(
-          `Using default customer: ${defaultCustomer.name} (${defaultCustomer.id})`,
-        );
+      
       } catch (error) {
         console.error('Error fetching default customer:', error);
         throw error;
@@ -299,9 +297,7 @@ const createProformaInvoice = async (
       balance = 0;
     } else {
       balance = total; // Since amountPaid is 0, balance equals total
-      console.log(
-        `Regular invoice: Balance = total (${total}) since no payment made`,
-      );
+   
     }
     let paymentStatus;
     if (isStore) {
@@ -401,7 +397,6 @@ const createProformaInvoice = async (
                 },
               });
 
-              console.log(`Created invoice item with ID: ${createdItem.id}`);
               if (item.itemId) {
                 console.log(`  Linked to Item ID: ${item.itemId}`);
               }
@@ -469,9 +464,7 @@ const createProformaInvoice = async (
                       // Check if it's just a filename without path
                       if (!imageUrl.includes('/') && !imageUrl.includes('\\')) {
                         // This is a raw filename - we need to process it properly
-                        console.warn(
-                          `Found raw filename without path: ${imageUrl}, skipping...`,
-                        );
+                       
                         continue;
                       }
                       // Normalize the path
@@ -498,9 +491,7 @@ const createProformaInvoice = async (
                       });
                     }),
                   );
-                  console.log(
-                    `Created ${allImageUrls.length} images for item ${createdItem.id} in /uploads/proforma/images/`,
-                  );
+               
                 } catch (imageCreateError) {
                   console.error('Error creating image records:', imageCreateError);
                   throw imageCreateError;
@@ -552,10 +543,7 @@ const createProformaInvoice = async (
 
               return createdItem;
             } catch (itemError) {
-              console.error(
-                `Error processing item at index ${index}:`,
-                itemError,
-              );
+              console.error(`Error processing item at index ${index}:`, itemError);
               throw itemError;
             }
           }),
@@ -651,9 +639,6 @@ const createProformaInvoice = async (
                     fileUrl,
                   },
                 });
-
-                console.log(`Attachment saved: ${targetPath}`);
-                console.log(`Attachment URL: ${fileUrl}`);
               }),
             );
           } catch (attachmentError) {
@@ -732,7 +717,6 @@ const createProformaInvoice = async (
 
       return proformaInvoice;
     } catch (transactionError) {
-      console.error('Transaction failed:', transactionError);
 
       // Log the full error details
       if (transactionError.code) {
@@ -746,10 +730,7 @@ const createProformaInvoice = async (
     }
   } catch (error) {
     // Log the error with full details
-    console.error('=== ERROR IN createProformaInvoice ===');
-    console.error('Error name:', error.name);
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
+
 
     if (error.code) {
       console.error('Error code:', error.code);
@@ -877,14 +858,6 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
   const isEditing =
     hasItemChanges || hasCustomerChange || hasBankChange || hasAttachmentChange;
 
-  console.log('🔍 EDIT DETECTION:', {
-    isEditing,
-    hasItemChanges,
-    hasCustomerChange,
-    hasBankChange,
-    hasAttachmentChange,
-    currentStatus: existingInvoice.status,
-  });
 
   // Determine the final status
   let finalStatus = existingInvoice.status;
@@ -1138,26 +1111,6 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
     typeof amountPaid === 'string' ? parseFloat(amountPaid) : amountPaid || 0;
 
   const balance = total - parsedAmountPaid;
-
-  // 🔥 UPDATED: Handle status transitions if status is being updated
-  if (status && status !== existingInvoice.status) {
-    const allowedTransitions = {
-      PENDING_ST: ['APPROVED_ST', 'CANCELLED', 'REVISION'],
-      APPROVED_ST: ['SENT_TO_CLIENT', 'CANCELLED', 'REVISION'],
-      SENT_TO_CLIENT: ['APPROVED_CLIENT', 'REVISION', 'CANCELLED'],
-      REVISION: ['APPROVED_ST', 'SENT_TO_CLIENT', 'CANCELLED'],
-      APPROVED_CLIENT: ['CANCELLED', 'REVISION'],
-      CANCELLED: [],
-    };
-
-    const validTransitions = allowedTransitions[existingInvoice.status];
-    if (!validTransitions?.includes(status)) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        `Cannot change status from ${existingInvoice.status} to ${status}`,
-      );
-    }
-  }
 
   // Handle payment updates
   let updatedAmountDate = amountDate;

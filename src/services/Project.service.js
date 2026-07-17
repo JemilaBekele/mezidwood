@@ -1451,24 +1451,6 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
     );
   }
 
-  // Log for actual work units sync (always log this when finishing design)
-  if (isNowFinished && designStageUpdate) {
-    const workUnitsLogMessage =
-      `📊 Actual work units synced to planned work units: ` +
-      `${designStageUpdate.actualWorkUnitsBefore} → ${designStageUpdate.actualWorkUnitsAfter} ` +
-      `(Planned: ${designStageUpdate.workUnits})`;
-
-    logs.push(
-      prisma.projectLog.create({
-        data: {
-          projectId: id,
-          note: workUnitsLogMessage,
-          createdById: userId,
-        },
-      }),
-    );
-  }
-
   // Log for project status change (if applicable)
   if (isNowFinished && oldProjectStatus !== 'PURCHASING') {
     logs.push(

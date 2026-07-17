@@ -1,128 +1,49 @@
 const httpStatus = require('http-status');
 const catchAsync = require('../utils/catchAsync');
 const { proformaInvoiceService } = require('../services');
+const ApiError = require('../utils/ApiError');
 
 // Create Proforma Invoice
 // Create Proforma Invoice
 const createProformaInvoice = catchAsync(async (req, res) => {
-  // Log body fields (excluding files)
-  Object.keys(req.body).forEach((key) => {
-    if (key !== 'items') {
-      console.log(
-        `   - ${key}:`,
-        typeof req.body[key] === 'string' && req.body[key].length > 100
-          ? `${req.body[key].substring(0, 100)}...`
-          : req.body[key],
-      );
-    }
-  });
-
   // Structure files by field name with detailed logging
   const structuredFiles = {};
 
   if (Array.isArray(req.files)) {
-    console.log('   - Files found as array, count:', req.files.length);
     req.files.forEach((file, index) => {
-      console.log(`   [${index}] File fieldname: "${file.fieldname}"`);
-      console.log(`       Original name: "${file.originalname}"`);
-      console.log(`       Mimetype: "${file.mimetype}"`);
-      console.log(`       Size: ${file.size} bytes`);
-
       if (!structuredFiles[file.fieldname]) {
         structuredFiles[file.fieldname] = [];
       }
       structuredFiles[file.fieldname].push(file);
     });
   } else if (req.files) {
-    console.log('   - Files found as object');
     for (const [fieldname, files] of Object.entries(req.files)) {
-      console.log(`   - Field: "${fieldname}"`);
-      console.log(
-        `     Type: ${Array.isArray(files) ? 'Array' : typeof files}`,
-      );
-      console.log(`     Count: ${Array.isArray(files) ? files.length : 1}`);
-
-      if (Array.isArray(files)) {
-        files.forEach((file, index) => {
-          console.log(
-            `     [${index}] Name: "${file.originalname}", Type: "${file.mimetype}"`,
-          );
-        });
-      }
-
       structuredFiles[fieldname] = Array.isArray(files) ? files : [files];
     }
-  } else {
-    console.log('   - No files found in request');
   }
-
-  console.log('7. Structured files keys:', Object.keys(structuredFiles));
-  console.log('   Detailed structure:');
-  Object.keys(structuredFiles).forEach((key) => {
-    console.log(`   - "${key}": ${structuredFiles[key].length} file(s)`);
-    structuredFiles[key].forEach((file, index) => {
-      console.log(
-        `     [${index}] ${file.originalname} (${file.mimetype}, ${file.size} bytes)`,
-      );
-    });
-  });
 
   // Parse items if it's a string (from form-data)
   if (req.body.items) {
-    console.log('8. Items field found, type:', typeof req.body.items);
-    console.log(
-      '   Raw items value (first 200 chars):',
-      req.body.items.substring
-        ? req.body.items.substring(0, 200) +
-            (req.body.items.length > 200 ? '...' : '')
-        : req.body.items,
-    );
-
     if (typeof req.body.items === 'string') {
       try {
-        console.log('   - Parsing items JSON string');
         req.body.items = JSON.parse(req.body.items);
-        console.log(
-          '   - Items parsed successfully, count:',
-          req.body.items.length,
-        );
-        console.log(
-          '   - Sample item:',
-          JSON.stringify(req.body.items[0], null, 2),
-        );
       } catch (error) {
-        console.error('   - Failed to parse items JSON:', error.message);
-        console.error('   - Error stack:', error.stack);
         throw new ApiError(
           httpStatus.BAD_REQUEST,
           `Invalid items format: ${error.message}`,
         );
       }
     }
-  } else {
-    console.log('8. No items field found in request');
   }
 
   // Add item index for file matching and initialize images array
   if (Array.isArray(req.body.items)) {
-    console.log('9. Adding item indices and initializing images arrays');
     req.body.items = req.body.items.map((item, index) => ({
       ...item,
       itemIndex: index,
       // Initialize images array if not present
       images: item.images && Array.isArray(item.images) ? item.images : [],
     }));
-    console.log(`   - Added indices to ${req.body.items.length} items`);
-
-    // Log item details for debugging
-    req.body.items.forEach((item, index) => {
-      console.log(`   Item ${index}:`);
-      console.log(`     - Description: ${item.description}`);
-      console.log(`     - Quantity: ${item.quantity}`);
-      console.log(`     - Unit Price: ${item.unitPrice}`);
-      console.log(`     - Has existing images: ${item.images?.length || 0}`);
-      console.log(`     - Item Index: ${item.itemIndex}`);
-    });
   }
 
   // Process and map image files to their respective items
@@ -130,17 +51,12 @@ const createProformaInvoice = catchAsync(async (req, res) => {
     Array.isArray(req.body.items) &&
     Object.keys(structuredFiles).length > 0
   ) {
-    console.log('10. Processing image files for items...');
-
     req.body.items.forEach((item, index) => {
       // Check for multiple images using the pattern "items[0].images"
       const itemImageField = `items[${item.itemIndex}].images`;
       const itemFiles = structuredFiles[itemImageField];
 
       if (itemFiles && Array.isArray(itemFiles) && itemFiles.length > 0) {
-        console.log(
-          `   - Item ${item.itemIndex}: Found ${itemFiles.length} image(s) for field "${itemImageField}"`,
-        );
         // Store the files in the item for processing by the service
         item.uploadedImages = itemFiles;
       } else {
@@ -153,12 +69,7 @@ const createProformaInvoice = catchAsync(async (req, res) => {
           Array.isArray(legacyFiles) &&
           legacyFiles.length > 0
         ) {
-          console.log(
-            `   - Item ${item.itemIndex}: Found ${legacyFiles.length} legacy image(s) for field "${legacyImageField}"`,
-          );
           item.uploadedImages = legacyFiles;
-        } else {
-          console.log(`   - Item ${item.itemIndex}: No images found`);
         }
       }
     });
@@ -170,13 +81,6 @@ const createProformaInvoice = catchAsync(async (req, res) => {
       req.user.id,
       structuredFiles,
     );
-
-    // Log image counts per item
-    if (proformaInvoice?.items) {
-      proformaInvoice.items.forEach((item, idx) => {
-        console.log(`   Item ${idx} - Images: ${item.images?.length || 0}`);
-      });
-    }
 
     res.status(httpStatus.CREATED).send({
       success: true,
@@ -195,23 +99,10 @@ const createProformaInvoice = catchAsync(async (req, res) => {
       `Failed to create proforma invoice: ${error.message}`,
     );
   }
-
-  console.log('=== CREATE PROFORMA INVOICE CONTROLLER END ===');
 });
 
 // Update Proforma Invoice
 const updateProformaInvoice = catchAsync(async (req, res) => {
-  Object.keys(req.body).forEach((key) => {
-    if (key !== 'items') {
-      console.log(
-        `   - ${key}:`,
-        typeof req.body[key] === 'string' && req.body[key].length > 100
-          ? `${req.body[key].substring(0, 100)}...`
-          : req.body[key],
-      );
-    }
-  });
-
   // Structure files by field name with detailed logging
   const structuredFiles = {};
 
@@ -224,45 +115,15 @@ const updateProformaInvoice = catchAsync(async (req, res) => {
     });
   } else if (req.files) {
     for (const [fieldname, files] of Object.entries(req.files)) {
-      console.log(`   - Field: "${fieldname}"`);
-      console.log(
-        `     Type: ${Array.isArray(files) ? 'Array' : typeof files}`,
-      );
-
-      if (Array.isArray(files)) {
-        files.forEach((file, index) => {
-          console.log(
-            `     [${index}] Name: "${file.originalname}", Type: "${file.mimetype}"`,
-          );
-        });
-      }
-
       structuredFiles[fieldname] = Array.isArray(files) ? files : [files];
     }
-  } else {
-    console.log('   - No files found in request');
   }
-
-  Object.keys(structuredFiles).forEach((key) => {
-    structuredFiles[key].forEach((file, index) => {
-      console.log(
-        `     [${index}] ${file.originalname} (${file.mimetype}, ${file.size} bytes)`,
-      );
-    });
-  });
 
   // Parse items if it's a string (from form-data)
   if (req.body.items) {
     if (typeof req.body.items === 'string') {
       try {
         req.body.items = JSON.parse(req.body.items);
-
-        if (req.body.items.length > 0) {
-          console.log(
-            '   - Sample item:',
-            JSON.stringify(req.body.items[0], null, 2),
-          );
-        }
       } catch (error) {
         throw new ApiError(
           httpStatus.BAD_REQUEST,
@@ -270,8 +131,6 @@ const updateProformaInvoice = catchAsync(async (req, res) => {
         );
       }
     }
-  } else {
-    console.log('9. No items field found in request');
   }
 
   // Add item index for file matching and preserve existing images
@@ -287,9 +146,6 @@ const updateProformaInvoice = catchAsync(async (req, res) => {
           ? item.deleteImageIds
           : [],
     }));
-
-    // Log item details for debugging
-    req.body.items.forEach((item, index) => {});
   }
 
   // Process and map image files to their respective items for update
@@ -316,8 +172,6 @@ const updateProformaInvoice = catchAsync(async (req, res) => {
           legacyFiles.length > 0
         ) {
           item.newImages = legacyFiles;
-        } else {
-          console.log(`   - Item ${item.itemIndex}: No new images found`);
         }
       }
     });
@@ -330,21 +184,12 @@ const updateProformaInvoice = catchAsync(async (req, res) => {
       structuredFiles,
     );
 
-    // Log image counts per item
-    if (invoice?.items) {
-      invoice.items.forEach((item, idx) => {
-        console.log(`   Item ${idx} - Images: ${item.images?.length || 0}`);
-      });
-    }
-
     res.status(httpStatus.OK).send({
       success: true,
       message: 'Proforma invoice updated successfully',
       invoice,
     });
   } catch (error) {
-    console.error('ERROR in updateProformaInvoice controller:', error);
-
     // Check if it's already an ApiError
     if (error instanceof ApiError) {
       throw error;
