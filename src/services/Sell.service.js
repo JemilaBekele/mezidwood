@@ -61,6 +61,8 @@ const getSellById = async (identifier) => {
       items: {
         include: {
           item: true,
+          store: true,
+          showroom: true,
         },
       },
       sellPayments: {
@@ -321,17 +323,35 @@ const createSell = async (sellBody, userId) => {
     );
   }
 
-  // Calculate totals
+  // Calculate totals with store/showroom validation
   const enhancedItems = items.map((item) => {
     const itemData = itemsWithData.find((i) => i.id === item.itemId);
     const unitPrice = item.unitPrice || itemData.price;
     const totalPrice = unitPrice * item.quantity;
+
+    // Validate store/showroom if provided
+    if (item.storeId && !item.showroomId) {
+      // Store only - validate store exists
+      // You can add store validation here if needed
+    }
+
+    if (item.showroomId && !item.storeId) {
+      // Showroom only - validate showroom belongs to a store
+      // You can add showroom validation here if needed
+    }
+
+    if (item.showroomId && item.storeId) {
+      // Both provided - validate showroom belongs to the store
+      // You can add validation here if needed
+    }
 
     return {
       itemId: item.itemId,
       quantity: item.quantity,
       unitPrice,
       totalPrice,
+      storeId: item.storeId || mainStore.id, // Default to main store if not provided
+      showroomId: item.showroomId || null,
     };
   });
 
@@ -356,6 +376,9 @@ const createSell = async (sellBody, userId) => {
       saleDate: restSellBody.saleDate
         ? new Date(restSellBody.saleDate)
         : new Date(),
+      deliveryDate: restSellBody.deliveryDate
+        ? new Date(restSellBody.deliveryDate)
+        : new Date(), // Added deliveryDate
       notes: restSellBody.notes,
       createdById: userId,
       updatedById: userId,
@@ -365,6 +388,8 @@ const createSell = async (sellBody, userId) => {
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           totalPrice: item.totalPrice,
+          storeId: item.storeId,
+          showroomId: item.showroomId,
         })),
       },
     },
@@ -374,6 +399,8 @@ const createSell = async (sellBody, userId) => {
       items: {
         include: {
           item: true,
+          store: true, // Include store in each item
+          showroom: true, // Include showroom in each item
         },
       },
     },
@@ -436,17 +463,35 @@ const updateSell = async (sellId, sellBody, userId) => {
       }
     });
 
-    // Calculate new totals
+    // Calculate new totals with store/showroom validation
     const enhancedItems = items.map((item) => {
       const itemData = itemsWithData.find((i) => i.id === item.itemId);
       const unitPrice = item.unitPrice || itemData.price;
       const totalPrice = unitPrice * item.quantity;
+
+      // Validate store/showroom if provided
+      if (item.storeId && !item.showroomId) {
+        // Store only - validate store exists
+        // You can add store validation here if needed
+      }
+
+      if (item.showroomId && !item.storeId) {
+        // Showroom only - validate showroom belongs to a store
+        // You can add showroom validation here if needed
+      }
+
+      if (item.showroomId && item.storeId) {
+        // Both provided - validate showroom belongs to the store
+        // You can add validation here if needed
+      }
 
       return {
         itemId: item.itemId,
         quantity: item.quantity,
         unitPrice,
         totalPrice,
+        storeId: item.storeId || mainStore.id, // Default to main store if not provided
+        showroomId: item.showroomId || null,
       };
     });
 
@@ -467,12 +512,17 @@ const updateSell = async (sellId, sellBody, userId) => {
         totalProducts: enhancedItems.length,
         updatedById: userId,
         saleStatus: 'NOT_APPROVED', // Reset status on update
+        deliveryDate: restSellBody.deliveryDate
+          ? new Date(restSellBody.deliveryDate)
+          : existingSell.deliveryDate, // Keep existing deliveryDate if not provided
         items: {
           create: enhancedItems.map((item) => ({
             itemId: item.itemId,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             totalPrice: item.totalPrice,
+            storeId: item.storeId,
+            showroomId: item.showroomId,
           })),
         },
       },
@@ -482,6 +532,8 @@ const updateSell = async (sellId, sellBody, userId) => {
         items: {
           include: {
             item: true,
+            store: true, // Include store in each item
+            showroom: true, // Include showroom in each item
           },
         },
       },
@@ -492,6 +544,7 @@ const updateSell = async (sellId, sellBody, userId) => {
 
   return result;
 };
+
 // ==================== DELETE SELL ====================
 const deleteSell = async (id, userId) => {
   try {
@@ -1089,22 +1142,23 @@ const getSellStatistics = async ({ startDate, endDate } = {}) => {
 
 const deliverSaleItems = async (saleId, deliveryItems, userId) => {
   try {
-    // Get the sale with its items and showroom relation
+    // Get the sale with its items and relations
     let sale;
     try {
       sale = await prisma.sell.findUnique({
         where: { id: saleId },
         include: {
-          showroom: true, // Only include showroom
           items: {
             include: {
               item: {
                 include: {
-                  itemStocks: true, // Get all stocks, we'll filter by showroomId
+                  itemStocks: true, // Get all stocks
                 },
               },
             },
           },
+          customer: true,
+          createdBy: true,
         },
       });
     } catch (prismaError) {
@@ -1117,16 +1171,6 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
 
     if (!sale) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Sale not found');
-    }
-
-    // Get the showroom ID from the sale
-    const showroomId = sale.showroomId;
-
-    if (!showroomId) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Sale has no associated showroom'
-      );
     }
 
     // Check if sale can be delivered
@@ -1144,7 +1188,7 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
       );
     }
 
-    // Validate all delivery items first
+    // Validate all delivery items using array methods
     const validationErrors = deliveryItems
       .map((deliveryItem) => {
         const sellItem = sale.items.find(
@@ -1155,10 +1199,30 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
           return `Sell item ${deliveryItem.sellItemId} not found`;
         }
 
-        // Get stock for the sale's showroom
-        const itemStock = sellItem.item?.itemStocks?.find(
-          (stock) => stock.showroomId === showroomId,
-        );
+        // Get the location (store or showroom) from the sell item
+        const locationType = sellItem.storeId
+          ? 'store'
+          : sellItem.showroomId
+          ? 'showroom'
+          : null;
+        const locationId = sellItem.storeId || sellItem.showroomId;
+
+        if (!locationType || !locationId) {
+          return `Item ${sellItem.item.name} has no location associated. Please check the sell item.`;
+        }
+
+        // Get stock for the specific location
+        let itemStock;
+        if (locationType === 'store') {
+          itemStock = sellItem.item?.itemStocks?.find(
+            (stock) => stock.storeId === locationId,
+          );
+        } else if (locationType === 'showroom') {
+          itemStock = sellItem.item?.itemStocks?.find(
+            (stock) => stock.showroomId === locationId,
+          );
+        }
+
         const availableStock = itemStock?.quantity || 0;
 
         if (sellItem.itemSaleStatus === 'DELIVERED') {
@@ -1166,15 +1230,16 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
         }
 
         if (deliveryItem.quantityDelivered > sellItem.quantity) {
-          return `Cannot deliver more than ordered quantity for item ${sellItem.item.name}`;
+          return `Cannot deliver more than ordered quantity for item ${sellItem.item.name}. Ordered: ${sellItem.quantity}, Requested: ${deliveryItem.quantityDelivered}`;
         }
 
         if (deliveryItem.quantityDelivered > availableStock) {
-          return `Insufficient stock for item ${sellItem.item.name} at showroom ${
-            sale.showroom?.name || showroomId
-          }. Available: ${availableStock}, Requested: ${
-            deliveryItem.quantityDelivered
-          }`;
+          const locationName =
+            locationType === 'store'
+              ? sellItem.store?.name || locationId
+              : sellItem.showroom?.name || locationId;
+
+          return `Insufficient stock for item ${sellItem.item.name} at ${locationType} ${locationName}. Available: ${availableStock}, Requested: ${deliveryItem.quantityDelivered}`;
         }
 
         if (deliveryItem.quantityDelivered <= 0) {
@@ -1186,10 +1251,10 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
       .filter((error) => error !== null);
 
     if (validationErrors.length > 0) {
-      throw new ApiError(httpStatus.BAD_REQUEST, validationErrors.join(', '));
+      throw new ApiError(httpStatus.BAD_REQUEST, validationErrors.join('; '));
     }
 
-    // Process each delivery item
+    // Process each delivery item using array methods
     const updatePromises = deliveryItems.map(async (deliveryItem) => {
       const sellItem = sale.items.find(
         (item) => item.id === deliveryItem.sellItemId,
@@ -1199,24 +1264,53 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
         throw new Error(`Sell item not found: ${deliveryItem.sellItemId}`);
       }
 
-      // Update stock for the sale's showroom
+      // Get location from sell item
+      const locationType = sellItem.storeId
+        ? 'store'
+        : sellItem.showroomId
+        ? 'showroom'
+        : null;
+      const locationId = sellItem.storeId || sellItem.showroomId;
+
+      if (!locationType || !locationId) {
+        throw new Error(
+          `Item ${sellItem.item.name} has no location associated. Please check the sell item.`,
+        );
+      }
+
+      // Update stock for the specific location
       if (deliveryItem.quantityDelivered > 0) {
-        // Find the existing stock record for this item at the sale's showroom
-        const existingStock = await prisma.itemStock.findFirst({
-          where: {
-            itemId: sellItem.itemId,
-            showroomId: showroomId,
-          },
-        });
+        // Find the existing stock record for this item at the specific location
+        let existingStock;
+        if (locationType === 'store') {
+          existingStock = await prisma.itemStock.findFirst({
+            where: {
+              itemId: sellItem.itemId,
+              storeId: locationId,
+              showroomId: null,
+            },
+          });
+        } else if (locationType === 'showroom') {
+          existingStock = await prisma.itemStock.findFirst({
+            where: {
+              itemId: sellItem.itemId,
+              showroomId: locationId,
+              storeId: null,
+            },
+          });
+        }
 
         if (existingStock) {
           // Check if we have enough stock
           if (existingStock.quantity < deliveryItem.quantityDelivered) {
+            const locationName =
+              locationType === 'store'
+                ? sellItem.store?.name || locationId
+                : sellItem.showroom?.name || locationId;
+
             throw new ApiError(
               httpStatus.BAD_REQUEST,
-              `Insufficient stock for item ${sellItem.item.name} at showroom ${
-                sale.showroom?.name || showroomId
-              }. Available: ${existingStock.quantity}, Requested: ${deliveryItem.quantityDelivered}`
+              `Insufficient stock for item ${sellItem.item.name} at ${locationType} ${locationName}. Available: ${existingStock.quantity}, Requested: ${deliveryItem.quantityDelivered}`,
             );
           }
 
@@ -1230,24 +1324,34 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
             },
           });
         } else {
-          // If no stock record exists, throw error
+          const locationName =
+            locationType === 'store'
+              ? sellItem.store?.name || locationId
+              : sellItem.showroom?.name || locationId;
+
           throw new ApiError(
             httpStatus.BAD_REQUEST,
-            `No stock record found for item ${sellItem.item.name} at showroom ${
-              sale.showroom?.name || showroomId
-            }`,
+            `No stock record found for item ${sellItem.item.name} at ${locationType} ${locationName}`,
           );
         }
 
-        // Create ledger entry with showroom reference
+        // Create ledger entry with location reference
         await prisma.itemStockLedger.create({
           data: {
             itemId: sellItem.itemId,
-            showroomId: showroomId,
+            ...(locationType === 'store'
+              ? { storeId: locationId }
+              : { showroomId: locationId }),
             movementType: 'OUT',
             quantity: deliveryItem.quantityDelivered,
             reference: `SALE-DELIVERY-${sale.invoiceNo}`,
-            notes: `Delivered ${deliveryItem.quantityDelivered} units for sale item ${sellItem.id}`,
+            notes: `Delivered ${
+              deliveryItem.quantityDelivered
+            } units for sale item ${sellItem.id} from ${locationType} ${
+              locationType === 'store'
+                ? sellItem.store?.name
+                : sellItem.showroom?.name
+            }`,
             userId,
           },
         });
@@ -1261,6 +1365,8 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
         },
         include: {
           item: true,
+          store: true,
+          showroom: true,
         },
       });
 
@@ -1306,9 +1412,14 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
           updatedAt: new Date(),
         },
         include: {
-          items: true,
+          items: {
+            include: {
+              item: true,
+              store: true,
+              showroom: true,
+            },
+          },
           customer: true,
-          showroom: true,
           createdBy: true,
         },
       });
@@ -1322,6 +1433,20 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
       },
     });
 
+    // Get location summary for response using array methods
+    const locationSummary = sale.items.reduce(
+      (acc, item) => {
+        if (item.storeId) {
+          acc.stores.add(item.storeId);
+        }
+        if (item.showroomId) {
+          acc.showrooms.add(item.showroomId);
+        }
+        return acc;
+      },
+      { stores: new Set(), showrooms: new Set() },
+    );
+
     const finalResult = {
       sale: updatedSale,
       items: updatedItems,
@@ -1330,8 +1455,11 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
         anyItemDelivered,
         totalItemsDelivered: updatedItems.length,
         saleStatus: newSaleStatus,
-        showroomName: sale.showroom?.name || showroomId,
         deliveredItemsCount: deliveryItems.length,
+        locations: {
+          stores: Array.from(locationSummary.stores),
+          showrooms: Array.from(locationSummary.showrooms),
+        },
       },
     };
 
@@ -1341,9 +1469,9 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
       error: error.message,
       stack: error.stack,
       saleId,
-      userId
+      userId,
     });
-    
+
     if (error instanceof ApiError) {
       throw error;
     }

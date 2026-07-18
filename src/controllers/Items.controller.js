@@ -1,10 +1,10 @@
 const httpStatus = require('http-status');
 const catchAsync = require('../utils/catchAsync');
 const { itemService } = require('../services');
+const ApiError = require('../utils/ApiError');
 
 // Create Item
 const createItem = catchAsync(async (req, res) => {
-
   // Structure files by field name
   const structuredFiles = {};
 
@@ -33,7 +33,6 @@ const createItem = catchAsync(async (req, res) => {
   structuredFiles.image = structuredFiles.image || undefined;
   structuredFiles.images = structuredFiles.images || undefined;
 
-
   // Parse request body
   const itemData = { ...req.body };
 
@@ -54,8 +53,6 @@ const createItem = catchAsync(async (req, res) => {
     itemData.price = parseFloat(itemData.price);
   }
 
-
-
   const item = await itemService.createItem(itemData, structuredFiles);
 
   res.status(httpStatus.CREATED).json({
@@ -69,7 +66,6 @@ const createItem = catchAsync(async (req, res) => {
 // Update Item
 // Update Item
 const updateItem = catchAsync(async (req, res) => {
-
   // Structure files by field name
   const structuredFiles = {};
 
@@ -99,7 +95,6 @@ const updateItem = catchAsync(async (req, res) => {
   structuredFiles.image = structuredFiles.image || undefined;
   structuredFiles.images = structuredFiles.images || undefined;
 
-
   // Parse update body
   const updateBody = { ...req.body };
 
@@ -116,13 +111,17 @@ const updateItem = catchAsync(async (req, res) => {
   }
 
   // Parse imagesToDelete if it's a string
-  if (updateBody.imagesToDelete && typeof updateBody.imagesToDelete === 'string') {
+  if (
+    updateBody.imagesToDelete &&
+    typeof updateBody.imagesToDelete === 'string'
+  ) {
     try {
       updateBody.imagesToDelete = JSON.parse(updateBody.imagesToDelete);
     } catch (error) {
       return res.status(httpStatus.BAD_REQUEST).json({
         success: false,
-        error: 'Invalid imagesToDelete format. Expected valid JSON string array.',
+        error:
+          'Invalid imagesToDelete format. Expected valid JSON string array.',
       });
     }
   }
@@ -136,7 +135,6 @@ const updateItem = catchAsync(async (req, res) => {
   if (updateBody.imageUrl === 'null' || updateBody.imageUrl === '') {
     updateBody.imageUrl = null;
   }
-
 
   const item = await itemService.updateItem(
     req.params.id,

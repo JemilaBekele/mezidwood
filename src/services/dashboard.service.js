@@ -1659,12 +1659,8 @@ const getDeliveryDateComparisonReportFunctional = async () => {
       summary: {
         totalProjectsAnalyzed: projects.length,
         projectsWithMismatch: 0,
-        projectsWithMissingDates: 0,
-        projectsWithoutDeliveryStage: 0,
       },
       mismatchedProjects: [],
-      missingDatesProjects: [],
-      noDeliveryStageProjects: [],
     };
 
     const report = projects.reduce((acc, project) => {
@@ -1672,62 +1668,18 @@ const getDeliveryDateComparisonReportFunctional = async () => {
         (stage) => stage.stage === 'DELIVERY',
       );
 
+      // Skip projects without delivery stage
       if (!deliveryStage) {
-        return {
-          ...acc,
-          summary: {
-            ...acc.summary,
-            projectsWithoutDeliveryStage:
-              acc.summary.projectsWithoutDeliveryStage + 1,
-          },
-          noDeliveryStageProjects: [
-            ...acc.noDeliveryStageProjects,
-            {
-              projectId: project.id,
-              customerName: project.customer?.name || 'No Customer',
-              customerPhone: project.customer?.phone1 || 'No Phone',
-              piNumber: project.invoice?.piNumber || project.invoiceId,
-              projectStatus: project.status,
-              currentStages: project.stages.map((s) => s.stage),
-              calculatedDelivery: project.calculatedDelivery,
-              manualDelivery: project.manualDelivery,
-              requestedDelivery: project.requestedDelivery,
-              scheduleMode: project.scheduleMode,
-              difficulty: project.difficulty,
-            },
-          ],
-        };
+        return acc;
       }
 
       const projectDeliveryDate =
         project.manualDelivery || project.calculatedDelivery;
       const stageDeliveryDate = deliveryStage.endDate;
 
+      // Skip projects with missing dates
       if (!projectDeliveryDate || !stageDeliveryDate) {
-        return {
-          ...acc,
-          summary: {
-            ...acc.summary,
-            projectsWithMissingDates: acc.summary.projectsWithMissingDates + 1,
-          },
-          missingDatesProjects: [
-            ...acc.missingDatesProjects,
-            {
-              projectId: project.id,
-              customerName: project.customer?.name || 'No Customer',
-              customerPhone: project.customer?.phone1 || 'No Phone',
-              piNumber: project.invoice?.piNumber || project.invoiceId,
-              projectStatus: project.status,
-              projectDeliveryDate: projectDeliveryDate || null,
-              stageDeliveryDate: stageDeliveryDate || null,
-              missingWhat: !projectDeliveryDate
-                ? 'Project delivery date'
-                : 'Stage delivery date',
-              scheduleMode: project.scheduleMode,
-              difficulty: project.difficulty,
-            },
-          ],
-        };
+        return acc;
       }
 
       const projectDate = new Date(projectDeliveryDate);

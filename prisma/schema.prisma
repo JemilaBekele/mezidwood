@@ -5,8 +5,7 @@ generator client {
 
 datasource db {
   provider = "mysql"
-
-    url      = env("DATABASE_URL")
+  url      = env("DATABASE_URL")
 
 }
 enum Status {
@@ -224,6 +223,8 @@ model Showroom {
 
 
   users User[] @relation("UserShowrooms")
+
+  sellItems SellItem[]
 }
 model Store {
   id          String @id @default(uuid()) @map("_id") @db.Char(36)
@@ -251,6 +252,8 @@ model Store {
 
 
   users User[] @relation("UserStores")
+
+  sellItems SellItem[]
 }
 enum StockMovementType {
   IN
@@ -621,6 +624,7 @@ model SellPayment {
 model Sell {
   id            String            @id @default(uuid()) @map("_id") @db.Char(36)
   invoiceNo     String            @unique
+  deliveryDate DateTime @default(now())
 
     imageUrl      String?
   documentUrl   String?
@@ -675,6 +679,13 @@ model SellItem {
 
   unitPrice  Float @default(0)
   totalPrice Float @default(0)
+
+    // 📍 Location
+  storeId     String?
+  store       Store?        @relation(fields: [storeId], references: [id])
+
+  showroomId  String?
+  showroom    Showroom?     @relation(fields: [showroomId], references: [id])
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1048,13 +1059,6 @@ enum DifficultyLevel {
   HARD
 }
 
-// Governs how much the scheduler may move a project automatically.
-//   AUTO   - cron, completion-cascade and auto-schedule may all move it.
-//   MANUAL - automatic jobs skip it; only explicit user actions move it.
-//   LOCKED - nothing automatic touches it and an explicit auto-schedule
-//            refuses, until it is unlocked (e.g. a customer-confirmed date).
-// NOTE: capacity accounting (release on completion/cancel) ALWAYS runs
-// regardless of mode — only date movement is gated.
 enum ScheduleMode {
   AUTO
   MANUAL
