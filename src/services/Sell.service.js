@@ -825,25 +825,28 @@ const addSellPayment = async (sellId, paymentData, userId) => {
     );
   }
 
-  // Calculate current total paid
+  // ✅ FIX: Calculate current total paid from the actual payments array
   const currentTotalPaid = sell.sellPayments.reduce(
-    (sum, payment) => sum + payment.amount,
+    (sum, payment) => sum + Number(payment.amount || 0),
     0,
   );
-  const newTotalPaid = currentTotalPaid + amount;
+  
+  const newTotalPaid = currentTotalPaid + Number(amount);
   const remainingBalance = sell.grandTotal - currentTotalPaid;
 
   // Check if payment exceeds remaining balance
-  if (newTotalPaid > sell.grandTotal) {
+  if (Number(amount) > remainingBalance) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      `Payment amount exceeds remaining balance (${remainingBalance})`,
+      `Payment amount (${amount}) exceeds remaining balance (${remainingBalance.toFixed(2)})`,
     );
   }
 
   // Determine payment status
   let paymentStatus;
-  if (newTotalPaid >= sell.grandTotal) {
+  const newBalance = sell.grandTotal - newTotalPaid;
+  
+  if (newBalance <= 0.001) { // Use small epsilon for floating point comparison
     paymentStatus = 'PAID';
   } else if (newTotalPaid > 0) {
     paymentStatus = 'PARTIAL';
@@ -851,15 +854,13 @@ const addSellPayment = async (sellId, paymentData, userId) => {
     paymentStatus = 'PENDING';
   }
 
-  const newBalance = sell.grandTotal - newTotalPaid;
-
-  // Start transaction
+  // ✅ Start transaction
   const result = await prisma.$transaction(async (tx) => {
     // Create payment record
     const payment = await tx.sellPayment.create({
       data: {
         sellId,
-        amount,
+        amount: Number(amount),
         bankId,
         paidBy,
         createdById: userId,
@@ -869,17 +870,17 @@ const addSellPayment = async (sellId, paymentData, userId) => {
           select: { id: true, name: true, email: true },
         },
         bank: {
-          select: { id: true, bankName: true, accountNumber: true }, // Fixed: changed 'name' to 'bankName'
+          select: { id: true, bankName: true, accountNumber: true },
         },
       },
     });
 
-    // Update sell record
+    // ✅ Update sell record with correct values
     const updatedSell = await tx.sell.update({
       where: { id: sellId },
       data: {
         totalPaid: newTotalPaid,
-        balance: newBalance,
+        balance: newBalance < 0 ? 0 : newBalance, // Ensure balance is never negative
         paymentStatus,
       },
       include: {
@@ -891,7 +892,7 @@ const addSellPayment = async (sellId, paymentData, userId) => {
               select: { id: true, name: true, email: true },
             },
             bank: {
-              select: { id: true, bankName: true, accountNumber: true }, // Fixed: changed 'name' to 'bankName'
+              select: { id: true, bankName: true, accountNumber: true },
             },
           },
         },

@@ -522,8 +522,6 @@ const getPurchasingProjects = async (status = 'all') => {
   }
 };
 
-
-
 // Function to get metal work projects with design completion requirement
 const getMetalWorkProjects = async (status = 'all') => {
   try {
@@ -1650,6 +1648,7 @@ const getFinishingProjects = async (status = 'all') => {
 };
 const getDeliveryProjects = async (status = 'all') => {
   try {
+    // 1. Fetch project deliveries with DELIVERY stage
     const projectsWithDelivery = await prisma.project.findMany({
       where: {
         stages: {
@@ -1671,6 +1670,9 @@ const getDeliveryProjects = async (status = 'all') => {
             piNumber: true,
             total: true,
             status: true,
+            paymentStatus: true, // ✅ ADDED: Payment status from invoice
+            amountPaid: true,    // ✅ ADDED: Amount paid
+            balance: true,       // ✅ ADDED: Balance
           },
         },
         stages: {
@@ -1704,7 +1706,6 @@ const getDeliveryProjects = async (status = 'all') => {
             },
           },
         },
-
         createdBy: true,
         updatedBy: true,
       },
@@ -1713,6 +1714,77 @@ const getDeliveryProjects = async (status = 'all') => {
       },
     });
 
+    // 2. Fetch sell deliveries - includes APPROVED and PARTIALLY_DELIVERED
+    const sellsWithDelivery = await prisma.sell.findMany({
+      where: {
+        // Include APPROVED, PARTIALLY_DELIVERED, and DELIVERED sales
+        saleStatus: {
+          in: ['APPROVED', 'PARTIALLY_DELIVERED', 'DELIVERED'],
+        },
+        // Ensure they have items with delivery-related statuses
+        items: {
+          some: {
+            itemSaleStatus: {
+              in: ['DELIVERED', 'PARTIALLY_DELIVERED', 'PENDING'],
+            },
+          },
+        },
+      },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        store: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        items: {
+          select: {
+            id: true,
+            quantity: true,
+            unitPrice: true,
+            totalPrice: true,
+            itemSaleStatus: true,
+            itemId: true,
+            item: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+        sellPayments: {
+          select: {
+            id: true,
+            amount: true,
+            createdAt: true,
+          },
+        },
+        createdBy: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        updatedBy: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        deliveryDate: 'desc',
+      },
+    });
+
+    // 3. Process project deliveries
     const prerequisiteStages = [
       'METAL_WORKS',
       'CNC',
@@ -1748,73 +1820,316 @@ const getDeliveryProjects = async (status = 'all') => {
             stage?.finished === true || stage?.status === 'COMPLETED';
         });
 
+        // Get delivery stage status
+        const deliveryStage = project.stages.find(
+          (s) => s.stage === 'DELIVERY',
+        );
+
+        // Get payment status from invoice
+        const paymentStatus = project.invoice?.paymentStatus;
+        const isPaid = paymentStatus === 'PAID' || paymentStatus === 'PAID';
+
         return {
           ...project,
+          type: 'project',
           designFinished,
           allPrerequisitesFinished,
           prerequisiteStatus,
+          paymentStatus: paymentStatus || 'PENDING',
+          isPaid: isPaid,
+          deliveryStatus:
+            deliveryStage?.finished || deliveryStage?.status === 'COMPLETED'
+              ? 'finished'
+              : deliveryStage?.actualWorkUnits > 0
+              ? 'in-progress'
+              : 'pending',
+          // For project, "not-finished" means NOT delivered yet (approved but not delivered)
+          isNotFinished: !(
+            deliveryStage?.finished || deliveryStage?.status === 'COMPLETED'
+          ),
+          isFinished: !!(
+            deliveryStage?.finished || deliveryStage?.status === 'COMPLETED'
+          ),
         };
       }),
     );
 
-    let eligibleProjects = projectsWithPrerequisitesFinished.filter(
+    const eligibleProjects = projectsWithPrerequisitesFinished.filter(
       (p) => p.designFinished === true && p.allPrerequisitesFinished === true,
     );
 
-    if (status !== 'all') {
-      eligibleProjects = eligibleProjects.filter((project) => {
-        const deliveryStage = project.stages.find(
-          (stage) => stage.stage === 'DELIVERY',
-        );
+    // 4. Process sell deliveries with enhanced status
+    const processedSells = sellsWithDelivery.map((sell) => {
+      // Calculate delivery status
+      const { items } = sell;
+      const totalItems = items.length;
+      const deliveredItems = items.filter(
+        (item) => item.itemSaleStatus === 'DELIVERED',
+      );
+      const pendingItems = items.filter(
+        (item) => item.itemSaleStatus === 'PENDING',
+      );
+      const partiallyDeliveredItems = items.filter(
+        (item) => item.itemSaleStatus === 'PARTIALLY_DELIVERED',
+      );
 
+      const allDelivered = deliveredItems.length === totalItems;
+      const hasDelivered = deliveredItems.length > 0;
+      const hasPending = pendingItems.length > 0;
+      const hasPartial = partiallyDeliveredItems.length > 0;
+      const progress =
+        totalItems > 0
+          ? ((deliveredItems.length + partiallyDeliveredItems.length * 0.5) /
+              totalItems) *
+            100
+          : 0;
+
+      // Determine delivery status
+      let deliveryStatus;
+      let isFinished = false;
+      let isNotFinished = false;
+
+      if (allDelivered) {
+        deliveryStatus = 'finished';
+        isFinished = true;
+        isNotFinished = false;
+      } else if (hasDelivered || hasPartial) {
+        deliveryStatus = 'partially-delivered';
+        isFinished = false;
+        isNotFinished = true;
+        // Check if it's partially delivered or in progress
+        if (hasPartial) {
+          deliveryStatus = 'partially-delivered';
+        }
+      } else if (hasPending) {
+        deliveryStatus = 'pending';
+        isFinished = false;
+        isNotFinished = true;
+      } else {
+        deliveryStatus = 'not-finished';
+        isFinished = false;
+        isNotFinished = true;
+      }
+
+      // Calculate payment status
+      const payments = sell.sellPayments || [];
+      const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+      const paymentStatus =
+        totalPaid >= sell.grandTotal
+          ? 'PAID'
+          : totalPaid > 0
+          ? 'PARTIAL'
+          : 'PENDING';
+
+      return {
+        ...sell,
+        type: 'sell',
+        deliveryProgress: progress,
+        deliveryStatus,
+        isFinished,
+        isNotFinished,
+        allPrerequisitesFinished: true,
+        designFinished: true,
+        prerequisiteStatus: {},
+        paymentStatus,
+        totalPaid,
+        isPaid: paymentStatus === 'PAID',
+        // Map items to stages-like structure for consistency
+        stages: items.map((item) => ({
+          id: item.id,
+          stage: item.itemSaleStatus,
+          workUnits: item.quantity,
+          actualWorkUnits:
+            item.itemSaleStatus === 'DELIVERED'
+              ? item.quantity
+              : item.itemSaleStatus === 'PARTIALLY_DELIVERED'
+              ? Math.ceil(item.quantity / 2)
+              : 0,
+          finished: item.itemSaleStatus === 'DELIVERED',
+          status:
+            item.itemSaleStatus === 'DELIVERED'
+              ? 'COMPLETED'
+              : item.itemSaleStatus === 'PARTIALLY_DELIVERED'
+              ? 'PARTIAL'
+              : 'PENDING',
+          startDate: sell.deliveryDate,
+          endDate: sell.deliveryDate,
+          capacityDays: 0,
+          autoSchedule: false,
+          projectStageWorkLogs: [],
+          itemName: item.item.name,
+          itemCode: item.item.code,
+        })),
+        // Add summary for UI
+        deliverySummary: {
+          total: totalItems,
+          delivered: deliveredItems.length,
+          pending: pendingItems.length,
+          partial: partiallyDeliveredItems.length,
+        },
+      };
+    });
+
+    // 5. Combine projects and sells
+    let allDeliveries = [...eligibleProjects, ...processedSells];
+
+    // 6. Apply status filter with clear logic for 'finished' and 'not-finished'
+    if (status !== 'all') {
+      allDeliveries = allDeliveries.filter((delivery) => {
+        // For 'finished' - only show completed deliveries
         if (status === 'finished') {
-          return (
-            deliveryStage &&
-            (deliveryStage.finished === true ||
-              deliveryStage.status === 'COMPLETED')
-          );
+          return delivery.isFinished === true;
         }
 
+        // For 'not-finished' - show everything that is NOT finished
+        // This includes: approved, partially-delivered, pending, in-progress
         if (status === 'not-finished') {
-          return (
-            deliveryStage &&
-            deliveryStage.finished !== true &&
-            deliveryStage.status !== 'COMPLETED'
-          );
+          return delivery.isNotFinished === true;
+        }
+
+        // For 'pending' - specifically show only pending (not started)
+        if (status === 'pending') {
+          if (delivery.type === 'project') {
+            const deliveryStage = delivery.stages.find(
+              (stage) => stage.stage === 'DELIVERY',
+            );
+            return (
+              deliveryStage &&
+              deliveryStage.finished !== true &&
+              deliveryStage.status !== 'COMPLETED' &&
+              (deliveryStage.actualWorkUnits === 0 ||
+                !deliveryStage.actualWorkUnits)
+            );
+          }
+          if (delivery.type === 'sell') {
+            return delivery.deliveryStatus === 'pending';
+          }
+        }
+
+        // For 'partially-delivered' - specifically show partial deliveries
+        if (status === 'partially-delivered') {
+          if (delivery.type === 'project') {
+            const deliveryStage = delivery.stages.find(
+              (stage) => stage.stage === 'DELIVERY',
+            );
+            return (
+              deliveryStage &&
+              deliveryStage.finished !== true &&
+              deliveryStage.status !== 'COMPLETED' &&
+              deliveryStage.actualWorkUnits > 0 &&
+              deliveryStage.actualWorkUnits < deliveryStage.workUnits
+            );
+          }
+          if (delivery.type === 'sell') {
+            return delivery.deliveryStatus === 'partially-delivered';
+          }
+        }
+
+        // For 'approved' - specifically show approved but not delivered
+        if (status === 'approved') {
+          if (delivery.type === 'project') {
+            const deliveryStage = delivery.stages.find(
+              (stage) => stage.stage === 'DELIVERY',
+            );
+            return (
+              deliveryStage &&
+              deliveryStage.finished !== true &&
+              deliveryStage.status !== 'COMPLETED'
+            );
+          }
+          if (delivery.type === 'sell') {
+            return (
+              delivery.saleStatus === 'APPROVED' &&
+              delivery.deliveryStatus !== 'finished'
+            );
+          }
         }
 
         return true;
       });
     }
 
-    const projectsWithProgress = eligibleProjects.map((project) => {
-      const deliveryStage = project.stages.find(
-        (stage) => stage.stage === 'DELIVERY',
-      );
-
-      let progress = 0;
-
-      if (deliveryStage) {
-        const plannedUnits =
-          deliveryStage.workUnits || deliveryStage.capacityDays || 0;
-        const actualUnits = deliveryStage.actualWorkUnits || 0;
-
-        if (plannedUnits > 0) {
-          progress = Math.min((actualUnits / plannedUnits) * 100, 100);
-        }
-      }
-
-      return {
-        ...project,
-        deliveryProgress: progress,
-        deliveryStage: deliveryStage || null,
-      };
+    // 7. Sort combined deliveries by date
+    allDeliveries.sort((a, b) => {
+      const dateA =
+        a.type === 'project' ? a.calculatedDelivery : a.deliveryDate;
+      const dateB =
+        b.type === 'project' ? b.calculatedDelivery : b.deliveryDate;
+      return new Date(dateB) - new Date(dateA);
     });
 
+    // 8. Calculate comprehensive breakdown
+    const breakdown = {
+      projects: {
+        total: eligibleProjects.length,
+        finished: eligibleProjects.filter((p) => p.isFinished).length,
+        'not-finished': eligibleProjects.filter((p) => p.isNotFinished).length,
+        pending: eligibleProjects.filter((p) => p.deliveryStatus === 'pending')
+          .length,
+        'in-progress': eligibleProjects.filter(
+          (p) => p.deliveryStatus === 'in-progress',
+        ).length,
+        'partially-delivered': eligibleProjects.filter(
+          (p) => p.deliveryStatus === 'partially-delivered',
+        ).length,
+        paid: eligibleProjects.filter((p) => p.isPaid).length,
+        unpaid: eligibleProjects.filter((p) => !p.isPaid).length,
+      },
+      sells: {
+        total: processedSells.length,
+        finished: processedSells.filter((s) => s.isFinished).length,
+        'not-finished': processedSells.filter((s) => s.isNotFinished).length,
+        pending: processedSells.filter((s) => s.deliveryStatus === 'pending')
+          .length,
+        'partially-delivered': processedSells.filter(
+          (s) => s.deliveryStatus === 'partially-delivered',
+        ).length,
+        approved: processedSells.filter(
+          (s) => s.saleStatus === 'APPROVED' && s.isNotFinished,
+        ).length,
+      },
+      sellPayment: {
+        paid: processedSells.filter((s) => s.paymentStatus === 'PAID').length,
+        partial: processedSells.filter((s) => s.paymentStatus === 'PARTIAL')
+          .length,
+        pending: processedSells.filter((s) => s.paymentStatus === 'PENDING')
+          .length,
+      },
+      sellSaleStatus: {
+        approved: processedSells.filter((s) => s.saleStatus === 'APPROVED')
+          .length,
+        delivered: processedSells.filter((s) => s.saleStatus === 'DELIVERED')
+          .length,
+        partiallyDelivered: processedSells.filter(
+          (s) => s.saleStatus === 'PARTIALLY_DELIVERED',
+        ).length,
+      },
+    };
+
     return {
-      projects: projectsWithProgress,
-      count: eligibleProjects.length,
-      total: projectsWithDelivery.length,
+      projects: allDeliveries,
+      count: allDeliveries.length,
+      total: projectsWithDelivery.length + sellsWithDelivery.length,
+      breakdown,
+      // Summary for quick viewing
+      summary: {
+        totalProjects: eligibleProjects.length,
+        totalSells: processedSells.length,
+        totalDeliveries: allDeliveries.length,
+        finished: allDeliveries.filter((d) => d.isFinished).length,
+        notFinished: allDeliveries.filter((d) => d.isNotFinished).length,
+        pending: allDeliveries.filter((d) => d.deliveryStatus === 'pending')
+          .length,
+        partiallyDelivered: allDeliveries.filter(
+          (d) => d.deliveryStatus === 'partially-delivered',
+        ).length,
+        approved: allDeliveries.filter(
+          (d) =>
+            d.type === 'sell' && d.saleStatus === 'APPROVED' && d.isNotFinished,
+        ).length,
+        paid: allDeliveries.filter((d) => d.isPaid).length,
+        unpaid: allDeliveries.filter((d) => !d.isPaid).length,
+      },
     };
   } catch (error) {
     console.error('Error fetching Delivery projects:', error);

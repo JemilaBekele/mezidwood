@@ -124,7 +124,9 @@ model Company {
 
 model Log {
   id        String      @id @default(uuid()) @map("_id") @db.Char(36)
-  action    String          @db.VarChar(1000)                    // e.g., "Added 50", "Transferred 20", "Sold 5"
+  action    String          @db.VarChar(1000) 
+    details   Json?    // 👈 Add this field for structured data
+                   // e.g., "Added 50", "Transferred 20", "Sold 5"
   userId    String?      @db.Char(36)
   user      User?        @relation(fields: [userId], references: [id])
 

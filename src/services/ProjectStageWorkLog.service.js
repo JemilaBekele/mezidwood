@@ -268,6 +268,7 @@ const createProjectStageWorkLog = async (workLogData) => {
           };
 
           // Create main log entry
+          // Create main log entry with separate JSON field
           const mainLogAction = `STAGE_COMPLETED: ${
             projectStageInfo.stage
           } - Freed ${totalFreedUnits.toFixed(2)} units capacity from ${
@@ -276,11 +277,8 @@ const createProjectStageWorkLog = async (workLogData) => {
 
           const capacityLog = await tx.log.create({
             data: {
-              action: `${mainLogAction}\nDetails: ${JSON.stringify(
-                logData,
-                null,
-                2,
-              )}`,
+              action: mainLogAction,
+              details: logData, // Store full details as JSON
               userId: doneById || null,
             },
           });
@@ -429,7 +427,6 @@ const createProjectStageWorkLog = async (workLogData) => {
                       });
                     } else {
                       const oldQuantity = itemStock.quantity;
-                     
 
                       itemStock = await tx.itemStock.update({
                         where: { id: itemStock.id },
@@ -513,7 +510,6 @@ const createProjectStageWorkLog = async (workLogData) => {
 
           // Find current stage index
           const currentStageIndex = stageOrder.indexOf(projectStage.stage);
-       
 
           // Find the next incomplete stage
           for (let i = currentStageIndex + 1; i < stageOrder.length; i++) {
@@ -522,7 +518,7 @@ const createProjectStageWorkLog = async (workLogData) => {
 
             if (stageObj && !stageObj.finished) {
               nextStage = stageObj;
-            
+
               break;
             } else if (stageObj) {
               console.log(
@@ -558,7 +554,6 @@ const createProjectStageWorkLog = async (workLogData) => {
             },
           });
 
-
           // Also update designStatus if DESIGN stage is finished
           if (projectStage.stage === 'DESIGN' && isFinished) {
             await tx.project.update({
@@ -589,8 +584,6 @@ const createProjectStageWorkLog = async (workLogData) => {
         isolationLevel: 'Serializable',
       },
     );
-
-  
 
     if (result.stockUpdateResults && result.stockUpdateResults.length > 0) {
       console.log('📦 Item stock update details:');
@@ -637,7 +630,6 @@ const createProjectStageWorkLog = async (workLogData) => {
       )}%)`;
     }
 
-
     // Post-commit cascade: when a stage completes, free its unused future
     // capacity and reschedule downstream stages from the real completion moment,
     // then refresh the project's delivery date. Best-effort — a failure here must
@@ -656,7 +648,6 @@ const createProjectStageWorkLog = async (workLogData) => {
         );
       }
     }
-
 
     return {
       workLog: result.workLog,

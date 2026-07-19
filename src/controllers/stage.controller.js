@@ -118,8 +118,18 @@ const getFinishingProjects = catchAsync(async (req, res) => {
 const getDeliveryProjects = catchAsync(async (req, res) => {
   let { status = 'all' } = req.query;
 
-  const allowedStatus = ['finished', 'not-finished', 'all'];
+  // Expanded allowed statuses to include all new filter options
+  const allowedStatus = [
+    'all',
+    'finished',
+    'not-finished',
+    'pending',
+    'partially-delivered',
+    'approved',
+    'in-progress',
+  ];
 
+  // Validate and sanitize status parameter
   if (!allowedStatus.includes(status)) {
     status = 'all';
   }
@@ -147,10 +157,8 @@ const getInstallationProjects = catchAsync(async (req, res) => {
     ...result,
   });
 });
-const getMaterialUsageReport  = catchAsync(async (req, res) => {
-
-
-  const result = await stages.getMaterialUsageReport ();
+const getMaterialUsageReport = catchAsync(async (req, res) => {
+  const result = await stages.getMaterialUsageReport();
 
   res.status(httpStatus.OK).send({
     success: true,
@@ -199,8 +207,7 @@ const getbyDesignProject = catchAsync(async (req, res) => {
     status = 'all';
   }
 
-  const result = await stages.getbyDesignProject(status,    req.user.id,
-);
+  const result = await stages.getbyDesignProject(status, req.user.id);
 
   res.status(httpStatus.OK).send({
     success: true,
@@ -228,7 +235,7 @@ module.exports = {
   getbyDesignProject,
   getDesignProjects,
   getPurchasingProjects,
-  getMaterialUsageReport ,
+  getMaterialUsageReport,
   getMetalWorkProjects,
   getCNCProjects,
   getCuttingProjects,
