@@ -91,30 +91,30 @@ class SystemInitializer {
 
       // First try to find existing admin user
       let adminUser;
-      try {
-        adminUser = await userService.getUserByEmail(adminData.email);
+      // try {
+      //   adminUser = await userService.getUserByEmail(adminData.email);
 
-        if (!adminUser) {
-          // User doesn't exist, create it
-          adminUser = await userService.createUser(adminData);
-          logger.info('Admin user created successfully');
-        } else {
-          // User exists, check role
-          // eslint-disable-next-line no-lonely-if
-          if (adminUser.roleId !== adminRole.id || adminUser.admin !== true) {
-            adminUser = await userService.updateUserById(adminUser.id, {
-              roleId: adminRole.id,
-              admin: true,
-            });
-            logger.info('Existing admin user role updated');
-          } else {
-            logger.info('Admin user already exists with correct role');
-          }
-        }
-      } catch (error) {
-        logger.error('Error in admin user setup:', error);
-        throw new Error('Failed to setup admin user');
-      }
+      //   if (!adminUser) {
+      //     // User doesn't exist, create it
+      //     adminUser = await userService.createUser(adminData);
+      //     logger.info('Admin user created successfully');
+      //   } else {
+      //     // User exists, check role
+      //     // eslint-disable-next-line no-lonely-if
+      //     if (adminUser.roleId !== adminRole.id || adminUser.admin !== true) {
+      //       adminUser = await userService.updateUserById(adminUser.id, {
+      //         roleId: adminRole.id,
+      //         admin: true,
+      //       });
+      //       logger.info('Existing admin user role updated');
+      //     } else {
+      //       logger.info('Admin user already exists with correct role');
+      //     }
+      //   }
+      // } catch (error) {
+      //   logger.error('Error in admin user setup:', error);
+      //   throw new Error('Failed to setup admin user');
+      // }
 
       return adminUser;
     } catch (error) {
