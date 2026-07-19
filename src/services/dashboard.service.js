@@ -1139,14 +1139,10 @@ const getDashboardCounts = async () => {
     // Count total customers
     const totalCustomers = await prisma.customer.count();
 
-    // Subtract 1 (e.g., to exclude a test or system customer)
-    // Make sure we don't go below 0
-    const adjustedCustomerCount = Math.max(0, totalCustomers - 1);
-
     // Count total suppliers
     const totalSuppliers = await prisma.supplier.count();
 
-    // Count projects with ALL stages finished
+    // Count projects with ALL stages finished (all ProjectStage.finished = true)
     const totalApprovedFinishedProjects = await prisma.project.count({
       where: {
         stages: {
@@ -1157,7 +1153,7 @@ const getDashboardCounts = async () => {
       },
     });
 
-    // Count projects with at least one stage NOT finished
+    // Count projects with at least one stage NOT finished (projects in process)
     const totalProjectsInProcess = await prisma.project.count({
       where: {
         stages: {
@@ -1169,7 +1165,7 @@ const getDashboardCounts = async () => {
     });
 
     return {
-      totalCustomers: adjustedCustomerCount,
+      totalCustomers,
       totalSuppliers,
       totalApprovedFinishedProjects,
       totalProjectsInProcess,
