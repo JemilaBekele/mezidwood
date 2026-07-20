@@ -48,6 +48,7 @@ module.exports = {
       name: 'VIEW_SYSTEM_DASHBOARD',
     },
   },
+  
   ROLE_PERMISSION: {
     CREATE: {
       name: 'CREATE_ROLE_PERMISSION',
@@ -430,6 +431,7 @@ module.exports = {
       name: 'ISSUE_STOCK_MATERIALS_FOR_PROFORMA',
     },
   },
+
   PROJECT: {
     CREATE: {
       name: 'CREATE_PROJECT',
