@@ -426,6 +426,9 @@ module.exports = {
     ADD_PAYMENT: {
       name: 'ADD_PAYMENT_TO_PROFORMA_INVOICE',
     },
+    ISSUE_STOCK_MATERIALS: {
+      name: 'ISSUE_STOCK_MATERIALS_FOR_PROFORMA',
+    },
   },
   PROJECT: {
     CREATE: {
@@ -479,8 +482,8 @@ module.exports = {
       name: 'VIEW_METAL_WORK_PROJECTS',
     },
 
-    VIEW_DESIGN_PROJECTS: {
-      name: 'VIEW_DESIGN_PROJECTS',
+    MANAGE_ALL_STAGES: {
+      name: 'MANAGE_ALL_STAGES',
     },
 
     VIEW_DESIGN_PROJECTS_BY_DESIGNER: {
