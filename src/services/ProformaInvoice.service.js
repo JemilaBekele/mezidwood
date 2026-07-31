@@ -99,7 +99,16 @@ const saveImageToProformaPath = async (file, invoiceId, itemId, index) => {
   return `/uploads/proforma/images/${newFilename}`;
 };
 // Create Proforma Invoice
-
+const rescheduleProjectStages = async (
+  projectId,
+  client = null,
+  byUserId = null,
+) =>
+  reschedule.reallocateProjectFromInvoiceMaterials(projectId, {
+    client,
+    byUserId,
+    startInstant: new Date(),
+  });
 const createProformaInvoice = async (
   invoiceData,
   userId,
@@ -140,7 +149,6 @@ const createProformaInvoice = async (
         }
 
         finalCustomerId = defaultCustomer.id;
-      
       } catch (error) {
         console.error('Error fetching default customer:', error);
         throw error;
@@ -211,6 +219,30 @@ const createProformaInvoice = async (
             }
           } catch (error) {
             console.error(`Error validating item ${item.itemId}:`, error);
+            throw error;
+          }
+        }
+
+        // ✅ Validate that categoryId exists in the category table (if provided)
+        if (item.categoryId) {
+          try {
+            const existingCategory = await prisma.productCategory.findUnique({
+              where: { id: item.categoryId },
+            });
+
+            if (!existingCategory) {
+              throw new ApiError(
+                httpStatus.NOT_FOUND,
+                `Item ${index + 1}: Category with ID ${
+                  item.categoryId
+                } not found`,
+              );
+            }
+          } catch (error) {
+            console.error(
+              `Error validating category ${item.categoryId}:`,
+              error,
+            );
             throw error;
           }
         }
@@ -297,7 +329,6 @@ const createProformaInvoice = async (
       balance = 0;
     } else {
       balance = total; // Since amountPaid is 0, balance equals total
-   
     }
     let paymentStatus;
     if (isStore) {
@@ -383,11 +414,12 @@ const createProformaInvoice = async (
                 }
               }
 
-              // ✅ Create the invoice item WITH itemId if provided
+              // ✅ Create the invoice item WITH itemId and categoryId if provided (both optional)
               const createdItem = await prismaTx.proformaInvoiceItem.create({
                 data: {
                   invoiceId: invoice.id,
-                  itemId: item.itemId || null, // ✅ Link to Items table if provided
+                  itemId: item.itemId || null, // ✅ Link to Items table if provided (optional)
+                  categoryId: item.categoryId || null, // ✅ Link to Category if provided (optional)
                   description: item.description.trim(),
                   size: sizeValue, // ✅ Use the extracted size value
                   quantity,
@@ -397,8 +429,12 @@ const createProformaInvoice = async (
                 },
               });
 
+              // Log the associations
               if (item.itemId) {
                 console.log(`  Linked to Item ID: ${item.itemId}`);
+              }
+              if (item.categoryId) {
+                console.log(`  Linked to Category ID: ${item.categoryId}`);
               }
 
               // Handle images from the item
@@ -422,7 +458,10 @@ const createProformaInvoice = async (
                     for (const [imgIndex, file] of uploadedFile.entries()) {
                       try {
                         // Validate file is actually an image
-                        if (!file.mimetype || !file.mimetype.startsWith('image/')) {
+                        if (
+                          !file.mimetype ||
+                          !file.mimetype.startsWith('image/')
+                        ) {
                           console.warn(
                             `Skipping non-image file: ${file.originalname} (${file.mimetype})`,
                           );
@@ -460,11 +499,14 @@ const createProformaInvoice = async (
                     let { imageUrl } = image;
 
                     // Don't store raw filenames that aren't proper paths
-                    if (!imageUrl.startsWith('/') && !imageUrl.startsWith('http')) {
+                    if (
+                      !imageUrl.startsWith('/') &&
+                      !imageUrl.startsWith('http')
+                    ) {
                       // Check if it's just a filename without path
                       if (!imageUrl.includes('/') && !imageUrl.includes('\\')) {
                         // This is a raw filename - we need to process it properly
-                       
+
                         continue;
                       }
                       // Normalize the path
@@ -491,9 +533,11 @@ const createProformaInvoice = async (
                       });
                     }),
                   );
-               
                 } catch (imageCreateError) {
-                  console.error('Error creating image records:', imageCreateError);
+                  console.error(
+                    'Error creating image records:',
+                    imageCreateError,
+                  );
                   throw imageCreateError;
                 }
               }
@@ -536,14 +580,20 @@ const createProformaInvoice = async (
                     }),
                   );
                 } catch (materialCreateError) {
-                  console.error('Error creating materials for item:', materialCreateError);
+                  console.error(
+                    'Error creating materials for item:',
+                    materialCreateError,
+                  );
                   throw materialCreateError;
                 }
               }
 
               return createdItem;
             } catch (itemError) {
-              console.error(`Error processing item at index ${index}:`, itemError);
+              console.error(
+                `Error processing item at index ${index}:`,
+                itemError,
+              );
               throw itemError;
             }
           }),
@@ -621,7 +671,10 @@ const createProformaInvoice = async (
                 const baseName = path.basename(file.originalname, fileExt);
 
                 // Sanitize filename (remove spaces and special characters)
-                const sanitizedBaseName = baseName.replace(/[^a-zA-Z0-9]/g, '_');
+                const sanitizedBaseName = baseName.replace(
+                  /[^a-zA-Z0-9]/g,
+                  '_',
+                );
                 const newFilename = `${timestamp}_${randomString}_${sanitizedBaseName}${fileExt}`;
                 const targetPath = path.join(targetDir, newFilename);
 
@@ -685,6 +738,13 @@ const createProformaInvoice = async (
                       price: true,
                     },
                   },
+                  category: {
+                    // ✅ Include the linked category
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
                   images: true,
                   proformaItemMaterials: {
                     include: {
@@ -717,7 +777,6 @@ const createProformaInvoice = async (
 
       return proformaInvoice;
     } catch (transactionError) {
-
       // Log the full error details
       if (transactionError.code) {
         console.error('Error code:', transactionError.code);
@@ -730,7 +789,6 @@ const createProformaInvoice = async (
     }
   } catch (error) {
     // Log the error with full details
-
 
     if (error.code) {
       console.error('Error code:', error.code);
@@ -757,18 +815,6 @@ const createProformaInvoice = async (
     );
   }
 };
-
-const rescheduleProjectStages = async (
-  projectId,
-  client = null,
-  byUserId = null,
-) =>
-  reschedule.reallocateProjectFromInvoiceMaterials(projectId, {
-    client,
-    byUserId,
-    startInstant: new Date(),
-  });
-
 const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
   // Check if invoice exists with all relations including project
   const existingInvoice = await prisma.proformaInvoice.findUnique({
@@ -818,6 +864,8 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
         unitPrice: item.unitPrice,
         size: item.size,
         additionalDescription: item.additionalDescription,
+        itemId: item.itemId,
+        categoryId: item.categoryId,
         materials:
           item.proformaItemMaterials?.map((m) => ({
             materialId: m.materialId,
@@ -834,6 +882,8 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
         unitPrice: item.unitPrice,
         size: item.size,
         additionalDescription: item.additionalDescription,
+        itemId: item.itemId || null,
+        categoryId: item.categoryId || null,
         materials:
           item.materials?.map((m) => ({
             materialId: m.materialId,
@@ -857,7 +907,6 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
   // This is an edit if any of these are true
   const isEditing =
     hasItemChanges || hasCustomerChange || hasBankChange || hasAttachmentChange;
-
 
   // Determine the final status
   let finalStatus = existingInvoice.status;
@@ -945,6 +994,20 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
           throw new ApiError(
             httpStatus.NOT_FOUND,
             `Item ${index + 1}: Item with ID ${item.itemId} not found`,
+          );
+        }
+      }
+
+      // ✅ Validate that categoryId exists in the category table (if provided)
+      if (item.categoryId) {
+        const existingCategory = await prisma.productCategory.findUnique({
+          where: { id: item.categoryId },
+        });
+
+        if (!existingCategory) {
+          throw new ApiError(
+            httpStatus.NOT_FOUND,
+            `Item ${index + 1}: Category with ID ${item.categoryId} not found`,
           );
         }
       }
@@ -1217,7 +1280,7 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
 
         // Update items if provided
         if (itemsToUpdate) {
-          // ✅ Get existing items to preserve itemId references
+          // ✅ Get existing items to preserve itemId and categoryId references
           const existingItems = await prismaTx.proformaInvoiceItem.findMany({
             where: { invoiceId: id },
             include: {
@@ -1279,12 +1342,15 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
               let createdItem;
 
               if (existingItem) {
-                // ✅ UPDATE existing item - preserve itemId
+                // ✅ UPDATE existing item - preserve itemId and categoryId
                 createdItem = await prismaTx.proformaInvoiceItem.update({
                   where: { id: existingItem.id },
                   data: {
-                    // ✅ Keep existing itemId, or update if provided
+                    // ✅ Keep existing itemId, or update if provided (optional)
                     itemId: item.itemId || existingItem.itemId || null,
+                    // ✅ Keep existing categoryId, or update if provided (optional)
+                    categoryId:
+                      item.categoryId || existingItem.categoryId || null,
                     description: item.description.trim(),
                     size: item.size?.trim(),
                     quantity,
@@ -1302,11 +1368,12 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
                   where: { itemId: existingItem.id },
                 });
               } else {
-                // ✅ CREATE new item - include itemId
+                // ✅ CREATE new item - include itemId and categoryId (both optional)
                 createdItem = await prismaTx.proformaInvoiceItem.create({
                   data: {
                     invoiceId: id,
-                    itemId: item.itemId || null, // ✅ Link to Items table if provided
+                    itemId: item.itemId || null, // ✅ Link to Items table if provided (optional)
+                    categoryId: item.categoryId || null, // ✅ Link to Category if provided (optional)
                     description: item.description.trim(),
                     size: item.size?.trim(),
                     quantity,
@@ -1315,6 +1382,23 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
                     additionalDescription: item.additionalDescription?.trim(),
                   },
                 });
+              }
+
+              // Log the associations
+              if (item.itemId || (existingItem && existingItem.itemId)) {
+                console.log(
+                  `  Linked to Item ID: ${item.itemId || existingItem.itemId}`,
+                );
+              }
+              if (
+                item.categoryId ||
+                (existingItem && existingItem.categoryId)
+              ) {
+                console.log(
+                  `  Linked to Category ID: ${
+                    item.categoryId || existingItem.categoryId
+                  }`,
+                );
               }
 
               // Handle images from the item
@@ -1614,6 +1698,13 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
                     id: true,
                     name: true,
                     price: true,
+                  },
+                },
+                category: {
+                  // ✅ Include the linked category details
+                  select: {
+                    id: true,
+                    name: true,
                   },
                 },
                 images: true,
@@ -2207,6 +2298,7 @@ const getProformaInvoiceById = async (id) => {
           },
           item: true, // Include item details (like name) if it's a relation to a product/item table
           images: true,
+          category: true,
         },
       },
       piLogs: {

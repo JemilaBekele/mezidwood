@@ -470,6 +470,8 @@ model ProductCategory {
   items Items[]
 
   sizes Size[]
+
+  proformaInvoiceItems ProformaInvoiceItem[]
 }
 model Size {
   id        String   @id @default(uuid())
@@ -491,7 +493,7 @@ model ProductType {
   updatedAt DateTime @updatedAt
 
   sizeId    String?
-  size      Size?     @relation(fields: [sizeId], references: [id]) // 👈 Type belongs to Size
+  size      Size?     @relation(fields: [sizeId], references: [id])
 
 
 
@@ -799,6 +801,10 @@ model ProformaInvoiceItem {
 
     itemId      String?  // Add this field
   item        Items?   @relation(fields: [itemId], references: [id]) // Add this relation
+  
+  categoryId String?
+  category   ProductCategory? @relation(fields: [categoryId], references: [id])
+
 
   additionalDescription String? @db.Text  // Also change this if it has long content
   images ProformaInvoiceItemImage[]
