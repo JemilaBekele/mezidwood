@@ -2319,7 +2319,8 @@ const getInstallationProjects = async (status = 'all') => {
     };
   }
 };
-const getMaterialUsageReport = async () => {
+const getMaterialUsageReport = async (options = {}) => {
+  const { onlyShowPurchaseNeeded = false } = options;
   try {
     // Get request date
     const requestDate = new Date();
@@ -2701,15 +2702,49 @@ const getMaterialUsageReport = async () => {
       totalMaterialsInSummary: summary.length,
       projectsWithMaterials: piReports.length,
     };
+    let finalSummary = summary;
 
-    console.log('📊 Report Statistics:', stats);
+    if (onlyShowPurchaseNeeded) {
+      finalSummary = summary.filter((item) => item.need > 0);
+    }
+    const filteredPiReports = piReports
+      .map((piReport) => {
+        const materialsNeedingPurchase = piReport.materials.filter(
+          (material) => {
+            const stock = stockMap.get(material.materialId) || 0;
+            const need =
+              material.required > stock ? material.required - stock : 0;
+            return need > 0;
+          },
+        );
 
+        if (materialsNeedingPurchase.length === 0) {
+          return null;
+        }
+
+        return {
+          ...piReport,
+          materials: materialsNeedingPurchase,
+        };
+      })
+      .filter((piReport) => piReport !== null);
+
+    // Update stats
+    const updatedStats = {
+      ...stats,
+      totalPurchaseNeeded: finalSummary.reduce(
+        (sum, item) => sum + item.need,
+        0,
+      ),
+      totalMaterialsInSummary: finalSummary.length,
+      projectsWithMaterials: filteredPiReports.length,
+    };
     return {
       success: true,
       requestDate: requestDate.toISOString(),
-      piReports,
-      summary,
-      stats,
+      piReports: filteredPiReports,
+      summary: finalSummary,
+      stats: updatedStats,
     };
   } catch (error) {
     console.error('❌ Error generating Material Usage Report:', error);
