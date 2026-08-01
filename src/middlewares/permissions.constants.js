@@ -22,6 +22,7 @@ module.exports = {
       name: 'VIEW_MAIN_DASHBOARD',
       description: 'View main dashboard',
     },
+
     VIEW_REPORT: {
       name: 'VIEW_SALES_REPORT_VIEW_DASHBOARD',
       description: 'View sales report',
@@ -48,7 +49,7 @@ module.exports = {
       name: 'VIEW_SYSTEM_DASHBOARD',
     },
   },
-  
+
   ROLE_PERMISSION: {
     CREATE: {
       name: 'CREATE_ROLE_PERMISSION',
@@ -342,6 +343,9 @@ module.exports = {
     },
     DELETE: {
       name: 'DELETE_MATERIAL',
+    },
+    MATERIAL_INITIAL_STOCK: {
+      name: 'CREATE_MATERIAL_INITIAL_STOCK',
     },
   },
   MATERIAL_CATEGORY: {

@@ -356,7 +356,7 @@ const createProjectStageWorkLog = async (workLogData) => {
 
         // ===== UPDATE PROJECT STATUS IF STAGE IS FINISHED =====
         let updatedProject = null;
-        let nextStage = null;
+        const nextStage = null;
         const stockUpdateResults = [];
 
         if (isFinished) {
@@ -479,20 +479,13 @@ const createProjectStageWorkLog = async (workLogData) => {
               }
             }
           }
-
           // Get all stages for this project
           const allStages = await tx.projectStage.findMany({
             where: { projectId: projectStage.projectId },
             orderBy: { stage: 'asc' },
           });
-          console.log(`📋 Total stages in project: ${allStages.length}`);
-          allStages.forEach((s, idx) => {
-            console.log(
-              `  Stage ${idx + 1}: ${s.stage} - finished: ${s.finished}`,
-            );
-          });
 
-          // Define stage order (based on your enum)
+          // Define stage order
           const stageOrder = [
             'INVOICE',
             'DESIGN',
@@ -512,37 +505,40 @@ const createProjectStageWorkLog = async (workLogData) => {
           const currentStageIndex = stageOrder.indexOf(projectStage.stage);
 
           // Find the next incomplete stage
+          let nextStage = null;
+          let hasIncompleteFutureStage = false;
+
           for (let i = currentStageIndex + 1; i < stageOrder.length; i++) {
             const stageName = stageOrder[i];
             const stageObj = allStages.find((s) => s.stage === stageName);
 
             if (stageObj && !stageObj.finished) {
               nextStage = stageObj;
-
+              hasIncompleteFutureStage = true;
               break;
-            } else if (stageObj) {
-              console.log(
-                `  Stage ${stageName} is already finished, skipping...`,
-              );
-            } else {
-              console.log(`  Stage ${stageName} not found in project stages`);
             }
           }
 
-          if (!nextStage) {
-            console.log('⚠️ No next stage found - all stages may be completed');
-          }
+          // Check if this is the last stage in the project's stage list
+          const projectStageNames = allStages.map((s) => s.stage);
+          const lastProjectStage =
+            projectStageNames[projectStageNames.length - 1];
+          const isLastStageInProject = projectStage.stage === lastProjectStage;
 
           // Update project status
           let newProjectStatus = null;
 
-          if (nextStage) {
+          if (isLastStageInProject && isFinished) {
+            // This is the final stage for this project
+            newProjectStatus = 'COMPLETED';
+            console.log('🏁 PROJECT COMPLETED! Final stage finished.');
+          } else if (nextStage) {
             // Move to next stage
             newProjectStatus = nextStage.stage;
           } else {
-            // All stages are finished
-            newProjectStatus = 'INSTALLATION';
-            console.log('🏁 ALL STAGES FINISHED! Project completed.');
+            // Fallback: no next stage found
+            newProjectStatus = 'COMPLETED';
+            console.log('🏁 PROJECT COMPLETED! No more stages.');
           }
 
           // Update the project
@@ -550,7 +546,12 @@ const createProjectStageWorkLog = async (workLogData) => {
             where: { id: projectStage.projectId },
             data: {
               status: newProjectStatus,
-              ...(nextStage ? {} : { finalDelivery: new Date() }),
+              ...(newProjectStatus === 'COMPLETED'
+                ? {
+                    finalDelivery: new Date(),
+                    completedAt: new Date(),
+                  }
+                : {}),
             },
           });
 

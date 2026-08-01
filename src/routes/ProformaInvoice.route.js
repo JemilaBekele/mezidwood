@@ -76,7 +76,7 @@ router.get(
   proformaInvoiceController.getProformaInvoiceByPInumber,
 );
 
-// Update Proforma Invoice
+// Update Proforma Invoice updateProformaInvoiceseco
 router.put(
   '/api/proforma-invoices/:id',
   auth,
@@ -114,7 +114,43 @@ router.put(
 
   proformaInvoiceController.updateProformaInvoice,
 );
+router.put(
+  '/api/proforma-invoices/secondupdate/:id',
+  auth,
+  (req, res, next) => {
+    console.log('=== RAW REQUEST INSPECTION ===');
 
+    // Log raw chunks as they come in
+    const oldWrite = res.write;
+    const oldEnd = res.end;
+    const chunks = [];
+
+    req.on('data', (chunk) => {
+      console.log('Received chunk:', chunk.length, 'bytes');
+      chunks.push(chunk);
+    });
+
+    req.on('end', () => {
+      console.log(
+        'Request ended, total size:',
+        Buffer.concat(chunks).length,
+        'bytes',
+      );
+
+      // Log first 500 chars to see the boundary
+      const buffer = Buffer.concat(chunks);
+      const preview = buffer.toString('utf8', 0, Math.min(500, buffer.length));
+      console.log('First 500 chars of raw request:');
+      console.log(preview);
+    });
+
+    next();
+  },
+  debugUploadProformaInvoice,
+  checkPermission('UPDATE_PROFORMA'),
+
+  proformaInvoiceController.updateProformaInvoiceseco,
+);
 // Delete Proforma Invoice
 router.delete(
   '/api/proforma-invoices/:id',

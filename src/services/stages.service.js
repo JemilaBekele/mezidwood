@@ -1671,8 +1671,8 @@ const getDeliveryProjects = async (status = 'all') => {
             total: true,
             status: true,
             paymentStatus: true, // ✅ ADDED: Payment status from invoice
-            amountPaid: true,    // ✅ ADDED: Amount paid
-            balance: true,       // ✅ ADDED: Balance
+            amountPaid: true, // ✅ ADDED: Amount paid
+            balance: true, // ✅ ADDED: Balance
           },
         },
         stages: {
@@ -1836,7 +1836,7 @@ const getDeliveryProjects = async (status = 'all') => {
           allPrerequisitesFinished,
           prerequisiteStatus,
           paymentStatus: paymentStatus || 'PENDING',
-          isPaid: isPaid,
+          isPaid,
           deliveryStatus:
             deliveryStage?.finished || deliveryStage?.status === 'COMPLETED'
               ? 'finished'
@@ -2320,150 +2320,428 @@ const getInstallationProjects = async (status = 'all') => {
   }
 };
 const getMaterialUsageReport = async () => {
-  // Fetch ALL proforma invoices
-  const invoices = await prisma.proformaInvoice.findMany({
-    include: {
-      items: {
-        include: {
-          proformaItemMaterials: {
-            include: {
-              material: {
-                select: {
-                  id: true,
-                  name: true,
+  try {
+    // Get request date
+    const requestDate = new Date();
+
+    // Fetch ALL proforma invoices with their project relation
+    const invoices = await prisma.proformaInvoice.findMany({
+      include: {
+        items: {
+          include: {
+            proformaItemMaterials: {
+              include: {
+                material: {
+                  select: {
+                    id: true,
+                    name: true,
+                    imageUrl: true,
+                    color: true,
+                    size: true,
+                    plainMDF: true,
+                    laminatedMDF: true,
+                    wood: true,
+                    metal: true,
+                    accessory: true,
+                    other: true,
+                  },
                 },
               },
             },
           },
         },
-      },
-      customer: {
-        select: {
-          id: true,
-          name: true,
+        customer: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        project: {
+          include: {
+            designBy: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+            stages: {
+              select: {
+                stage: true,
+                finished: true,
+                startDate: true,
+                endDate: true,
+                status: true,
+              },
+            },
+          },
         },
       },
-    },
-    orderBy: {
-      piNumber: 'asc',
-    },
-  });
-
-  // Inventory stocks
-  const inventoryStocks = await prisma.inventoryStock.findMany({
-    where: {
-      status: 'Available',
-    },
-  });
-
-  // Build stock map
-  const stockMap = inventoryStocks.reduce((map, stock) => {
-    const current = map.get(stock.materialId) || 0;
-
-    map.set(stock.materialId, current + stock.quantity);
-
-    return map;
-  }, new Map());
-
-  // Material totals map
-  const materialTotals = new Map();
-
-  // PI reports
-  const piReports = invoices.reduce((invoiceAcc, invoice) => {
-    const materialsForPI = [];
-
-    invoice.items.forEach((item) => {
-      item.proformaItemMaterials.forEach((materialItem) => {
-        // Skip issued/cancelled
-        if (
-          materialItem.status === 'ISSUED' ||
-          materialItem.status === 'CANCELLED'
-        ) {
-          return;
-        }
-
-        const totalRequired =
-          (materialItem.quantity || 0) + (materialItem.additionalQuantity || 0);
-
-        const alreadyIssued = materialItem.givenquantity || 0;
-
-        const remainingRequired = totalRequired - alreadyIssued;
-
-        // Skip empty remaining
-        if (remainingRequired <= 0) {
-          return;
-        }
-
-        const { materialId } = materialItem;
-
-        const materialName = materialItem.material.name;
-
-        const stock = stockMap.get(materialId) || 0;
-
-        materialsForPI.push({
-          name: materialName,
-          required: remainingRequired,
-          stock,
-          status: materialItem.status,
-        });
-
-        // Initialize material totals
-        if (!materialTotals.has(materialId)) {
-          materialTotals.set(materialId, {
-            name: materialName,
-            requirements: [],
-            totalRequired: 0,
-          });
-        }
-
-        const materialData = materialTotals.get(materialId);
-
-        materialData.requirements.push({
-          piNumber: invoice.piNumber,
-          customerName: invoice.customer?.name || 'Unknown',
-          required: remainingRequired,
-          status: materialItem.status,
-        });
-
-        materialData.totalRequired += remainingRequired;
-      });
+      orderBy: {
+        piNumber: 'asc',
+      },
     });
 
-    if (materialsForPI.length > 0) {
-      invoiceAcc.push({
-        piNumber: invoice.piNumber,
-        customerName: invoice.customer?.name,
-        materials: materialsForPI,
+    // Log all projects and their design status for debugging
+    console.log('📊 Projects with design status:');
+    invoices.forEach((invoice) => {
+      if (invoice.project) {
+        console.log(
+          `  PI: ${invoice.piNumber} | Project Status: ${
+            invoice.project.status
+          } | Design Status: ${
+            invoice.project.designStatus || 'N/A'
+          } | Design Finished: ${invoice.project.designFinished || false}`,
+        );
+      }
+    });
+
+    // ============================================================
+    // STEP 1: Filter projects that meet BOTH criteria:
+    //         1. Project is NOT COMPLETED or CANCELLED
+    //         2. DesignStatus is DESIGN_FINISHED
+    // ============================================================
+    const eligibleProjects = invoices.filter((invoice) => {
+      // Check if project exists
+      if (!invoice.project) return false;
+
+      // Check if project is NOT COMPLETED or CANCELLED
+      const isActive =
+        invoice.project.status !== 'COMPLETED' &&
+        invoice.project.status !== 'CANCELLED';
+
+      if (!isActive) return false;
+
+      // Check if DesignStatus is DESIGN_FINISHED
+      const isDesignFinished =
+        invoice.project.designStatus === 'DESIGN_FINISHED' ||
+        invoice.project.designStatus === 'FINISHED' ||
+        invoice.project.designFinished !== null;
+
+      return isDesignFinished;
+    });
+
+    console.log(
+      `✅ Eligible projects (active + design finished): ${eligibleProjects.length}`,
+    );
+    eligibleProjects.forEach((inv) => {
+      console.log(
+        `  ✅ PI: ${inv.piNumber} | Status: ${inv.project.status} | Design Status: ${inv.project.designStatus}`,
+      );
+    });
+
+    // Log skipped projects for debugging
+    const skippedProjects = invoices.filter((invoice) => {
+      if (!invoice.project) return true;
+      const isActive =
+        invoice.project.status !== 'COMPLETED' &&
+        invoice.project.status !== 'CANCELLED';
+      const isDesignFinished =
+        invoice.project.designStatus === 'DESIGN_FINISHED' ||
+        invoice.project.designStatus === 'FINISHED' ||
+        invoice.project.designFinished !== null;
+      return !isActive || !isDesignFinished;
+    });
+
+    if (skippedProjects.length > 0) {
+      console.log('⚠️ Skipped projects (inactive or design not finished):');
+      skippedProjects.forEach((inv) => {
+        if (!inv.project) {
+          console.log(`  ⚠️ PI: ${inv.piNumber} | No Project`);
+          return;
+        }
+        console.log(
+          `  ⚠️ PI: ${inv.piNumber} | Status: ${
+            inv.project.status
+          } | Design Status: ${inv.project.designStatus || 'N/A'}`,
+        );
       });
     }
 
-    return invoiceAcc;
-  }, []);
+    // ============================================================
+    // STEP 2: Check inventory stocks for eligible projects
+    // ============================================================
+    let stockMap = new Map();
+    if (eligibleProjects.length > 0) {
+      const inventoryStocks = await prisma.inventoryStock.findMany({
+        where: {
+          status: 'Available',
+        },
+      });
 
-  // Build purchase-needed summary
-  const summary = Array.from(materialTotals.entries())
-    .map(([materialId, data]) => {
-      const stock = stockMap.get(materialId) || 0;
+      stockMap = inventoryStocks.reduce((map, stock) => {
+        const current = map.get(stock.materialId) || 0;
+        map.set(stock.materialId, current + stock.quantity);
+        return map;
+      }, new Map());
 
-      const need = data.totalRequired > stock ? data.totalRequired - stock : 0;
+      console.log(
+        `ℹ️ Checking stock for ${eligibleProjects.length} eligible projects with finished design`,
+      );
+    } else {
+      console.log(
+        'ℹ️ No eligible projects (active + design finished), skipping stock check',
+      );
+      console.log(
+        '💡 Tip: Set DesignStatus to DESIGN_FINISHED for active projects to see material requirements',
+      );
+    }
 
-      return {
-        materialName: data.name,
-        requirements: data.requirements,
-        totalRequired: data.totalRequired,
-        stock,
-        need,
-      };
-    })
-    // Only show purchase-needed materials
-    .filter((item) => item.need > 0)
-    .sort((a, b) => a.materialName.localeCompare(b.materialName));
+    // ============================================================
+    // STEP 3: Process ONLY eligible projects
+    // ============================================================
 
-  return {
-    piReports,
-    summary,
-  };
+    // Material totals map - Store all material details
+    const materialTotals = new Map();
+
+    // PI reports - Process only eligible projects
+    const piReports = eligibleProjects.reduce((invoiceAcc, invoice) => {
+      const materialsForPI = [];
+
+      // Check if design is finished
+      const isDesignFinished =
+        invoice.project.designStatus === 'DESIGN_FINISHED' ||
+        invoice.project.designStatus === 'FINISHED' ||
+        invoice.project.designFinished !== null;
+
+      // Get designer name
+      const designerName = invoice.project.designBy?.name || 'Not Assigned';
+      const designerEmail = invoice.project.designBy?.email || null;
+
+      // Get the requested delivery date for this project
+      const { requestedDelivery } = invoice.project;
+
+      invoice.items.forEach((item) => {
+        item.proformaItemMaterials.forEach((materialItem) => {
+          // Skip issued or cancelled materials
+          if (
+            materialItem.status === 'ISSUED' ||
+            materialItem.status === 'CANCELLED'
+          ) {
+            return;
+          }
+
+          const totalRequired =
+            (materialItem.quantity || 0) +
+            (materialItem.additionalQuantity || 0);
+
+          const alreadyIssued = materialItem.givenquantity || 0;
+
+          const remainingRequired = totalRequired - alreadyIssued;
+
+          // Skip if nothing remaining
+          if (remainingRequired <= 0) {
+            return;
+          }
+
+          const { materialId } = materialItem;
+          const materialName =
+            materialItem.material?.name || 'Unknown Material';
+          const materialImageUrl = materialItem.material?.imageUrl || null;
+
+          // Get stock (design is finished, so stock should be available)
+          const stock = stockMap.get(materialId) || 0;
+
+          materialsForPI.push({
+            materialId,
+            name: materialName,
+            imageUrl: materialImageUrl,
+            required: remainingRequired,
+            stock,
+            status: materialItem.status,
+            color: materialItem.material?.color || '',
+            size: materialItem.material?.size || '',
+            materialType: getMaterialType(materialItem.material),
+            designFinished: isDesignFinished,
+            designerName,
+            designerEmail,
+            projectStatus: invoice.project.status,
+            requestedDelivery, // Add requested delivery date per material
+          });
+
+          // Initialize material totals
+          if (!materialTotals.has(materialId)) {
+            materialTotals.set(materialId, {
+              id: materialId,
+              name: materialName,
+              imageUrl: materialImageUrl,
+              color: materialItem.material?.color || '',
+              size: materialItem.material?.size || '',
+              materialType: getMaterialType(materialItem.material),
+              plainMDF: materialItem.material?.plainMDF || false,
+              laminatedMDF: materialItem.material?.laminatedMDF || false,
+              wood: materialItem.material?.wood || false,
+              metal: materialItem.material?.metal || false,
+              accessory: materialItem.material?.accessory || false,
+              other: materialItem.material?.other || false,
+              requirements: [],
+              totalRequired: 0,
+            });
+          }
+
+          const materialData = materialTotals.get(materialId);
+
+          materialData.requirements.push({
+            piNumber: invoice.piNumber,
+            customerName: invoice.customer?.name || 'Unknown',
+            required: remainingRequired,
+            status: materialItem.status,
+            designerName,
+            designFinished: isDesignFinished,
+            projectStatus: invoice.project.status,
+            requestedDelivery, // Add requested delivery date per requirement
+          });
+
+          materialData.totalRequired += remainingRequired;
+        });
+      });
+
+      if (materialsForPI.length > 0) {
+        invoiceAcc.push({
+          piNumber: invoice.piNumber,
+          customerName: invoice.customer?.name || 'Unknown',
+          projectId: invoice.project?.id || null,
+          projectStatus: invoice.project?.status || null,
+          designerName,
+          designerEmail,
+          designFinished: isDesignFinished,
+          requestedDelivery, // Add requested delivery date per PI
+          materials: materialsForPI,
+        });
+      } else {
+        console.log(
+          `  ⚠️ PI ${invoice.piNumber} has no materials with pending requirements`,
+        );
+      }
+
+      return invoiceAcc;
+    }, []);
+
+    // ============================================================
+    // STEP 4: Build summary with stock comparison
+    // ============================================================
+    const summary = Array.from(materialTotals.entries())
+      .map(([materialId, data]) => {
+        const stock = stockMap.get(materialId) || 0;
+        const need =
+          data.totalRequired > stock ? data.totalRequired - stock : 0;
+
+        return {
+          materialId,
+          materialName: data.name,
+          imageUrl: data.imageUrl,
+          color: data.color || '',
+          size: data.size || '',
+          materialType: data.materialType || '',
+          requirements: data.requirements,
+          totalRequired: data.totalRequired,
+          stock,
+          need,
+          designFinished: true, // All materials here have design finished
+          plainMDF: data.plainMDF || false,
+          laminatedMDF: data.laminatedMDF || false,
+          wood: data.wood || false,
+          metal: data.metal || false,
+          accessory: data.accessory || false,
+          other: data.other || false,
+        };
+      })
+      .sort((a, b) => a.materialName.localeCompare(b.materialName));
+
+    // ============================================================
+    // STEP 5: Log results
+    // ============================================================
+    if (summary.length === 0) {
+      console.log('ℹ️ No materials found for eligible projects');
+      console.log('  Reasons could be:');
+      console.log('  - No active projects with design finished');
+      console.log('  - Projects have no materials in proforma invoice items');
+      console.log('  - All materials have been issued or cancelled');
+    } else {
+      console.log(
+        `✅ ${summary.length} materials found with stock comparison:`,
+      );
+      summary.forEach((m) => {
+        const status = m.need > 0 ? '⚠️ NEEDS PURCHASE' : '✅ SUFFICIENT';
+        console.log(
+          `  ${status} | ${m.materialName} | Required: ${m.totalRequired} | Stock: ${m.stock} | Need: ${m.need}`,
+        );
+      });
+    }
+
+    // ============================================================
+    // STEP 6: Statistics
+    // ============================================================
+    const stats = {
+      requestDate: requestDate.toISOString(),
+      totalEligibleProjects: eligibleProjects.length,
+      totalIneligibleProjects: invoices.filter(
+        (inv) =>
+          inv.project !== null &&
+          (inv.project.status === 'COMPLETED' ||
+            inv.project.status === 'CANCELLED'),
+      ).length,
+      totalProjectsWithoutDesign: invoices.filter((inv) => {
+        if (!inv.project) return false;
+        const isDesignFinished =
+          inv.project.designStatus === 'DESIGN_FINISHED' ||
+          inv.project.designStatus === 'FINISHED' ||
+          inv.project.designFinished !== null;
+        return (
+          !isDesignFinished &&
+          inv.project.status !== 'COMPLETED' &&
+          inv.project.status !== 'CANCELLED'
+        );
+      }).length,
+      totalMaterialsNeeded: Array.from(materialTotals.values()).reduce(
+        (sum, data) => sum + data.totalRequired,
+        0,
+      ),
+      totalPurchaseNeeded: summary.reduce((sum, item) => sum + item.need, 0),
+      totalMaterialsInSummary: summary.length,
+      projectsWithMaterials: piReports.length,
+    };
+
+    console.log('📊 Report Statistics:', stats);
+
+    return {
+      success: true,
+      requestDate: requestDate.toISOString(),
+      piReports,
+      summary,
+      stats,
+    };
+  } catch (error) {
+    console.error('❌ Error generating Material Usage Report:', error);
+    console.error('Error details:', {
+      message: error?.message,
+      stack: error?.stack,
+      name: error?.name,
+      ...(error?.response && { response: error.response }),
+    });
+
+    throw new Error(
+      `Failed to generate material usage report: ${
+        error?.message || 'Unknown error'
+      }`,
+    );
+  }
 };
+
+/**
+ * Helper function to determine material type
+ */
+function getMaterialType(material) {
+  if (!material) return 'Unknown';
+
+  if (material.plainMDF) return 'Plain MDF';
+  if (material.laminatedMDF) return 'Laminated MDF';
+  if (material.wood) return 'Wood';
+  if (material.metal) return 'Metal';
+  if (material.accessory) return 'Accessory';
+  if (material.other) return 'Other';
+  return 'Unknown';
+}
 
 module.exports = {
   getUnassignedDesignProjects,

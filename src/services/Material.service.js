@@ -757,6 +757,7 @@ const getAllMaterials = async () => {
       createdAt: material.createdAt,
       updatedAt: material.updatedAt,
       color: material.color,
+      size: material.size,  // This will now be included in the response
 
       // Boolean fields
       plainMDF: material.plainMDF || false,
@@ -1238,7 +1239,93 @@ const getMaterialStockById = async (materialId) => {
     availableStock: totalAvailableStock,
   };
 };
+async function checkAndUpdatePurchasingStage(tx, invoiceId, userId) {
+  // Get all materials for this invoice
+  const invoice = await tx.proformaInvoice.findUnique({
+    where: { id: invoiceId },
+    include: {
+      items: {
+        include: {
+          proformaItemMaterials: true,
+        },
+      },
+    },
+  });
 
+  if (!invoice) {
+    console.warn('Invoice not found for checking material status');
+    return;
+  }
+
+  // Collect all materials from all items
+  const allMaterials = [];
+  invoice.items.forEach((item) => {
+    if (item.proformaItemMaterials && item.proformaItemMaterials.length > 0) {
+      allMaterials.push(...item.proformaItemMaterials);
+    }
+  });
+
+  if (allMaterials.length === 0) {
+    return; // No materials to check
+  }
+
+  // Check if all materials are issued
+  const allIssued = allMaterials.every((material) => {
+    const totalRequired =
+      (material.quantity || 0) + (material.additionalQuantity || 0);
+    const totalGiven = material.givenquantity || 0;
+    return totalGiven >= totalRequired && material.status === 'ISSUED';
+  });
+
+  if (!allIssued) {
+    return; // Not all materials are issued yet
+  }
+
+  // Find the purchasing stage for this invoice's project
+  const project = await tx.project.findFirst({
+    where: { invoiceId },
+    include: {
+      stages: {
+        where: { stage: 'PURCHASING' },
+      },
+    },
+  });
+
+  if (!project || project.stages.length === 0) {
+    console.warn('No purchasing stage found for this project');
+    return;
+  }
+
+  const purchasingStage = project.stages[0];
+
+  // Calculate total work units (sum of all material quantities)
+  const totalWorkUnits = allMaterials.reduce((sum, material) => {
+    return sum + (material.quantity || 0) + (material.additionalQuantity || 0);
+  }, 0);
+
+  // Update the purchasing stage
+  await tx.projectStage.update({
+    where: { id: purchasingStage.id },
+    data: {
+      finished: true,
+      endDate: new Date(),
+      status: 'COMPLETED',
+      workUnits: totalWorkUnits,
+      actualWorkUnits: totalWorkUnits, // Set actualWorkUnits to match workUnits
+    },
+  });
+
+  // Create a log entry
+  await tx.projectLog.create({
+    data: {
+      projectId: project.id,
+      note: `Purchasing stage completed. All ${allMaterials.length} materials have been issued. Total work units: ${totalWorkUnits}`,
+      createdById: userId,
+    },
+  });
+
+  console.log(`✅ Purchasing stage completed for project ${project.id}`);
+}
 const updateProformaMaterialStatus = async (
   proformaMaterialId,
   status,
@@ -1267,7 +1354,16 @@ const updateProformaMaterialStatus = async (
         },
         item: {
           include: {
-            invoice: true,
+            invoice: {
+              include: {
+                customer: true, // ✅ Add this to load customer data
+                items: {
+                  include: {
+                    proformaItemMaterials: true,
+                  },
+                },
+              },
+            },
           },
         },
         materialIssues: {
@@ -1344,7 +1440,6 @@ const updateProformaMaterialStatus = async (
             materialId: proformaMaterial.materialId,
           },
         });
-        console.log('inventory stock', inventoryStock);
         if (!inventoryStock) {
           throw new ApiError(
             httpStatus.BAD_REQUEST,
@@ -1371,6 +1466,11 @@ const updateProformaMaterialStatus = async (
           },
         });
 
+        // Get customer name safely
+        const customerName = proformaMaterial.item?.invoice?.customer?.name || 
+                            proformaMaterial.item?.invoice?.customer?.companyName || 
+                            'Unknown Customer';
+
         // Create stock ledger entry with correct reference
         await tx.stockLedger.create({
           data: {
@@ -1378,7 +1478,7 @@ const updateProformaMaterialStatus = async (
             movementType: 'OUT',
             quantity: newTotalGiven,
             unitId: proformaMaterial.material.unitOfMeasureId,
-            reference: `Proforma-${proformaMaterial.item?.invoice?.piNumber}-Customer-${proformaMaterial.item?.invoice?.customer?.name}`,
+            reference: `Proforma-${proformaMaterial.item?.invoice?.piNumber}-Customer-${customerName}`,
             userId,
             notes: `Material issued for proforma invoice ${
               proformaMaterial.item.invoice.piNumber
@@ -1440,6 +1540,13 @@ const updateProformaMaterialStatus = async (
           },
         });
 
+        // Check if all materials are issued and update purchasing stage
+        await checkAndUpdatePurchasingStage(
+          tx,
+          proformaMaterial.item.invoice.id,
+          userId,
+        );
+
         return updated;
       }
 
@@ -1482,6 +1589,11 @@ const updateProformaMaterialStatus = async (
                 },
               });
 
+              // Get customer name for cancellation reference
+              const customerName = proformaMaterial.item?.invoice?.customer?.name || 
+                                  proformaMaterial.item?.invoice?.customer?.companyName || 
+                                  'Unknown Customer';
+
               // Create stock ledger entry for return
               await tx.stockLedger.create({
                 data: {
@@ -1489,7 +1601,7 @@ const updateProformaMaterialStatus = async (
                   movementType: 'IN',
                   quantity: existingTotalGiven,
                   unitId: proformaMaterial.material.unitOfMeasureId,
-                  reference: `CANCELLED-Proforma-${proformaMaterial.item.invoice.piNumber}-Customer-${proformaMaterial.item?.invoice?.customer?.name}`,
+                  reference: `CANCELLED-Proforma-${proformaMaterial.item.invoice.piNumber}-Customer-${customerName}`,
                   userId: issuedByUserId,
                   notes: `Stock returned due to cancellation of proforma material`,
                   movementDate: new Date(),
@@ -1579,6 +1691,120 @@ const updateProformaMaterialStatus = async (
     );
   }
 };
+
+/**
+ * Helper function to check if all materials are issued and update purchasing stage
+ */
+async function checkAndUpdatePurchasingStage(tx, invoiceId, userId) {
+  // Get all materials for this invoice with customer info
+  const invoice = await tx.proformaInvoice.findUnique({
+    where: { id: invoiceId },
+    include: {
+      customer: true, // ✅ Include customer here too
+      items: {
+        include: {
+          proformaItemMaterials: true,
+        },
+      },
+    },
+  });
+
+  if (!invoice) {
+    console.warn('Invoice not found for checking material status');
+    return;
+  }
+
+  // Collect all materials from all items
+  const allMaterials = [];
+  invoice.items.forEach(item => {
+    if (item.proformaItemMaterials && item.proformaItemMaterials.length > 0) {
+      allMaterials.push(...item.proformaItemMaterials);
+    }
+  });
+
+  if (allMaterials.length === 0) {
+    return; // No materials to check
+  }
+
+  // Check if all materials are issued
+  const allIssued = allMaterials.every(material => {
+    const totalRequired = (material.quantity || 0) + (material.additionalQuantity || 0);
+    const totalGiven = material.givenquantity || 0;
+    return totalGiven >= totalRequired && material.status === 'ISSUED';
+  });
+
+  if (!allIssued) {
+    return; // Not all materials are issued yet
+  }
+
+  // Find the purchasing stage for this invoice's project
+  const project = await tx.project.findFirst({
+    where: { invoiceId: invoiceId },
+    include: {
+      stages: {
+        where: { stage: 'PURCHASING' },
+      },
+    },
+  });
+
+  if (!project || project.stages.length === 0) {
+    console.warn('No purchasing stage found for this project');
+    return;
+  }
+
+  const purchasingStage = project.stages[0];
+
+  // Calculate total work units (sum of all material quantities)
+  const totalWorkUnits = allMaterials.reduce((sum, material) => {
+    return sum + (material.quantity || 0) + (material.additionalQuantity || 0);
+  }, 0);
+
+  // Update the purchasing stage
+  await tx.projectStage.update({
+    where: { id: purchasingStage.id },
+    data: {
+      finished: true,
+      endDate: new Date(),
+      status: 'COMPLETED',
+      workUnits: totalWorkUnits,
+      actualWorkUnits: totalWorkUnits,
+      timeTaken: Math.ceil(
+        (new Date().getTime() - new Date(purchasingStage.startDate).getTime()) /
+        (1000 * 60 * 60 * 24)
+      ),
+    },
+  });
+
+  // Create a log entry
+  await tx.projectLog.create({
+    data: {
+      projectId: project.id,
+      note: `Purchasing stage completed. All ${allMaterials.length} materials have been issued. Total work units: ${totalWorkUnits}`,
+      createdById: userId,
+    },
+  });
+
+ 
+    await tx.project.update({
+      where: { id: project.id },
+      data: {
+        updatedAt: new Date(),
+      },
+    });
+
+ 
+  
+
+  console.log(`✅ Purchasing stage completed for project ${project.id}`);
+}
+
+
+
+/**
+ * Helper function to check if all materials are issued and update purchasing stage
+ */
+
+
 const acceptInitialStock = async (materialId, initialQuantity, userId) => {
   try {
     // Validate required parameters

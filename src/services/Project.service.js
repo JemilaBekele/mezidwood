@@ -1255,7 +1255,6 @@ const updateProjectStatus = async (id, status, userId) => {
 
 const updateProjectDesignStatus = async (id, designStatus, userId) => {
   // 1️⃣ Validate design status
-
   const validDesignStatuses = [
     'INITIATED',
     'MODELING',
@@ -1275,7 +1274,7 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
     );
   }
 
-  // 2️⃣ Fetch project with stages
+  // 2️⃣ Fetch project with stages and invoice data
   let project;
   try {
     project = await prisma.project.findUnique({
@@ -1286,6 +1285,19 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
             projectStageCapacityAllocations: {
               include: {
                 dailyStageCapacity: true,
+              },
+            },
+          },
+        },
+        invoice: {
+          include: {
+            items: {
+              include: {
+                proformaItemMaterials: {
+                  include: {
+                    material: true,
+                  },
+                },
               },
             },
           },
@@ -1305,16 +1317,29 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
   const oldDesignStatus = project.designStatus;
   const oldProjectStatus = project.status;
 
-  // 3️⃣ Prepare update data
+  // 3️⃣ Check if project has metal works
+  const hasMetalWorks = checkIfProjectHasMetalWorks(project);
+
+  // 4️⃣ Determine the next status based on metal works
+  const getNextStatusAfterDesign = (hasMetal) => {
+    if (hasMetal) {
+      return 'METAL_WORKS'; // Go to METAL_WORKS if there's metal
+    }
+    return 'CUTTING'; // Skip to CUTTING if no metal
+  };
+
+  // 5️⃣ Prepare update data
   const updateData = {
     designStatus,
     designById: userId,
   };
 
-  // 4️⃣ Handle FINISHED status logic
+  // 6️⃣ Handle FINISHED status logic
   const isNowFinished = designStatus === 'FINISHED';
   let designStageUpdate = null;
   let capacityFreedData = null;
+
+  // Set default status to DESIGN
   updateData.status = 'DESIGN';
 
   if (isNowFinished) {
@@ -1332,7 +1357,6 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
       const currentActualWorkUnits = designStage.actualWorkUnits || 0;
 
       // ALWAYS set actualWorkUnits to match workUnits when finishing
-      // This ensures the actual work done equals the planned work
       const syncedActualWorkUnits = currentWorkUnits;
       const workUnitsChanged = currentWorkUnits !== currentActualWorkUnits;
 
@@ -1344,7 +1368,7 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
         console.log('✅ Actual work units already match planned work units');
       }
 
-      // ===== STEP 2: GET ALL CAPACITY ALLOCATIONS FOR DESIGN STAGE =====
+      // Get all capacity allocations for DESIGN stage
       const stageAllocations =
         designStage.projectStageCapacityAllocations || [];
 
@@ -1352,7 +1376,7 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
       let totalFreedHours = 0;
       const allocationDetails = [];
 
-      // ===== STEP 3: SUBTRACT ALLOCATED CAPACITY FROM DAILY CAPACITIES =====
+      // Subtract allocated capacity from daily capacities
       for (const allocation of stageAllocations) {
         const dateStr = allocation.allocationDate.toISOString().split('T')[0];
 
@@ -1411,9 +1435,8 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
           where: { id: designStage.id },
           data: {
             finished: true,
-            // CRITICAL: Always set actualWorkUnits to match workUnits
-            workUnits: currentWorkUnits, // ← workUnits stays the same
-            actualWorkUnits: syncedActualWorkUnits, // ← actualWorkUnits becomes workUnits
+            workUnits: currentWorkUnits,
+            actualWorkUnits: syncedActualWorkUnits,
             endDate: new Date(),
             status: 'COMPLETED',
           },
@@ -1426,12 +1449,15 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
         actualWorkUnitsAfter: syncedActualWorkUnits,
       };
 
-      // Update project status to next stage after DESIGN
-      updateData.status = 'PURCHASING';
+      // Update project status to the next appropriate stage based on metal works
+      updateData.status = getNextStatusAfterDesign(hasMetalWorks);
+
+      // Also update the project's status in the database
+      // Note: We're not setting this explicitly here as it will be handled in the transaction
     }
   }
 
-  // 5️⃣ Prepare log messages
+  // 7️⃣ Prepare log messages
   const logs = [];
 
   // Log for design status change
@@ -1452,14 +1478,18 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
   }
 
   // Log for project status change (if applicable)
-  if (isNowFinished && oldProjectStatus !== 'PURCHASING') {
+  if (isNowFinished && oldProjectStatus !== updateData.status) {
     logs.push(
       prisma.projectLog.create({
         data: {
           projectId: id,
-          note: `Project status changed from ${
-            oldProjectStatus || 'N/A'
-          } to PURCHASING because design was finished`,
+          note: `Project status changed from ${oldProjectStatus || 'N/A'} to ${
+            updateData.status
+          } because design was finished ${
+            hasMetalWorks
+              ? '(metal works detected)'
+              : '(no metal works - skipping to cutting)'
+          }`,
           createdById: userId,
         },
       }),
@@ -1468,15 +1498,7 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
 
   // Log for design completion with capacity information
   if (isNowFinished && capacityFreedData) {
-    const capacityLogMessage =
-      `Design phase completed. ` +
-      `Freed ${capacityFreedData.totalFreedUnits.toFixed(
-        2,
-      )} capacity units and ${capacityFreedData.totalFreedHours.toFixed(
-        2,
-      )} hours from ${capacityFreedData.allocationsCount} calendar day(s). ` +
-      `Actual work units synced: ${capacityFreedData.actualWorkUnitsBefore} → ${capacityFreedData.actualWorkUnitsAfter} ` +
-      `(matches planned: ${capacityFreedData.workUnits})`;
+    const capacityLogMessage = `Design phase completed.`;
 
     logs.push(
       prisma.projectLog.create({
@@ -1524,7 +1546,7 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
     );
   }
 
-  // 6️⃣ Execute all updates in a transaction
+  // 8️⃣ Execute all updates in a transaction
   try {
     const operations = [
       // Update project
@@ -1571,6 +1593,33 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
     console.error('❌ Prisma transaction error:', err);
     throw err;
   }
+};
+
+// Helper function to check if project has metal works
+const checkIfProjectHasMetalWorks = (project) => {
+  // Check if any invoice items have metal materials
+  if (project.invoice?.items) {
+    for (const item of project.invoice.items) {
+      if (item.proformaItemMaterials) {
+        for (const material of item.proformaItemMaterials) {
+          if (material.material?.metal === true) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  // Also check if there are any existing METAL_WORKS stages
+  if (project.stages) {
+    for (const stage of project.stages) {
+      if (stage.stage === 'METAL_WORKS' && stage.status !== 'CANCELLED') {
+        return true;
+      }
+    }
+  }
+
+  return false;
 };
 // Calculate project delivery dates
 const calculateProjectDelivery = async (id, totalDays, userId) => {

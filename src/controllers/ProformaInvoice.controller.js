@@ -101,7 +101,7 @@ const createProformaInvoice = catchAsync(async (req, res) => {
   }
 });
 
-// Update Proforma Invoice
+// Update Proforma Invoice updateProformaInvoiceseco
 const updateProformaInvoice = catchAsync(async (req, res) => {
   // Structure files by field name with detailed logging
   const structuredFiles = {};
@@ -202,7 +202,106 @@ const updateProformaInvoice = catchAsync(async (req, res) => {
     );
   }
 });
+const updateProformaInvoiceseco = catchAsync(async (req, res) => {
+  // Structure files by field name with detailed logging
+  const structuredFiles = {};
 
+  if (Array.isArray(req.files)) {
+    req.files.forEach((file, index) => {
+      if (!structuredFiles[file.fieldname]) {
+        structuredFiles[file.fieldname] = [];
+      }
+      structuredFiles[file.fieldname].push(file);
+    });
+  } else if (req.files) {
+    for (const [fieldname, files] of Object.entries(req.files)) {
+      structuredFiles[fieldname] = Array.isArray(files) ? files : [files];
+    }
+  }
+
+  // Parse items if it's a string (from form-data)
+  if (req.body.items) {
+    if (typeof req.body.items === 'string') {
+      try {
+        req.body.items = JSON.parse(req.body.items);
+      } catch (error) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Invalid items format: ${error.message}`,
+        );
+      }
+    }
+  }
+
+  // Add item index for file matching and preserve existing images
+  if (Array.isArray(req.body.items)) {
+    req.body.items = req.body.items.map((item, index) => ({
+      ...item,
+      itemIndex: index,
+      // Preserve existing images if they're provided in the update
+      images: item.images && Array.isArray(item.images) ? item.images : [],
+      // Track which images to delete (if specified)
+      deleteImageIds:
+        item.deleteImageIds && Array.isArray(item.deleteImageIds)
+          ? item.deleteImageIds
+          : [],
+    }));
+  }
+
+  // Process and map image files to their respective items for update
+  if (
+    Array.isArray(req.body.items) &&
+    Object.keys(structuredFiles).length > 0
+  ) {
+    req.body.items.forEach((item, index) => {
+      // Check for multiple images using the pattern "items[0].images"
+      const itemImageField = `items[${item.itemIndex}].images`;
+      const itemFiles = structuredFiles[itemImageField];
+
+      if (itemFiles && Array.isArray(itemFiles) && itemFiles.length > 0) {
+        // Store the files in the item for processing by the service
+        item.newImages = itemFiles;
+      } else {
+        // Also check for legacy single image field pattern
+        const legacyImageField = `items[${item.itemIndex}].image`;
+        const legacyFiles = structuredFiles[legacyImageField];
+
+        if (
+          legacyFiles &&
+          Array.isArray(legacyFiles) &&
+          legacyFiles.length > 0
+        ) {
+          item.newImages = legacyFiles;
+        }
+      }
+    });
+  }
+
+  try {
+    const invoice = await proformaInvoiceService.updateProformaInvoiceseco(
+      req.params.id,
+      req.body,
+      structuredFiles,
+    );
+
+    res.status(httpStatus.OK).send({
+      success: true,
+      message: 'Proforma invoice updated successfully',
+      invoice,
+    });
+  } catch (error) {
+    // Check if it's already an ApiError
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    // Convert to ApiError if not
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to update proforma invoice: ${error.message}`,
+    );
+  }
+});
 // Get Proforma Invoice by ID
 const getProformaInvoice = catchAsync(async (req, res) => {
   const invoice = await proformaInvoiceService.getProformaInvoiceById(
@@ -502,6 +601,7 @@ module.exports = {
   getProformaInvoices,
   getProformaInvoiceByPInumber,
   updateProformaInvoice,
+  updateProformaInvoiceseco,
   deleteProformaInvoice,
   updateProformaInvoiceStatus,
   addPaymentToInvoice,
