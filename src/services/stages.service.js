@@ -2488,7 +2488,7 @@ const getMaterialUsageReport = async () => {
     }
 
     // ============================================================
-    // STEP 3: Process ONLY eligible projects
+    // STEP 3: Process ONLY eligible projects and filter by NEED > 0
     // ============================================================
 
     // Material totals map - Store all material details
@@ -2539,9 +2539,16 @@ const getMaterialUsageReport = async () => {
             materialItem.material?.name || 'Unknown Material';
           const materialImageUrl = materialItem.material?.imageUrl || null;
 
-          // Get stock (design is finished, so stock should be available)
+          // Get stock
           const stock = stockMap.get(materialId) || 0;
           const need = remainingRequired > stock ? remainingRequired - stock : 0;
+
+          // ============================================================
+          // ONLY add to materialsForPI if need > 0
+          // ============================================================
+          if (need <= 0) {
+            return; // Skip this material entirely
+          }
 
           materialsForPI.push({
             materialId,
@@ -2549,7 +2556,7 @@ const getMaterialUsageReport = async () => {
             imageUrl: materialImageUrl,
             required: remainingRequired,
             stock,
-            need, // Add need to material object
+            need,
             status: materialItem.status,
             color: materialItem.material?.color || '',
             size: materialItem.material?.size || '',
@@ -2561,7 +2568,7 @@ const getMaterialUsageReport = async () => {
             requestedDelivery,
           });
 
-          // Initialize material totals
+          // Initialize material totals ONLY if need > 0
           if (!materialTotals.has(materialId)) {
             materialTotals.set(materialId, {
               id: materialId,
@@ -2587,7 +2594,7 @@ const getMaterialUsageReport = async () => {
             piNumber: invoice.piNumber,
             customerName: invoice.customer?.name || 'Unknown',
             required: remainingRequired,
-            need, // Add need to requirement
+            need,
             status: materialItem.status,
             designerName,
             designFinished: isDesignFinished,
@@ -2599,10 +2606,10 @@ const getMaterialUsageReport = async () => {
         });
       });
 
-      // Only add PI if it has materials that need purchase
-      const materialsNeedingPurchase = materialsForPI.filter(m => m.need > 0);
-      
-      if (materialsNeedingPurchase.length > 0) {
+      // ============================================================
+      // ONLY add PI if it has materials with need > 0
+      // ============================================================
+      if (materialsForPI.length > 0) {
         invoiceAcc.push({
           piNumber: invoice.piNumber,
           customerName: invoice.customer?.name || 'Unknown',
@@ -2612,15 +2619,11 @@ const getMaterialUsageReport = async () => {
           designerEmail,
           designFinished: isDesignFinished,
           requestedDelivery,
-          materials: materialsNeedingPurchase, // Only materials needing purchase
+          materials: materialsForPI, // All materials here have need > 0
         });
-      } else if (materialsForPI.length > 0) {
-        console.log(
-          `  ℹ️ PI ${invoice.piNumber} has materials but all have sufficient stock (no purchase needed)`,
-        );
       } else {
         console.log(
-          `  ⚠️ PI ${invoice.piNumber} has no materials with pending requirements`,
+          `  ℹ️ PI ${invoice.piNumber} has no materials needing purchase (need > 0)`,
         );
       }
 
@@ -2628,12 +2631,15 @@ const getMaterialUsageReport = async () => {
     }, []);
 
     // ============================================================
-    // STEP 4: Build summary with stock comparison
+    // STEP 4: Build summary with stock comparison (ONLY need > 0)
     // ============================================================
     const summary = Array.from(materialTotals.entries())
       .map(([materialId, data]) => {
         const stock = stockMap.get(materialId) || 0;
         const need = data.totalRequired > stock ? data.totalRequired - stock : 0;
+
+        // Only include if need > 0
+        if (need <= 0) return null;
 
         return {
           materialId,
@@ -2642,7 +2648,7 @@ const getMaterialUsageReport = async () => {
           color: data.color || '',
           size: data.size || '',
           materialType: data.materialType || '',
-          requirements: data.requirements.filter(req => req.need > 0), // Only requirements needing purchase
+          requirements: data.requirements, // All requirements have need > 0
           totalRequired: data.totalRequired,
           stock,
           need,
@@ -2655,19 +2661,15 @@ const getMaterialUsageReport = async () => {
           other: data.other || false,
         };
       })
-      .filter(item => item.need > 0) // Only materials needing purchase
+      .filter(item => item !== null) // Remove null entries
       .sort((a, b) => a.materialName.localeCompare(b.materialName));
 
     // ============================================================
     // STEP 5: Log results
     // ============================================================
     if (summary.length === 0) {
-      console.log('ℹ️ No materials need to be purchased');
-      console.log('  Reasons could be:');
-      console.log('  - No active projects with design finished');
-      console.log('  - Projects have no materials in proforma invoice items');
-      console.log('  - All materials have been issued or cancelled');
-      console.log('  - All materials have sufficient stock');
+      console.log('✅ No materials need to be purchased');
+      console.log('  All materials have sufficient stock or no active projects');
     } else {
       console.log(
         `✅ ${summary.length} materials need to be purchased:`,
@@ -2675,6 +2677,13 @@ const getMaterialUsageReport = async () => {
       summary.forEach((m) => {
         console.log(
           `  ⚠️ ${m.materialName} | Required: ${m.totalRequired} | Stock: ${m.stock} | Need: ${m.need}`,
+        );
+      });
+      
+      console.log(`📊 ${piReports.length} PIs need materials:`,);
+      piReports.forEach((pi) => {
+        console.log(
+          `  ⚠️ ${pi.piNumber} | ${pi.customerName} | ${pi.materials.length} materials need purchase`,
         );
       });
     }
@@ -2717,8 +2726,8 @@ const getMaterialUsageReport = async () => {
     return {
       success: true,
       requestDate: requestDate.toISOString(),
-      piReports, // Only includes PIs with purchase needs
-      summary, // Only includes materials with purchase needs
+      piReports, // ONLY PIs with materials needing purchase
+      summary, // ONLY materials needing purchase
       stats,
     };
   } catch (error) {
