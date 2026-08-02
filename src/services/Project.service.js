@@ -3034,8 +3034,68 @@ const getProjectScheduleHistory = async (projectId) => {
     include: { byUser: { select: { id: true, name: true, email: true } } },
   });
 };
+const updateDeliveryWithBalance = async (projectId, value) => {
+  // Validate projectId
+  if (!projectId) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Project ID is required');
+  }
 
+  // Validate value is boolean
+  if (typeof value !== 'boolean') {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Value must be a boolean (true or false)',
+    );
+  }
+
+  // Check if project exists
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: {
+      id: true,
+      allowToDeliverWithBalance: true,
+    },
+  });
+
+  if (!project) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Project not found');
+  }
+
+  // Update only the allowToDeliverWithBalance field
+  const updatedProject = await prisma.project.update({
+    where: { id: projectId },
+    data: {
+      allowToDeliverWithBalance: value,
+    },
+    select: {
+      id: true,
+      allowToDeliverWithBalance: true,
+    },
+  });
+
+  return updatedProject;
+};
+
+/**
+ * Set allowToDeliverWithBalance to true
+ * @param {string} projectId - The project ID
+ * @returns {Promise<Object>} - Updated project
+ */
+const allowDeliveryWithBalance = async (projectId) => {
+  return updateDeliveryWithBalance(projectId, true);
+};
+
+/**
+ * Set allowToDeliverWithBalance to false
+ * @param {string} projectId - The project ID
+ * @returns {Promise<Object>} - Updated project
+ */
+const disallowDeliveryWithBalance = async (projectId) => {
+  return updateDeliveryWithBalance(projectId, false);
+};
 module.exports = {
+  allowDeliveryWithBalance,
+  disallowDeliveryWithBalance,
   updateProjectStage,
   checkStageCapacityAvailability,
   getDateCapacityStatus,

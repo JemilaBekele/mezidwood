@@ -1014,6 +1014,8 @@ model ProjectStageWorkLog {
 }
 model Project {
   id                   String   @id @default(uuid())
+  allowToDeliverWithBalance Boolean @default(false)
+
   customerId           String?
   customer             Customer? @relation(fields: [customerId], references: [id])
   deliveryEstimationcode String?
@@ -1054,7 +1056,6 @@ model Project {
   cancelledAt          DateTime?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
-
   stages               ProjectStage[]
 
   @@map("projects")

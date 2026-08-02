@@ -2541,7 +2541,8 @@ const getMaterialUsageReport = async () => {
 
           // Get stock
           const stock = stockMap.get(materialId) || 0;
-          const need = remainingRequired > stock ? remainingRequired - stock : 0;
+          const need =
+            remainingRequired > stock ? remainingRequired - stock : 0;
 
           // ============================================================
           // ONLY add to materialsForPI if need > 0
@@ -2636,7 +2637,8 @@ const getMaterialUsageReport = async () => {
     const summary = Array.from(materialTotals.entries())
       .map(([materialId, data]) => {
         const stock = stockMap.get(materialId) || 0;
-        const need = data.totalRequired > stock ? data.totalRequired - stock : 0;
+        const need =
+          data.totalRequired > stock ? data.totalRequired - stock : 0;
 
         // Only include if need > 0
         if (need <= 0) return null;
@@ -2661,7 +2663,7 @@ const getMaterialUsageReport = async () => {
           other: data.other || false,
         };
       })
-      .filter(item => item !== null) // Remove null entries
+      .filter((item) => item !== null) // Remove null entries
       .sort((a, b) => a.materialName.localeCompare(b.materialName));
 
     // ============================================================
@@ -2669,18 +2671,18 @@ const getMaterialUsageReport = async () => {
     // ============================================================
     if (summary.length === 0) {
       console.log('✅ No materials need to be purchased');
-      console.log('  All materials have sufficient stock or no active projects');
-    } else {
       console.log(
-        `✅ ${summary.length} materials need to be purchased:`,
+        '  All materials have sufficient stock or no active projects',
       );
+    } else {
+      console.log(`✅ ${summary.length} materials need to be purchased:`);
       summary.forEach((m) => {
         console.log(
           `  ⚠️ ${m.materialName} | Required: ${m.totalRequired} | Stock: ${m.stock} | Need: ${m.need}`,
         );
       });
-      
-      console.log(`📊 ${piReports.length} PIs need materials:`,);
+
+      console.log(`📊 ${piReports.length} PIs need materials:`);
       piReports.forEach((pi) => {
         console.log(
           `  ⚠️ ${pi.piNumber} | ${pi.customerName} | ${pi.materials.length} materials need purchase`,
@@ -2762,8 +2764,162 @@ function getMaterialType(material) {
   return 'Unknown';
 }
 
+const STAGE_ORDER = [
+  'INVOICE',
+  'DESIGN',
+  'PURCHASING',
+  'METAL_WORKS',
+  'CNC',
+  'CUTTING',
+  'EDGE_BANDING',
+  'ASSEMBLY',
+  'PAINTING',
+  'FINISHING',
+  'DELIVERY',
+  'INSTALLATION',
+];
+
+// Stages that should be skipped as dependencies
+const SKIP_DEPENDENCIES = ['PURCHASING', 'INVOICE'];
+
+/**
+ * Get dependencies for a stage based on its level
+ * Skips PURCHASING and INVOICE as dependencies
+ */
+const getStageDependencies = (stage) => {
+  const stageIndex = STAGE_ORDER.indexOf(stage);
+
+  // If stage is INVOICE, DESIGN, or PURCHASING, no dependencies
+  if (stageIndex <= 2) {
+    return [];
+  }
+
+  // For ASSEMBLY and PAINTING, they depend on EDGE_BANDING and everything before it
+  if (stage === 'ASSEMBLY' || stage === 'PAINTING') {
+    const edgeBandingIndex = STAGE_ORDER.indexOf('EDGE_BANDING');
+    const allDeps = STAGE_ORDER.slice(0, edgeBandingIndex + 1);
+    return allDeps.filter((dep) => !SKIP_DEPENDENCIES.includes(dep));
+  }
+
+  // For all other stages, depend on everything before them
+  const allDeps = STAGE_ORDER.slice(0, stageIndex);
+  return allDeps.filter((dep) => !SKIP_DEPENDENCIES.includes(dep));
+};
+
+/**
+ * Check if a stage has all its dependencies finished
+ * Only checks dependencies that actually exist in the project
+ */
+const areDependenciesFinished = (stage, projectStages) => {
+  const allDependencies = getStageDependencies(stage);
+
+  if (allDependencies.length === 0) {
+    return true;
+  }
+
+  const existingDependencies = allDependencies.filter((dep) => {
+    return projectStages.some((s) => s.stage === dep);
+  });
+
+  if (existingDependencies.length === 0) {
+    return true;
+  }
+
+  return existingDependencies.every((dep) => {
+    const stageRecord = projectStages.find((s) => s.stage === dep);
+    return stageRecord && stageRecord.finished === true;
+  });
+};
+
+const getStageLeftWork = async () => {
+  try {
+    // Fetch all project stages for active projects
+    const projectStages = await prisma.projectStage.findMany({
+      where: {
+        project: {
+          status: {
+            notIn: ['COMPLETED', 'CANCELLED'],
+          },
+        },
+      },
+      include: {
+        project: {
+          select: {
+            id: true,
+            status: true,
+          },
+        },
+      },
+      orderBy: {
+        projectId: 'asc',
+      },
+    });
+
+    // Group stages by project
+    const projectStagesMap = {};
+    projectStages.forEach((stage) => {
+      if (!projectStagesMap[stage.projectId]) {
+        projectStagesMap[stage.projectId] = [];
+      }
+      projectStagesMap[stage.projectId].push(stage);
+    });
+
+    // Calculate stage data
+    const stageData = {};
+
+    Object.values(projectStagesMap).forEach((stages) => {
+      const projectName = stages[0]?.project?.name || 'Unknown Project';
+
+      stages.forEach((stage) => {
+        const leftWork = (stage.workUnits || 0) - (stage.actualWorkUnits || 0);
+
+        if (leftWork > 0) {
+          const stageName = stage.stage;
+
+          // Check if dependencies are finished
+          const dependenciesFinished = areDependenciesFinished(
+            stageName,
+            stages,
+          );
+
+          // Only count if dependencies are finished
+          if (dependenciesFinished) {
+            if (!stageData[stageName]) {
+              stageData[stageName] = {
+                stage: stageName,
+                projectCount: 0,
+                projects: new Set(),
+              };
+            }
+
+            stageData[stageName].projects.add(stage.projectId);
+          }
+        }
+      });
+    });
+
+    // Convert to array with project count only
+    const result = Object.values(stageData).map((data) => ({
+      stage: data.stage,
+      projectCount: data.projects.size,
+    }));
+
+    // Sort by projectCount descending
+    result.sort((a, b) => b.projectCount - a.projectCount);
+
+    console.log(`✅ Found ${result.length} stages with unfinished work`);
+    console.log('📊 Stage project counts:', result);
+
+    return result;
+  } catch (error) {
+    console.error('Error in getStageLeftWork service:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   getUnassignedDesignProjects,
+  getStageLeftWork,
   getbyDesignProject,
   getDesignProjects,
   getPurchasingProjects,
