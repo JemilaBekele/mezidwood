@@ -2800,6 +2800,11 @@ const getStageDependencies = (stage) => {
     const allDeps = STAGE_ORDER.slice(0, edgeBandingIndex + 1);
     return allDeps.filter((dep) => !SKIP_DEPENDENCIES.includes(dep));
   }
+  if (stage === 'CUTTING' || stage === 'EDGE_BANDING') {
+    const cncIndex = STAGE_ORDER.indexOf('CNC');
+    const allDeps = STAGE_ORDER.slice(0, cncIndex + 1);
+    return allDeps.filter((dep) => !SKIP_DEPENDENCIES.includes(dep));
+  }
 
   // For all other stages, depend on everything before them
   const allDeps = STAGE_ORDER.slice(0, stageIndex);
