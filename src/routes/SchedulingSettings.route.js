@@ -3,6 +3,8 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middlewares/auth');
 const schedulingSettingsController = require('../controllers/SchedulingSettings.controller');
+const validate = require('../middlewares/validate');
+const { projectValidation } = require('../validations');
 
 // Read the business-tunable scheduling settings (delivery formula knobs).
 router.get(
@@ -17,6 +19,7 @@ router.put(
   '/api/scheduling-settings',
   auth,
   // checkPermission('UPDATE_SETTINGS'),
+  validate(projectValidation.updateSchedulingSettings),
   schedulingSettingsController.updateSettings,
 );
 

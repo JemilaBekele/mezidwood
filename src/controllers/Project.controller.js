@@ -9,51 +9,41 @@ const {
 } = require('../services/scheduling/reschedule');
 
 // Create Project
-const createProject = async (req, res) => {
-  try {
-    const projectData = req.body;
-    const userId = req.user.id; // Assuming user ID is available in req.user
+const createProject = catchAsync(async (req, res) => {
+  const projectData = req.body;
+  const userId = req.user.id;
 
-    // Use the imported function
+  try {
     const project = await projectService.createProject(projectData, userId);
 
+    // `warnings` is advisory — the project WAS created. It carries things the
+    // operator needs to see rather than have silently absorbed: a creation
+    // outside working hours that was rolled forward, or an estimate whose
+    // quantities disagree with the invoice it was converted against.
+    const { warnings, ...data } = project;
     res.status(201).json({
       success: true,
-      data: project,
+      data,
+      ...(warnings && warnings.length ? { warnings } : {}),
     });
   } catch (error) {
-    // Handle Prisma unique constraint violation for invoiceId
+    // Translate the two Prisma constraint errors this endpoint can legitimately
+    // hit into meaningful messages; everything else goes to the error handler.
     if (error.code === 'P2002') {
-      return res.status(400).json({
-        success: false,
-        error: `Project already exists with invoice ID: ${req.body.invoiceId}`,
-      });
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Project already exists with invoice ID: ${req.body.invoiceId}`,
+      );
     }
-
-    // Handle foreign key constraint violations
     if (error.code === 'P2003') {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid customer or invoice reference',
-      });
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Invalid customer or invoice reference',
+      );
     }
-
-    // Handle your custom ApiError
-    if (error.statusCode) {
-      return res.status(error.statusCode).json({
-        success: false,
-        error: error.message,
-      });
-    }
-
-    // Generic error
-    res.status(500).json({
-      success: false,
-      error: 'Failed to create project',
-      details: error.message,
-    });
+    throw error;
   }
-};
+});
 
 // Get Project by ID
 const getProject = catchAsync(async (req, res) => {

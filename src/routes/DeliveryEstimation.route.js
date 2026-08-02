@@ -2,6 +2,8 @@ const express = require('express');
 const { deliveryEstimationController } = require('../controllers');
 const auth = require('../middlewares/auth');
 const checkPermission = require('../middlewares/permission.middleware');
+const validate = require('../middlewares/validate');
+const { projectValidation } = require('../validations');
 
 const router = express.Router();
 
@@ -10,6 +12,7 @@ router.post(
   '/api/delivery-estimations',
   auth,
   checkPermission('CREATE_DELIVERY_ESTIMATION'),
+  validate(projectValidation.createDeliveryEstimation),
   deliveryEstimationController.createDeliveryEstimation,
 );
 
@@ -20,9 +23,16 @@ router.post(
   deliveryEstimationController.createProjectFromDeliveryEstimation,
 );
 router.post(
+  '/api/delivery-estimations/stage-quantities',
+  auth,
+  validate(projectValidation.deriveStageQuantities),
+  deliveryEstimationController.deriveStageQuantities,
+);
+router.post(
   '/api/delivery-estimations/calculate',
   auth,
   // checkPermission('CALCULATE_DELIVERY_ESTIMATION'),
+  validate(projectValidation.calculateDeliveryEstimation),
   deliveryEstimationController.calculateDeliveryEstimation,
 );
 

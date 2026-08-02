@@ -27,6 +27,18 @@ const createDeliveryEstimation = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Derive stage quantities from a material mix or a list of items.
+ *
+ * AL-5: the estimation form used to compute these rules client-side, a second
+ * copy of logic that lives in the scheduling engine. This endpoint is the one
+ * source, so a rule change cannot make the quote and the project diverge.
+ */
+const deriveStageQuantities = catchAsync(async (req, res) => {
+  const result = await deliveryEstimationService.deriveStageQuantities(req.body);
+  res.status(httpStatus.OK).json({ success: true, data: result });
+});
+
 // Get all Delivery Estimations
 const getDeliveryEstimations = catchAsync(async (req, res) => {
   const {
@@ -415,6 +427,7 @@ const createProjectFromDeliveryEstimation = catchAsync(async (req, res) => {
   });
 });
 module.exports = {
+  deriveStageQuantities,
   createDeliveryEstimation,
   getDeliveryEstimations,
   getDeliveryEstimation,

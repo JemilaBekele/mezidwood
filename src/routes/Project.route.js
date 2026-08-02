@@ -4,12 +4,15 @@ const router = express.Router();
 const { projectController } = require('../controllers');
 const auth = require('../middlewares/auth');
 const checkPermission = require('../middlewares/permission.middleware');
+const validate = require('../middlewares/validate');
+const { projectValidation } = require('../validations');
 
 // Create Project
 router.post(
   '/api/projects',
   auth,
   checkPermission('CREATE_PROJECT'),
+  validate(projectValidation.createProject),
   projectController.createProject,
 );
 

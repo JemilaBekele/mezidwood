@@ -1102,11 +1102,34 @@ enum ScheduleTrigger {
 // (contingency, difficulty %, working hours) without a deploy.
 model SchedulingSettings {
   id                 String   @id @default(uuid())
+
+  // --- delivery buffer model ---
   contingencyDays    Int      @default(3)
   easyPercent        Float    @default(0)
   mediumPercent      Float    @default(0.4)
   hardPercent        Float    @default(0.5)
+
+  // --- working time ---
+  // DERIVED from the shift/lunch window below and rewritten on every save.
+  // Never accept it as independent input: when it disagreed with the (formerly
+  // hardcoded) shift window, the scheduler placed work past closing time.
   workingHoursPerDay Float    @default(7.5)
+
+  // Which weekdays are worked, as JS Date.getDay() indices: 0=Sun .. 6=Sat.
+  // Default "1,2,3,4,5,6" is a six-day week with Sunday off.
+  workingDays        String   @default("1,2,3,4,5,6")
+
+  // Factory clock as decimal hours in `timezone`:
+  //   08:30 open, 12:30-13:30 lunch (non-working), 17:00 close = 7.5h/day.
+  // Set lunchStartHour == lunchEndHour for no lunch break.
+  shiftStartHour     Float    @default(8.5)
+  shiftEndHour       Float    @default(17.0)
+  lunchStartHour     Float    @default(12.5)
+  lunchEndHour       Float    @default(13.5)
+
+  // All wall-clock scheduling happens in this zone, then stores UTC instants.
+  timezone           String   @default("Africa/Addis_Ababa")
+
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -1381,6 +1404,21 @@ model DeliveryEstimation {
   FINISHING Int?
   DELIVERY Int?
 
+  // Time-based stages. The estimate used to carry only the nine capacity
+  // stages while the project scheduled eleven, so every quote was short by the
+  // purchasing and installation phases. Both are derived from the unit total by
+  // engine.withTimeBasedStages() and stored so the quote is reproducible.
+  PURCHASING Int?
+  INSTALLATION Int?
+
+  // The items/materials the estimate was calculated from, captured at the time
+  // of quoting. Without this an estimate could not be re-costed or audited, and
+  // the conversion to a project had no way to reconcile the two.
+  itemsSnapshot Json?
+
+  // Set when the estimate is converted, so the link is queryable in both
+  // directions (Project.deliveryEstimationcode is the other side).
+  projectId String?
 
   status             EstimationStatus @default(ESTIMATED)
 

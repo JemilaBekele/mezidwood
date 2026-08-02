@@ -21,8 +21,14 @@
 const prisma = require('../prisma');
 const { getCalendar } = require('./calendar');
 const { getSchedulingSettings } = require('./settings');
-const { computeStageQuantities, scheduleProject, dailyCapacityDate, PHASES } = require('./engine');
-const { applyDeliveryBuffer, OVERCAPACITY_FACTOR } = require('./config');
+const {
+  computeStageQuantities,
+  scheduleProject,
+  dailyCapacityDate,
+  deliveryDateFor,
+  PHASES,
+} = require('./engine');
+const { deliveryBufferDays, OVERCAPACITY_FACTOR } = require('./config');
 
 // Per-day allocation loops do several sequential writes; give the interactive
 // transaction generous headroom (per-project scale is tiny relative to this).
@@ -396,8 +402,20 @@ const recomputeProjectDelivery = async (projectId, client = prisma) => {
   const firstStart = new Date(Math.min(...startTimes));
   const lastEnd = new Date(Math.max(...endTimes));
   const productionWorkingDays = cal.workingDaysBetween(firstStart, lastEnd);
-  const estimatedDays = applyDeliveryBuffer(productionWorkingDays, project.difficulty, settings);
-  const deliveryDate = cal.addWorkingDays(firstStart, estimatedDays);
+  // AL-1: the buffer is walked from the END of production, not from its start.
+  // `productionWorkingDays` is an INCLUSIVE count, so adding it to firstStart
+  // double-counted the first day and pushed every promised date one working day
+  // late. Identical rule to engine.buildSchedule — one function, both callers.
+  const { deliveryDate } = deliveryDateFor(
+    cal,
+    lastEnd,
+    productionWorkingDays,
+    project.difficulty,
+    settings,
+  );
+  const estimatedDays =
+    productionWorkingDays
+    + deliveryBufferDays(productionWorkingDays, project.difficulty, settings);
   const oldDelivery = project.calculatedDelivery;
 
   await client.project.update({
@@ -449,7 +467,6 @@ const rescheduleDownstream = async (
     const plan = await scheduleProject({
       stageQuantities,
       startDate: downstreamStart,
-      preserveStartTime: true,
       difficulty: project.difficulty,
       mode: 'commit',
       tx,
@@ -704,7 +721,6 @@ const reallocateProjectFromInvoiceMaterials = async (
       plan = await scheduleProject({
         stageQuantities: scheduleQuantities,
         startDate: start,
-        preserveStartTime: true,
         difficulty: project.difficulty,
         mode: 'commit',
         tx,
@@ -871,7 +887,6 @@ const recomputeDownstreamFromBarrier = async (
   const downstreamPlan = await scheduleProject({
     stageQuantities: downstreamQuantities,
     startDate: downstreamStart,
-    preserveStartTime: true,
     difficulty: project.difficulty,
     mode: 'commit',
     tx,
@@ -1020,7 +1035,6 @@ const rescheduleStageAndDownstream = async (
         const plan = await scheduleProject({
           stageQuantities: { [s.stage]: cu },
           startDate: effStart,
-          preserveStartTime: false,
           difficulty: project.difficulty,
           mode: 'commit',
           tx,
@@ -1081,7 +1095,6 @@ const rescheduleStageAndDownstream = async (
       const plan = await scheduleProject({
         stageQuantities: { [stageName]: units },
         startDate: effStart,
-        preserveStartTime: false,
         difficulty: project.difficulty,
         mode: 'commit',
         tx,
@@ -1139,13 +1152,13 @@ const rescheduleStageAndDownstream = async (
         }
       }
 
-      // preserveStartTime MUST be false: the phase moves to a user-chosen target
+      // The phase moves to a user-chosen target instant; the calendar normalizes
+      // it to the next working instant (never before opening, never in lunch).
       // DAY and must begin at that day's morning shift start, not the time-of-day
       // the calendar client encodes in newStartDate (which is the shift END).
       const draggedPlan = await scheduleProject({
         stageQuantities: phaseQuantities,
         startDate: effStart,
-        preserveStartTime: false,
         difficulty: project.difficulty,
         mode: 'commit',
         tx,
@@ -1289,7 +1302,6 @@ const compactCurrentWeek = async (client = null) =>
           scheduleProject({
             stageQuantities: { [stage.stage]: units },
             startDate: earliest,
-            preserveStartTime: true,
             difficulty: project.difficulty,
             mode,
             tx,

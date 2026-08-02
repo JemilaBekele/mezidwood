@@ -5,88 +5,60 @@ const ApiError = require('../utils/ApiError');
 const prisma = require('./prisma');
 const {
   computeStageQuantities,
+  withTimeBasedStages,
   scheduleProject,
   dailyCapacityDate,
+  effectiveDailyMax,
 } = require('./scheduling/engine');
 const { getCalendar } = require('./scheduling/calendar');
-const { getSchedulingSettings } = require('./scheduling/settings');
 const {
   CAPACITY_STAGES,
-  SHIFT_TIMES,
-  STAGE_SHIFT_PREFERENCE,
+  DEFAULT_STAGE_SHIFT,
   VALID_DIFFICULTIES,
-  WORKING_HOURS_PER_DAY,
   OVERCAPACITY_FACTOR,
 } = require('./scheduling/config');
 const reschedule = require('./scheduling/reschedule');
 
 const round2 = (n) => Math.round(n * 100) / 100;
-const dayWindow = (cal, date, workingHoursPerDay) => {
-  const start = cal.createExactDateTime(date, SHIFT_TIMES.FULL_DAY.start);
-  return {
-    start,
-    end: new Date(start.getTime() + workingHoursPerDay * 3600 * 1000),
-  };
-};
 
-const normalizeWorkingStart = (cal, startInstant, workingHoursPerDay) => {
-  let cur = new Date(startInstant);
-  let guard = 0;
-  while (guard < 10000) {
-    guard += 1;
-    if (!cal.isWorkingDay(cur)) {
-      cur = dayWindow(cal, cal.nextWorkingDay(cur), workingHoursPerDay).start;
-      continue;
-    }
-    const window = dayWindow(cal, cur, workingHoursPerDay);
-    if (cur < window.start) return window.start;
-    if (cur >= window.end) {
-      cur = dayWindow(cal, cal.nextWorkingDay(cur), workingHoursPerDay).start;
-      continue;
-    }
-    return cur;
-  }
-  throw new Error('Could not find a valid working start');
-};
+/**
+ * Normalize an instant to the next moment the factory is open.
+ *
+ * This used to be a local re-implementation (dayWindow/normalizeWorkingStart)
+ * that modelled a day as one contiguous `shiftStart + workingHours` block — it
+ * did not know about the lunch break, so it closed the day at 16:00 and happily
+ * placed work at 12:45. It now delegates to the calendar, which is the single
+ * definition of working time shared by the engine, the estimator and here.
+ */
+const normalizeWorkingStart = (cal, startInstant) =>
+  cal.nextWorkingStart(startInstant);
 
-const splitWorkingMinutes = (
-  cal,
-  startInstant,
-  minutes,
-  workingHoursPerDay,
-) => {
+/**
+ * Split `minutes` of WORKING time into per-day segments from `startInstant`,
+ * skipping lunch, nights, weekends and holidays.
+ */
+const splitWorkingMinutes = (cal, startInstant, minutes) => {
   const segments = [];
-  let cur = normalizeWorkingStart(cal, startInstant, workingHoursPerDay);
+  let cur = cal.nextWorkingStart(startInstant);
   let remaining = Math.max(0, minutes);
   if (remaining === 0) return { start: cur, end: cur, segments };
 
   let guard = 0;
   while (remaining > 0 && guard < 10000) {
     guard += 1;
-    if (!cal.isWorkingDay(cur)) {
-      cur = dayWindow(cal, cal.nextWorkingDay(cur), workingHoursPerDay).start;
+    const available = Math.round(cal.remainingHoursInDay(cur) * 60);
+    if (available <= 0) {
+      cur = cal.nextWorkingStart(cal.endOfWorkingDay(cur));
       continue;
     }
-    const window = dayWindow(cal, cur, workingHoursPerDay);
-    if (cur < window.start) cur = window.start;
-    if (cur >= window.end) {
-      cur = dayWindow(cal, cal.nextWorkingDay(cur), workingHoursPerDay).start;
-      continue;
-    }
-
-    const available = Math.max(
-      0,
-      Math.floor((window.end.getTime() - cur.getTime()) / 60000),
-    );
     const used = Math.min(remaining, available);
-    const end = new Date(cur.getTime() + used * 60000);
+    const end = cal.addWorkingHours(cur, used / 60);
     segments.push({ start: cur, end, minutes: used, dateKey: cal.dayKey(cur) });
     remaining -= used;
-    cur = end;
+    cur = remaining > 0 ? cal.nextWorkingStart(end) : end;
   }
 
-  if (remaining > 0)
-    throw new Error('Could not allocate manual stage duration');
+  if (remaining > 0) throw new Error('Could not allocate manual stage duration');
   return { start: segments[0]?.start || cur, end: cur, segments };
 };
 
@@ -108,10 +80,17 @@ const allocateManualStageCapacity = async ({
   }
 
   const lot = await tx.capacityLot.findUnique({ where: { stage: stageName } });
-  const capacity = lot?.capacity || 1;
-  const slots = lot?.parallelSlots || 1;
-  const maxCapacity = Math.max(1, Math.round(capacity * slots));
-  const totalUnits = Math.max(0, Math.round(quantity));
+  // FN-5: one definition of the daily ceiling, shared with the engine, so the
+  // stored maxCapacity can never disagree with what the allocator measured
+  // against.
+  const maxCapacity = effectiveDailyMax({
+    capacity: lot?.capacity || 1,
+    parallelSlots: lot?.parallelSlots || 1,
+  });
+  // FN-6: units are a Float column carrying 2-decimal precision; rounding them
+  // to Int here was what made the sum of allocations drift away from the day's
+  // usedCapacity counter and produced false >125% violations.
+  const totalUnits = Math.max(0, round2(quantity));
   let remainingUnits = totalUnits;
   const totalMinutes = segments.reduce((sum, s) => sum + s.minutes, 0) || 1;
 
@@ -120,12 +99,12 @@ const allocateManualStageCapacity = async ({
     const allocatedHours = round2(segment.minutes / 60);
     const allocatedUnits =
       i === segments.length - 1
-        ? remainingUnits
+        ? round2(remainingUnits)
         : Math.min(
             remainingUnits,
-            Math.round(totalUnits * (segment.minutes / totalMinutes)),
+            round2(totalUnits * (segment.minutes / totalMinutes)),
           );
-    remainingUnits -= allocatedUnits;
+    remainingUnits = round2(remainingUnits - allocatedUnits);
 
     const date = dailyCapacityDate(segment.dateKey);
     const existing = await tx.dailyStageCapacity.findUnique({
@@ -142,14 +121,14 @@ const allocateManualStageCapacity = async ({
             maxCapacity,
             workingHours: workingHoursPerDay,
             maxHours: workingHoursPerDay,
-            shift: STAGE_SHIFT_PREFERENCE[stageName] || 'CUSTOM',
+            shift: DEFAULT_STAGE_SHIFT,
           },
         })
       : await tx.dailyStageCapacity.create({
           data: {
             stage: stageName,
             date,
-            shift: STAGE_SHIFT_PREFERENCE[stageName] || 'CUSTOM',
+            shift: DEFAULT_STAGE_SHIFT,
             usedCapacity: allocatedUnits,
             maxCapacity,
             workingHours: workingHoursPerDay,
@@ -164,7 +143,7 @@ const allocateManualStageCapacity = async ({
         dailyStageCapacityId: daily.id,
         allocatedUnits,
         allocatedHours,
-        shift: STAGE_SHIFT_PREFERENCE[stageName] || 'CUSTOM',
+        shift: DEFAULT_STAGE_SHIFT,
         startDateTime: segment.start,
         endDateTime: segment.end,
         customStartTime: segment.start,
@@ -264,31 +243,71 @@ const createProject = async (projectData, userId) => {
     materials.other;
 
   // Material-driven stage quantities (single source: scheduling engine).
-  let stageQuantities = computeStageQuantities(materials);
+  const invoiceStageQuantities = computeStageQuantities(materials);
+  let stageQuantities = invoiceStageQuantities;
   let effectiveDifficulty = difficulty;
+  let sourceEstimation = null;
+  const warnings = [];
 
-  // If created from a Delivery Estimation, inherit stage quantities & difficulty to ensure 100% timeline alignment
+  // If created from a Delivery Estimation, inherit the quantities and difficulty
+  // the customer was actually QUOTED, so the project reproduces the quote.
   if (deliveryEstimationcode) {
-    const estimation = await prisma.deliveryEstimation.findUnique({
+    sourceEstimation = await prisma.deliveryEstimation.findUnique({
       where: { code: deliveryEstimationcode },
     });
-    if (estimation) {
-      if (estimation.difficulty) {
-        effectiveDifficulty = estimation.difficulty;
-      }
-      stageQuantities = {
-        DESIGN: estimation.DESIGN ?? stageQuantities.DESIGN,
-        METAL_WORKS: estimation.METAL_WORKS ?? stageQuantities.METAL_WORKS,
-        CNC: estimation.CNC ?? stageQuantities.CNC,
-        CUTTING: estimation.CUTTING ?? stageQuantities.CUTTING,
-        EDGE_BANDING: estimation.EDGE_BANDING ?? stageQuantities.EDGE_BANDING,
-        ASSEMBLY: estimation.ASSEMBLY ?? stageQuantities.ASSEMBLY,
-        PAINTING: estimation.PAINTING ?? stageQuantities.PAINTING,
-        FINISHING: estimation.FINISHING ?? stageQuantities.FINISHING,
-        DELIVERY: estimation.DELIVERY ?? stageQuantities.DELIVERY,
-        INSTALLATION: stageQuantities.INSTALLATION,
-        PURCHASING: stageQuantities.PURCHASING,
-      };
+    if (!sourceEstimation) {
+      throw new ApiError(
+        httpStatus.NOT_FOUND,
+        `Delivery estimation ${deliveryEstimationcode} not found`,
+      );
+    }
+    if (sourceEstimation.status === 'PROJECT_CREATED') {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        'This delivery estimation has already been converted to a project',
+      );
+    }
+    if (sourceEstimation.difficulty) {
+      effectiveDifficulty = sourceEstimation.difficulty;
+    }
+    stageQuantities = withTimeBasedStages({
+      DESIGN: sourceEstimation.DESIGN ?? invoiceStageQuantities.DESIGN,
+      METAL_WORKS:
+        sourceEstimation.METAL_WORKS ?? invoiceStageQuantities.METAL_WORKS,
+      CNC: sourceEstimation.CNC ?? invoiceStageQuantities.CNC,
+      CUTTING: sourceEstimation.CUTTING ?? invoiceStageQuantities.CUTTING,
+      EDGE_BANDING:
+        sourceEstimation.EDGE_BANDING ?? invoiceStageQuantities.EDGE_BANDING,
+      ASSEMBLY: sourceEstimation.ASSEMBLY ?? invoiceStageQuantities.ASSEMBLY,
+      PAINTING: sourceEstimation.PAINTING ?? invoiceStageQuantities.PAINTING,
+      FINISHING: sourceEstimation.FINISHING ?? invoiceStageQuantities.FINISHING,
+      DELIVERY: sourceEstimation.DELIVERY ?? invoiceStageQuantities.DELIVERY,
+      PURCHASING: sourceEstimation.PURCHASING,
+      INSTALLATION: sourceEstimation.INSTALLATION,
+    });
+
+    // Surface (rather than silently absorb) a divergence between what was
+    // quoted and what the invoice actually contains. The quote wins — that is
+    // the number the customer holds — but the operator is told.
+    const diverged = Object.keys(stageQuantities).filter(
+      (s) =>
+        Math.abs(
+          (stageQuantities[s] || 0) - (invoiceStageQuantities[s] || 0),
+        ) > 0.001,
+    );
+    if (diverged.length) {
+      warnings.push({
+        code: 'ESTIMATE_INVOICE_MISMATCH',
+        message:
+          `The estimate and the invoice materials disagree on: ${diverged.join(', ')}. `
+          + 'The project was scheduled from the QUOTED quantities so the promised '
+          + 'delivery date still holds.',
+        stages: diverged.map((s) => ({
+          stage: s,
+          quoted: stageQuantities[s] || 0,
+          invoice: invoiceStageQuantities[s] || 0,
+        })),
+      });
     }
   }
 
@@ -304,13 +323,33 @@ const createProject = async (projectData, userId) => {
   // downstream. Honour a later manualStartDate; per-stage capacity usage decides
   // the actual start of each stage.
   const cal = await getCalendar();
-  const baseStart = manualStartDate ? new Date(manualStartDate) : new Date();
+  const requestedStart = manualStartDate ? new Date(manualStartDate) : new Date();
+  if (Number.isNaN(requestedStart.getTime())) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid start date');
+  }
+
+  // WT-1 — the working-time guard. A project created at 21:00, on a Sunday, on
+  // a holiday or during the lunch break used to be scheduled from 08:30 THAT
+  // MORNING, i.e. in the past, silently reserving capacity for hours that could
+  // not be worked. The calendar rolls the start forward to the next instant the
+  // factory is actually open, and we tell the caller when it did.
+  const baseStart = cal.nextWorkingStart(requestedStart);
+  if (baseStart.getTime() !== requestedStart.getTime()) {
+    warnings.push({
+      code: 'OUT_OF_WORKING_HOURS',
+      message:
+        'The requested start falls outside working hours; the project was '
+        + 'scheduled from the next working period.',
+      requestedStart,
+      scheduledStart: baseStart,
+    });
+  }
 
   // Forward dry-run first to learn the offered (earliest) delivery date.
   const forwardPlan = await scheduleProject({
     stageQuantities,
     startDate: baseStart,
-    difficulty,
+    difficulty: effectiveDifficulty,
     mode: 'dryRun',
   });
 
@@ -321,13 +360,15 @@ const createProject = async (projectData, userId) => {
   let commitStart = baseStart;
   if (requestedDelivery && requestedDelivery !== '') {
     const requested = new Date(requestedDelivery);
-    if (
-      !Number.isNaN(requested.getTime()) &&
-      requested.getTime() > forwardPlan.deliveryDate.getTime()
-    ) {
-      const backStart = cal.addWorkingDays(
-        requested,
-        -forwardPlan.estimatedDays,
+    if (Number.isNaN(requested.getTime())) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid requested delivery date');
+    }
+    if (requested.getTime() > forwardPlan.deliveryDate.getTime()) {
+      // Walk back the BUFFER only. The production span is re-derived by the
+      // scheduler from the new start; subtracting the whole promise length
+      // (production + buffer) pushed the start too far and overshot the date.
+      const backStart = cal.nextWorkingStart(
+        cal.addWorkingDays(requested, -forwardPlan.estimatedDays),
       );
       if (backStart.getTime() > baseStart.getTime()) commitStart = backStart;
     }
@@ -341,7 +382,10 @@ const createProject = async (projectData, userId) => {
       const plan = await scheduleProject({
         stageQuantities,
         startDate: commitStart,
-        difficulty,
+        // AL-3: the difficulty INHERITED from the estimate, not the request
+        // default. This variable was computed and then never used, so a HARD
+        // estimate became an EASY project — a 50%-of-span difference.
+        difficulty: effectiveDifficulty,
         mode: 'commit',
         tx,
       });
@@ -353,7 +397,7 @@ const createProject = async (projectData, userId) => {
           invoiceId,
           deliveryEstimationcode: deliveryEstimationcode || null,
           status,
-          difficulty,
+          difficulty: effectiveDifficulty,
           totalProjectQuantity: totalQty,
           requestedDelivery:
             requestedDelivery && requestedDelivery !== ''
@@ -396,10 +440,18 @@ const createProject = async (projectData, userId) => {
       });
 
       // --- update parent Delivery Estimation status if linked ---
+      // FN-8: this runs INSIDE the creation transaction. The conversion helper
+      // used to create the project and then patch the estimate in two separate
+      // unguarded writes, so a failure between them left an estimate that could
+      // be converted a second time.
       if (deliveryEstimationcode) {
         await tx.deliveryEstimation.updateMany({
           where: { code: deliveryEstimationcode },
-          data: { status: 'PROJECT_CREATED' },
+          data: {
+            status: 'PROJECT_CREATED',
+            projectId: created.id,
+            updatedById: userId,
+          },
         });
       }
 
@@ -426,15 +478,19 @@ const createProject = async (projectData, userId) => {
             data: {
               projectStageId,
               dailyStageCapacityId: daily.id,
-              allocatedUnits: Math.round(alloc.units),
+              // FN-6: units are Float and carry 2-decimal precision. Rounding
+              // to Int here made the sum of the allocation rows drift away from
+              // the day's usedCapacity counter, producing phantom >125% days.
+              allocatedUnits: round2(alloc.units),
               allocatedHours: alloc.hours,
-              shift: alloc.shift || 'FULL_DAY',
+              shift: alloc.shift || DEFAULT_STAGE_SHIFT,
               startDateTime: alloc.startDateTime,
               endDateTime: alloc.endDateTime,
               customStartTime: alloc.startDateTime,
               customEndTime: alloc.endDateTime,
               allocationDate: date,
-              isOverCapacity: false,
+              isOverCapacity:
+                (daily.usedCapacity || 0) > (daily.maxCapacity || 0) + 0.001,
             },
           });
         }
@@ -454,7 +510,10 @@ const createProject = async (projectData, userId) => {
     { timeout: 30000, maxWait: 15000 },
   );
 
-  return project;
+  // Warnings are advisory, not failures: the project was created. The UI shows
+  // them so an out-of-hours creation or an estimate/invoice mismatch is visible
+  // rather than silently absorbed.
+  return warnings.length ? { ...project, warnings } : project;
 };
 
 // Optional debug function – add outside createProject if needed
@@ -1675,14 +1734,34 @@ const calculateProjectDelivery = async (id, totalDays, userId) => {
 
   const project = await prisma.project.findUnique({
     where: { id },
+    include: { stages: true },
   });
 
   if (!project) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Project not found');
   }
 
-  const calculatedDelivery = new Date();
-  calculatedDelivery.setDate(calculatedDelivery.getDate() + totalDays);
+  // FN-2: WORKING days, from the project's actual production end, pinned to
+  // close of business — the same rule the engine and the rescheduler use. This
+  // used to be `new Date() + totalDays` calendar days, which ignored weekends,
+  // holidays, the buffer model and the project's own schedule, and overwrote a
+  // correctly computed delivery date with a number derived from nothing.
+  const cal = await getCalendar();
+  const liveStages = (project.stages || []).filter(
+    (s) => s.status !== 'CANCELLED',
+  );
+  const anchor = liveStages.length
+    ? new Date(
+        Math.max(
+          ...liveStages.map((s) =>
+            new Date(s.endDateTime || s.endDate).getTime(),
+          ),
+        ),
+      )
+    : cal.nextWorkingStart(new Date());
+  const calculatedDelivery = cal.endOfWorkingDay(
+    cal.addWorkingDays(anchor, totalDays),
+  );
 
   const updatedProject = await prisma.project.update({
     where: { id },
@@ -2024,217 +2103,6 @@ const checkAndScheduleStage = async (
   }
 };
 
-const recalculateProjectTimeline = async (
-  projectId,
-  capacityMap,
-  difficultyPercentages,
-) => {
-  console.log(
-    `\n=== RECALCULATING PROJECT TIMELINE for project ${projectId} ===`,
-  );
-
-  // Get project with all data
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      invoice: {
-        include: {
-          items: {
-            include: {
-              proformaItemMaterials: {
-                include: {
-                  material: true,
-                },
-              },
-            },
-          },
-        },
-      },
-      stages: true,
-    },
-  });
-
-  if (!project) {
-    throw new Error('Project not found');
-  }
-
-  // Calculate material quantities
-  let totalLaminatedMDFQuantity = 0;
-  let totalPlainMDFQuantity = 0;
-  let totalWoodQuantity = 0;
-  let totalMetalQuantity = 0;
-
-  project.invoice.items.forEach((item) => {
-    item.proformaItemMaterials.forEach((pim) => {
-      const { quantity } = pim;
-      const { material } = pim;
-
-      if (material?.laminatedMDF) {
-        totalLaminatedMDFQuantity += quantity;
-      } else if (material?.plainMDF) {
-        totalPlainMDFQuantity += quantity;
-      } else if (material?.wood) {
-        totalWoodQuantity += quantity;
-      } else if (material?.metal) {
-        totalMetalQuantity += quantity;
-      }
-    });
-  });
-
-  const totalProjectQuantity =
-    totalLaminatedMDFQuantity +
-    totalPlainMDFQuantity +
-    totalWoodQuantity +
-    totalMetalQuantity;
-
-  // Helper function to calculate stage days
-  const calculateStageDays = (stage, quantity) => {
-    const capacityInfo = capacityMap[stage];
-    if (!capacityInfo) return 0;
-    if (quantity === 0) return 0;
-
-    const calculatedDays = Math.ceil(quantity / capacityInfo.capacity);
-    return Math.max(calculatedDays, capacityInfo.days);
-  };
-
-  // Determine if metal exists (for path selection)
-  const hasMetal = totalMetalQuantity > 0;
-
-  // Calculate stage days based on materials and path
-  const stageDays = {};
-
-  // ALWAYS included
-  stageDays.DESIGN = calculateStageDays(
-    'DESIGN',
-    Math.max(totalProjectQuantity, 1),
-  );
-  stageDays.ASSEMBLY = calculateStageDays(
-    'ASSEMBLY',
-    Math.max(totalProjectQuantity, 1),
-  );
-  stageDays.FINISHING = calculateStageDays(
-    'FINISHING',
-    Math.max(totalProjectQuantity, 1),
-  );
-  stageDays.DELIVERY = 1;
-
-  if (hasMetal) {
-    // METAL PATH
-    stageDays.METAL_WORKS = calculateStageDays(
-      'METAL_WORKS',
-      totalMetalQuantity,
-    );
-    stageDays.CNC = calculateStageDays('CNC', totalMetalQuantity);
-    stageDays.CUTTING = 0;
-    stageDays.EDGE_BANDING = 0;
-
-    const paintingQuantity =
-      totalPlainMDFQuantity + totalWoodQuantity + totalMetalQuantity;
-    stageDays.PAINTING =
-      paintingQuantity > 0
-        ? calculateStageDays('PAINTING', paintingQuantity)
-        : 0;
-  } else {
-    // WOOD/MDF PATH
-    stageDays.METAL_WORKS = 0;
-    stageDays.CNC =
-      totalWoodQuantity > 0 || totalPlainMDFQuantity > 0
-        ? calculateStageDays('CNC', totalWoodQuantity + totalPlainMDFQuantity)
-        : 0;
-    stageDays.CUTTING = calculateStageDays(
-      'CUTTING',
-      Math.max(totalProjectQuantity, 1),
-    );
-    stageDays.EDGE_BANDING =
-      totalLaminatedMDFQuantity > 0
-        ? calculateStageDays('EDGE_BANDING', totalLaminatedMDFQuantity)
-        : 0;
-
-    const paintingQuantity = totalPlainMDFQuantity + totalWoodQuantity;
-    stageDays.PAINTING =
-      paintingQuantity > 0
-        ? calculateStageDays('PAINTING', paintingQuantity)
-        : 0;
-  }
-
-  // Calculate total days with difficulty and contingency
-  const capacityTime = Object.values(stageDays).reduce(
-    (sum, days) => sum + days,
-    0,
-  );
-  const difficultyPercentage = difficultyPercentages[project.difficulty] || 0;
-  const difficultyTime = capacityTime * difficultyPercentage;
-  const totalBeforeContingency = capacityTime + difficultyTime;
-  const contingency = totalBeforeContingency * 0.3;
-  const totalProjectDays = Math.ceil(
-    capacityTime + difficultyTime + contingency,
-  );
-
-  // Get project start date from first stage
-  const sortedStages = project.stages.sort((a, b) => a.startDate - b.startDate);
-  const projectStartDate = sortedStages[0]?.startDate || new Date();
-
-  // Calculate new delivery date
-  const calculatedDelivery = addBusinessDays(
-    projectStartDate,
-    totalProjectDays,
-  );
-
-  // Update project with new totals
-  const updatedProject = await prisma.project.update({
-    where: { id: projectId },
-    data: {
-      totalProjectQuantity,
-      calculatedDelivery,
-      totalDays: totalProjectDays,
-    },
-    include: {
-      customer: true,
-      invoice: {
-        include: {
-          items: {
-            include: {
-              proformaItemMaterials: {
-                include: {
-                  material: true,
-                },
-              },
-            },
-          },
-        },
-      },
-      stages: {
-        orderBy: {
-          startDate: 'asc',
-        },
-      },
-    },
-  });
-
-  return updatedProject;
-};
-// Helper function - Define at the top level
-const isBusinessDay = (date) => {
-  const day = date.getDay();
-  return day !== 0 && day !== 6; // Sunday = 0, Saturday = 6
-};
-
-const getDateKey = (date) => {
-  return date.toISOString().split('T')[0];
-};
-
-const addBusinessDays = (startDate, daysToAdd) => {
-  const result = new Date(startDate);
-  let addedDays = 0;
-
-  while (addedDays < daysToAdd) {
-    result.setDate(result.getDate() + 1);
-    if (isBusinessDay(result)) {
-      addedDays++;
-    }
-  }
-  return result;
-};
 
 // NEW SERVICE: Check capacity availability
 const checkStageCapacityAvailability = async (
@@ -2256,10 +2124,19 @@ const checkStageCapacityAvailability = async (
     };
   }
 
-  const dailyCapacity = capacityInfo.capacity || 1;
-  const workingHoursPerDay = 7.5;
+  // The working calendar is the ONE definition of which days are worked. This
+  // used to be a local `isBusinessDay` that hardcoded Mon-Fri — it disagreed
+  // with the scheduler's six-day week and ignored holidays entirely, so a
+  // capacity check reported every Saturday as non-working while the scheduler
+  // was busy booking work into it.
+  const cal = await getCalendar();
+  const dailyCapacity = effectiveDailyMax({
+    capacity: capacityInfo.capacity || 1,
+    parallelSlots: capacityInfo.parallelSlots || 1,
+  });
+  const workingHoursPerDay = cal.workingHoursPerDay;
   const requiredHours = (requiredQuantity / dailyCapacity) * workingHoursPerDay;
-  const requiredDays = Math.ceil(requiredHours / workingHoursPerDay);
+  const requiredDays = Math.max(1, Math.ceil(requiredHours / workingHoursPerDay));
 
   // Check each day in range
   const warnings = [];
@@ -2281,14 +2158,13 @@ const checkStageCapacityAvailability = async (
 
   const recordMap = new Map();
   dailyRecords.forEach((record) => {
-    recordMap.set(record.date.toISOString().split('T')[0], record);
+    recordMap.set(cal.dayKey(record.date), record);
   });
 
   let dayCount = 0;
   while (currentDate <= endDateTime && dayCount < 365) {
-    // Use the globally defined isBusinessDay function
-    if (isBusinessDay(currentDate)) {
-      const dateKey = currentDate.toISOString().split('T')[0];
+    if (cal.isWorkingDay(currentDate)) {
+      const dateKey = cal.dayKey(currentDate);
       const existingRecord = recordMap.get(dateKey);
       const usedCapacity = existingRecord?.usedCapacity || 0;
       const overCapacityUsed = existingRecord?.overCapacityUsed || 0;
@@ -2492,6 +2368,7 @@ const getCapacityAnalysisForDateRange = async (
     );
 
     // Get detailed daily breakdown
+    const cal = await getCalendar();
     const dailyBreakdown = [];
     const currentDate = new Date(startDate);
     currentDate.setHours(0, 0, 0, 0);
@@ -2499,7 +2376,7 @@ const getCapacityAnalysisForDateRange = async (
     endDateTime.setHours(0, 0, 0, 0);
 
     while (currentDate <= endDateTime) {
-      if (isBusinessDay(currentDate)) {
+      if (cal.isWorkingDay(currentDate)) {
         const status = await getDateCapacityStatus(stage, currentDate);
         if (status) {
           dailyBreakdown.push(status);
@@ -2525,137 +2402,6 @@ const getCapacityAnalysisForDateRange = async (
   }
 };
 
-// Update the updateProjectStage function to remove duplicate helper functions
-const updateProjectTotalQuantity = async (projectId) => {
-  console.log('\n=== START updateProjectTotalQuantity ===');
-  console.log('projectId:', projectId);
-
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      invoice: {
-        include: {
-          items: {
-            include: {
-              proformaItemMaterials: {
-                include: {
-                  material: true,
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  });
-
-  console.log('Project found:', project ? 'Yes' : 'No');
-  if (!project) {
-    console.log('❌ Project not found, exiting');
-    return;
-  }
-
-  console.log(`Project ID: ${project.id}`);
-  console.log(`Invoice exists: ${project.invoice ? 'Yes' : 'No'}`);
-  console.log(
-    `Number of invoice items: ${project.invoice?.items?.length || 0}`,
-  );
-
-  let totalLaminatedMDFQuantity = 0;
-  let totalPlainMDFQuantity = 0;
-  let totalWoodQuantity = 0;
-  let totalMetalQuantity = 0;
-  let totalOtherQuantity = 0;
-  let totalItemsProcessed = 0;
-  let totalMaterialsProcessed = 0;
-
-  if (project.invoice && project.invoice.items) {
-    project.invoice.items.forEach((item, itemIndex) => {
-      console.log(`\n📦 Processing Item ${itemIndex + 1}:`, item.id);
-      console.log(
-        `   Materials count: ${item.proformaItemMaterials?.length || 0}`,
-      );
-
-      if (item.proformaItemMaterials) {
-        item.proformaItemMaterials.forEach((pim, pimIndex) => {
-          totalMaterialsProcessed++;
-          const { quantity } = pim;
-          const { material } = pim;
-
-          console.log(`   📄 Material ${pimIndex + 1}:`);
-          console.log(`      Quantity: ${quantity}`);
-          console.log(`      Material type:`, {
-            laminatedMDF: material?.laminatedMDF || false,
-            plainMDF: material?.plainMDF || false,
-            wood: material?.wood || false,
-            metal: material?.metal || false,
-          });
-
-          if (material?.laminatedMDF) {
-            totalLaminatedMDFQuantity += quantity;
-            console.log(
-              `      ➕ Added to Laminated MDF: +${quantity} (Total: ${totalLaminatedMDFQuantity})`,
-            );
-          } else if (material?.plainMDF) {
-            totalPlainMDFQuantity += quantity;
-            console.log(
-              `      ➕ Added to Plain MDF: +${quantity} (Total: ${totalPlainMDFQuantity})`,
-            );
-          } else if (material?.wood) {
-            totalWoodQuantity += quantity;
-            console.log(
-              `      ➕ Added to Wood: +${quantity} (Total: ${totalWoodQuantity})`,
-            );
-          } else if (material?.metal) {
-            totalMetalQuantity += quantity;
-            console.log(
-              `      ➕ Added to Metal: +${quantity} (Total: ${totalMetalQuantity})`,
-            );
-          } else {
-            totalOtherQuantity += quantity;
-            console.log(
-              `      ➕ Added to Other: +${quantity} (Total: ${totalOtherQuantity})`,
-            );
-          }
-          totalItemsProcessed++;
-        });
-      }
-    });
-  }
-
-  const totalProjectQuantity =
-    totalLaminatedMDFQuantity +
-    totalPlainMDFQuantity +
-    totalWoodQuantity +
-    totalMetalQuantity +
-    totalOtherQuantity;
-
-  console.log('\n📊 QUANTITY SUMMARY:');
-  console.log(`   Laminated MDF: ${totalLaminatedMDFQuantity}`);
-  console.log(`   Plain MDF: ${totalPlainMDFQuantity}`);
-  console.log(`   Wood: ${totalWoodQuantity}`);
-  console.log(`   Metal: ${totalMetalQuantity}`);
-  console.log(`   Other: ${totalOtherQuantity}`);
-  console.log(`   ─────────────────────`);
-  console.log(`   TOTAL PROJECT QUANTITY: ${totalProjectQuantity}`);
-  console.log(`\n📈 Processing Stats:`);
-  console.log(`   Total items processed: ${totalItemsProcessed}`);
-  console.log(`   Total materials processed: ${totalMaterialsProcessed}`);
-
-  const updatedProject = await prisma.project.update({
-    where: { id: projectId },
-    data: { totalProjectQuantity },
-  });
-
-  console.log(`\n✅ Database updated successfully`);
-  console.log(`   Project ID: ${updatedProject.id}`);
-  console.log(
-    `   New totalProjectQuantity: ${updatedProject.totalProjectQuantity}`,
-  );
-  console.log('=== END updateProjectTotalQuantity ===\n');
-
-  return updatedProject;
-};
 
 const updateProjectStage = async (
   projectId,
@@ -2683,9 +2429,10 @@ const updateProjectStage = async (
     );
   }
   const cal = await getCalendar();
-  const settings = await getSchedulingSettings();
-  const workingHoursPerDay =
-    settings.workingHoursPerDay || WORKING_HOURS_PER_DAY;
+  // Working hours per day is DERIVED from the configured shift and lunch
+  // windows and lives on the calendar — it is no longer an independent setting
+  // that could contradict the window the scheduler actually works.
+  const workingHoursPerDay = cal.workingHoursPerDay;
   const hasManualDuration =
     timeTakenMinutes !== null && timeTakenMinutes !== undefined;
 
@@ -2736,12 +2483,7 @@ const updateProjectStage = async (
           ? new Date(customDates.startDate)
           : new Date(stage.startDateTime || stage.startDate || Date.now());
       const manualTimeline = hasManualDuration
-        ? splitWorkingMinutes(
-            cal,
-            chosenStart,
-            timeTakenMinutes,
-            workingHoursPerDay,
-          )
+        ? splitWorkingMinutes(cal, chosenStart, timeTakenMinutes)
         : null;
 
       let updatedStage;
@@ -2751,7 +2493,6 @@ const updateProjectStage = async (
           : await scheduleProject({
               stageQuantities: { [stageName]: newQuantity },
               startDate: chosenStart,
-              preserveStartTime: true,
               difficulty: project.difficulty,
               mode: 'commit',
               tx,
@@ -2790,7 +2531,7 @@ const updateProjectStage = async (
             capacityDays,
             shift: sp
               ? sp.shift
-              : STAGE_SHIFT_PREFERENCE[stageName] || 'CUSTOM',
+              : DEFAULT_STAGE_SHIFT,
             timeTaken,
             autoSchedule: !manualOverride,
             status: 'ACTIVE',
