@@ -181,6 +181,7 @@ const createProject = async (projectData, userId) => {
   const {
     customerId,
     invoiceId,
+    deliveryEstimationcode,
     status = 'INVOICE',
     difficulty = 'EASY',
     requestedDelivery,
@@ -263,7 +264,34 @@ const createProject = async (projectData, userId) => {
     materials.other;
 
   // Material-driven stage quantities (single source: scheduling engine).
-  const stageQuantities = computeStageQuantities(materials);
+  let stageQuantities = computeStageQuantities(materials);
+  let effectiveDifficulty = difficulty;
+
+  // If created from a Delivery Estimation, inherit stage quantities & difficulty to ensure 100% timeline alignment
+  if (deliveryEstimationcode) {
+    const estimation = await prisma.deliveryEstimation.findUnique({
+      where: { code: deliveryEstimationcode },
+    });
+    if (estimation) {
+      if (estimation.difficulty) {
+        effectiveDifficulty = estimation.difficulty;
+      }
+      stageQuantities = {
+        DESIGN: estimation.DESIGN ?? stageQuantities.DESIGN,
+        METAL_WORKS: estimation.METAL_WORKS ?? stageQuantities.METAL_WORKS,
+        CNC: estimation.CNC ?? stageQuantities.CNC,
+        CUTTING: estimation.CUTTING ?? stageQuantities.CUTTING,
+        EDGE_BANDING: estimation.EDGE_BANDING ?? stageQuantities.EDGE_BANDING,
+        ASSEMBLY: estimation.ASSEMBLY ?? stageQuantities.ASSEMBLY,
+        PAINTING: estimation.PAINTING ?? stageQuantities.PAINTING,
+        FINISHING: estimation.FINISHING ?? stageQuantities.FINISHING,
+        DELIVERY: estimation.DELIVERY ?? stageQuantities.DELIVERY,
+        INSTALLATION: stageQuantities.INSTALLATION,
+        PURCHASING: stageQuantities.PURCHASING,
+      };
+    }
+  }
+
   if (isDefaultCustomer) {
     // Internal/default customer: no delivery or installation phase.
     stageQuantities.DELIVERY = 0;
@@ -323,6 +351,7 @@ const createProject = async (projectData, userId) => {
         data: {
           customerId: validCustomerId,
           invoiceId,
+          deliveryEstimationcode: deliveryEstimationcode || null,
           status,
           difficulty,
           totalProjectQuantity: totalQty,
@@ -359,6 +388,20 @@ const createProject = async (projectData, userId) => {
           createdBy: { select: { id: true, name: true, email: true } },
         },
       });
+
+      // --- update parent Proforma Invoice status ---
+      await tx.proformaInvoice.update({
+        where: { id: invoiceId },
+        data: { status: 'APPROVED_CREATE_PROJECT' },
+      });
+
+      // --- update parent Delivery Estimation status if linked ---
+      if (deliveryEstimationcode) {
+        await tx.deliveryEstimation.updateMany({
+          where: { code: deliveryEstimationcode },
+          data: { status: 'PROJECT_CREATED' },
+        });
+      }
 
       // --- persist capacity allocations, linked to the daily-capacity rows the
       //     engine created/updated during commit ---

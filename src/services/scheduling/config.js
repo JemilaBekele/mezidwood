@@ -17,17 +17,17 @@ const WORKING_TIMEZONE = 'Africa/Addis_Ababa';
 
 const WORKING_HOURS_PER_DAY = 7.5;
 
-// Shift windows are expressed in the LOCAL FACTORY CLOCK (Ethiopian clock),
-// as decimal hours: 2.5 => 2:30, 6.5 => 6:30, 11.0 => 11:00.
-//   MORNING   => 2:30 - 6:30  (4.0h)
-//   AFTERNOON => 7:30 - 11:00 (3.5h)
-//   FULL_DAY  => 2:30 - 11:00 (7.5h, the two shifts back to back)
-//   CUSTOM    => 2:30 - 11:00 (7.5h, flexible whole-day scheduling window)
+// Shift windows are expressed in 24-HOUR STANDARD FACTORY CLOCK (Africa/Addis_Ababa).
+//   MORNING   => 08:30 AM - 12:30 PM (8.5 - 12.5, 4.0h)
+//   LUNCH     => 12:30 PM - 01:30 PM (1.0h non-working gap)
+//   AFTERNOON => 01:30 PM - 05:00 PM (13.5 - 17.0, 3.5h)
+//   FULL_DAY  => 08:30 AM - 05:00 PM (8.5 - 17.0, 7.5 working hours total)
+//   CUSTOM    => 08:30 AM - 05:00 PM (8.5 - 17.0, 7.5 working hours total)
 const SHIFT_TIMES = {
-  MORNING: { start: 2.5, end: 6.5, hours: 4.0 },
-  AFTERNOON: { start: 7.5, end: 11.0, hours: 3.5 },
-  FULL_DAY: { start: 2.5, end: 11.0, hours: 7.5 },
-  CUSTOM: { start: 2.5, end: 11.0, hours: 7.5 },
+  MORNING: { start: 8.5, end: 12.5, hours: 4.0 },
+  AFTERNOON: { start: 13.5, end: 17.0, hours: 3.5 },
+  FULL_DAY: { start: 8.5, end: 17.0, hours: 7.5 },
+  CUSTOM: { start: 8.5, end: 17.0, hours: 7.5 },
 };
 
 const SHIFT_HOURS = {

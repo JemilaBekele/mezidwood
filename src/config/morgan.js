@@ -7,8 +7,13 @@ morgan.token('message', (req, res) => res.locals.errorMessage || '');
 const getIPFormat = () =>
   config.env === 'production' ? ':remote-addr - ' : '';
 
+const logDir = path.join(__dirname, '..', 'logs');
+if (!fs.existsSync(logDir)) {
+  fs.mkdirSync(logDir, { recursive: true });
+}
+
 const accessLogStream = fs.createWriteStream(
-  path.join(__dirname, '..', 'logs/access.log'),
+  path.join(logDir, 'access.log'),
   { flags: 'a' },
 );
 

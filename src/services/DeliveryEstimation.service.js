@@ -430,17 +430,9 @@ const deleteDeliveryEstimation = async (id) => {
     );
   }
 
-  // Use a transaction to delete related stages first, then the estimation
-  await prisma.$transaction([
-    // Delete all related stages first
-    prisma.deliveryEstimationStage.deleteMany({
-      where: { deliveryEstimationId: id },
-    }),
-    // Then delete the estimation
-    prisma.deliveryEstimation.delete({
-      where: { id },
-    }),
-  ]);
+  await prisma.deliveryEstimation.delete({
+    where: { id },
+  });
 
   return { message: 'Delivery estimation deleted successfully' };
 };
