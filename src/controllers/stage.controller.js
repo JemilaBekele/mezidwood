@@ -230,6 +230,15 @@ const getUnassignedDesignProjects = catchAsync(async (req, res) => {
     ...result,
   });
 });
+const getStageLeftWork = catchAsync(async (req, res) => {
+  const result = await stages.getStageLeftWork();
+  
+  res.status(httpStatus.OK).send({
+    success: true,
+    data: result,
+    count: result.length,
+  });
+});
 module.exports = {
   getUnassignedDesignProjects,
   getbyDesignProject,
@@ -245,4 +254,5 @@ module.exports = {
   getFinishingProjects,
   getInstallationProjects,
   getDeliveryProjects,
+  getStageLeftWork,
 };

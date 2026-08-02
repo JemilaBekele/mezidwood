@@ -2088,7 +2088,7 @@ const updateProformaInvoiceseco = async (
         // Prepare invoice update data
         const invoiceUpdateData = {
           ...(!isStore && customerId && { customerId }),
-          status,
+       
           subtotal: Number(subtotal.toFixed(2)),
           vat: Number(vat.toFixed(2)),
           total: Number(total.toFixed(2)),
@@ -2106,19 +2106,6 @@ const updateProformaInvoiceseco = async (
           data: invoiceUpdateData,
         });
 
-        // 🔥 NEW: Create a log entry for status change
-        if (status !== existingInvoice.status) {
-          const userId =
-            approvedById || preparedById || existingInvoice.preparedById;
-
-          await prismaTx.piLog.create({
-            data: {
-              action: `Status changed from ${existingInvoice.status} to ${status}`,
-              proformaId: id,
-              piuserId: userId,
-            },
-          });
-        }
 
         // Update banks if provided
         if (banks !== undefined) {

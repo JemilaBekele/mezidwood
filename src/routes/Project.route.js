@@ -182,5 +182,18 @@ router.post(
   auth,
   projectController.rescheduleFromCalendar,
 );
+router.put(
+  '/api/projects/:projectId/allow-delivery-with-balance',
+  auth,
+  checkPermission('UPDATE_PROJECT'),
+  projectController.allowDeliveryWithBalance,
+);
 
+// Disallow delivery with balance (set to false)
+router.put(
+  '/api/projects/:projectId/disallow-delivery-with-balance',
+  auth,
+  checkPermission('UPDATE_PROJECT'),
+  projectController.disallowDeliveryWithBalance,
+);
 module.exports = router;

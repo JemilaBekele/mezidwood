@@ -91,5 +91,5 @@ router.get(
   checkPermission('VIEW_INSTALLATION_PROJECTS'),
   stage.getInstallationProjects,
 );
-
+router.get('/api/left-work', stage.getStageLeftWork);
 module.exports = router;

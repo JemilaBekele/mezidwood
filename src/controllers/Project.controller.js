@@ -53,7 +53,37 @@ const getProject = catchAsync(async (req, res) => {
     project,
   });
 });
+const allowDeliveryWithBalance = catchAsync(async (req, res) => {
+  const { projectId } = req.params;
 
+  const project = await projectService.allowDeliveryWithBalance(
+    projectId,
+  );
+
+  res.status(httpStatus.OK).send({
+    success: true,
+    message: 'Project allowed for delivery with balance successfully',
+    project,
+  });
+});
+
+/**
+ * Disallow delivery with balance for a project
+ * Sets allowToDeliverWithBalance to false
+ */
+const disallowDeliveryWithBalance = catchAsync(async (req, res) => {
+  const { projectId } = req.params;
+
+  const project = await projectService.disallowDeliveryWithBalance(
+    projectId,
+  );
+
+  res.status(httpStatus.OK).send({
+    success: true,
+    message: 'Project disallowed for delivery with balance successfully',
+    project,
+  });
+});
 // Get all Projects with filtering
 const getProjects = catchAsync(async (req, res) => {
   const filters = {
@@ -773,4 +803,6 @@ module.exports = {
   cancelProjectStage,
   getScheduleHistory,
   rescheduleFromCalendar,
+  allowDeliveryWithBalance,
+  disallowDeliveryWithBalance,
 };
