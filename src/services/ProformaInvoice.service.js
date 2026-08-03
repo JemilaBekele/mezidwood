@@ -9,11 +9,16 @@ const reschedule = require('./scheduling/reschedule');
 
 // Generate unique PI number
 const generatePINumber = async () => {
+  const date = new Date();
+  const year = date.getFullYear().toString().slice(-2);
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const prefix = `PI-${year}${month}-`;
+
   // Find the latest PI number for this year/month
   const latestPI = await prisma.proformaInvoice.findFirst({
     where: {
       piNumber: {
-        startsWith: `PI`,
+        startsWith: prefix,
       },
     },
     orderBy: {
@@ -27,7 +32,7 @@ const generatePINumber = async () => {
     sequence = lastSequence + 1;
   }
 
-  return `PI-${sequence.toString().padStart(4, '0')}`;
+  return `${prefix}${sequence.toString().padStart(4, '0')}`;
 };
 
 // Calculate invoice totals
