@@ -108,6 +108,7 @@ const createDeliveryEstimation = {
         .allow(null, '')
         .pattern(/^[+]?[0-9\s\-()]{10,}$/)
         .messages({ 'string.pattern.base': 'Please provide a valid phone number' }),
+      piId: Joi.string().allow(null, ''),
       difficulty: Joi.string()
         .valid(...DIFFICULTIES)
         .required(),

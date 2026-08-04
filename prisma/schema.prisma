@@ -858,6 +858,7 @@ model ProformaInvoice {
 
   attachments Attachment[]
   project     Project?
+  deliveryEstimations DeliveryEstimation[]
 
   @@map("proforma_invoices")
   piLogs PiLog[]
@@ -1420,6 +1421,9 @@ model DeliveryEstimation {
   // Set when the estimate is converted, so the link is queryable in both
   // directions (Project.deliveryEstimationcode is the other side).
   projectId String?
+
+  piId               String?
+  pi                 ProformaInvoice? @relation(fields: [piId], references: [id])
 
   status             EstimationStatus @default(ESTIMATED)
 

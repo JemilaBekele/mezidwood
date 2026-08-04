@@ -283,6 +283,7 @@ const createDeliveryEstimation = async (estimationData, userId) => {
     const {
       customerName,
       phone,
+      piId,
       difficulty,
       status = 'ESTIMATED',
       holdUntil,
@@ -388,6 +389,7 @@ const createDeliveryEstimation = async (estimationData, userId) => {
           code,
           customerName: customerName ? customerName.trim() : null,
           phone: phone ? phone.trim() : null,
+          piId,
           difficulty,
           totalQuantity,
           estimatedDays,
