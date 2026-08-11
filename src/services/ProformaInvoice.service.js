@@ -9,16 +9,11 @@ const reschedule = require('./scheduling/reschedule');
 
 // Generate unique PI number
 const generatePINumber = async () => {
-  const date = new Date();
-  const year = date.getFullYear().toString().slice(-2);
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const prefix = `PI-${year}${month}-`;
-
   // Find the latest PI number for this year/month
   const latestPI = await prisma.proformaInvoice.findFirst({
     where: {
       piNumber: {
-        startsWith: prefix,
+        startsWith: `PI`,
       },
     },
     orderBy: {
@@ -32,7 +27,7 @@ const generatePINumber = async () => {
     sequence = lastSequence + 1;
   }
 
-  return `${prefix}${sequence.toString().padStart(4, '0')}`;
+  return `PI-${sequence.toString().padStart(4, '0')}`;
 };
 
 // Calculate invoice totals
@@ -1598,62 +1593,116 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
         }
 
         // Handle attachments upload - preserve existing attachments if no new ones are uploaded
-        if (
-          structuredFiles.attachments &&
-          structuredFiles.attachments.length > 0
-        ) {
-          // Delete existing attachments only if new ones are being uploaded
-          await prismaTx.attachment.deleteMany({
+        // Handle attachments - PRESERVE existing, DELETE only marked ones, ADD new ones
+        try {
+          // 1. Get existing attachments
+          const existingAttachments = await prismaTx.attachment.findMany({
             where: { proformaInvoiceId: id },
           });
+          console.log(`📎 Existing attachments: ${existingAttachments.length}`);
 
-          // Create new attachments
-          await Promise.all(
-            structuredFiles.attachments.map(async (file) => {
-              // Save attachment to appropriate path
-              const targetDir = path.join(
-                __dirname,
-                '../../uploads/proforma/attachments',
-              );
+          // 2. Parse attachments to delete from updateData
+          let attachmentsToDelete = [];
+          if (updateData.attachmentsToDelete) {
+            try {
+              attachmentsToDelete =
+                typeof updateData.attachmentsToDelete === 'string'
+                  ? JSON.parse(updateData.attachmentsToDelete)
+                  : updateData.attachmentsToDelete;
 
-              // Use fs.mkdir instead of fs.ensureDir if you don't have fs-extra
-              try {
-                await fs.mkdir(targetDir, { recursive: true });
-              } catch (err) {
-                if (err.code !== 'EEXIST') throw err;
+              // Ensure it's an array
+              if (!Array.isArray(attachmentsToDelete)) {
+                attachmentsToDelete = [attachmentsToDelete];
               }
-
-              const timestamp = Date.now();
-              const randomString = Math.random().toString(36).substring(2, 8);
-              const fileExt = path.extname(file.originalname);
-              const baseName = path.basename(file.originalname, fileExt);
-              // Sanitize filename
-              const sanitizedBaseName = baseName.replace(/[^a-zA-Z0-9]/g, '_');
-              const newFilename = `${timestamp}_${randomString}_${sanitizedBaseName}${fileExt}`;
-              const targetPath = path.join(targetDir, newFilename);
-
-              // Copy file
-              await fs.copyFile(file.path, targetPath);
-              // Clean up temp file
-              await fs.unlink(file.path);
-
-              // Return URL with /uploads prefix
-              const fileUrl = `/uploads/proforma/attachments/${newFilename}`;
-
-              await prismaTx.attachment.create({
-                data: {
-                  proformaInvoiceId: id,
-                  fileUrl,
-                },
-              });
-
-              console.log(`Attachment saved: ${targetPath}`);
-              console.log(`Attachment URL: ${fileUrl}`);
-            }),
+            } catch (e) {
+              // If it's not a JSON string, treat it as a single ID
+              attachmentsToDelete = [updateData.attachmentsToDelete];
+            }
+          }
+          console.log(
+            `🗑️ Attachments marked for deletion: ${attachmentsToDelete.length}`,
           );
-        } else {
-          // If no new attachments, keep existing ones (do nothing)
-          console.log('No new attachments to upload, keeping existing ones');
+
+          // 3. Delete only the attachments marked for deletion
+          if (attachmentsToDelete.length > 0) {
+            const deleteResult = await prismaTx.attachment.deleteMany({
+              where: {
+                proformaInvoiceId: id,
+                id: { in: attachmentsToDelete },
+              },
+            });
+            console.log(`✅ Deleted ${deleteResult.count} attachments`);
+          }
+
+          // 4. Add new attachments (if any)
+          if (
+            structuredFiles.attachments &&
+            structuredFiles.attachments.length > 0
+          ) {
+            console.log(
+              `📤 Adding ${structuredFiles.attachments.length} new attachments`,
+            );
+
+            await Promise.all(
+              structuredFiles.attachments.map(async (file) => {
+                // Save attachment to appropriate path
+                const targetDir = path.join(
+                  __dirname,
+                  '../../uploads/proforma/attachments',
+                );
+
+                try {
+                  await fs.mkdir(targetDir, { recursive: true });
+                } catch (err) {
+                  if (err.code !== 'EEXIST') throw err;
+                }
+
+                const timestamp = Date.now();
+                const randomString = Math.random().toString(36).substring(2, 8);
+                const fileExt = path.extname(file.originalname);
+                const baseName = path.basename(file.originalname, fileExt);
+                // Sanitize filename
+                const sanitizedBaseName = baseName.replace(
+                  /[^a-zA-Z0-9]/g,
+                  '_',
+                );
+                const newFilename = `${timestamp}_${randomString}_${sanitizedBaseName}${fileExt}`;
+                const targetPath = path.join(targetDir, newFilename);
+
+                // Copy file
+                await fs.copyFile(file.path, targetPath);
+                // Clean up temp file
+                await fs.unlink(file.path);
+
+                // Return URL with /uploads prefix
+                const fileUrl = `/uploads/proforma/attachments/${newFilename}`;
+
+                await prismaTx.attachment.create({
+                  data: {
+                    proformaInvoiceId: id,
+                    fileUrl,
+                  },
+                });
+
+                console.log(`✅ Attachment saved: ${targetPath}`);
+                console.log(`✅ Attachment URL: ${fileUrl}`);
+              }),
+            );
+          } else {
+            console.log('ℹ️ No new attachments to upload');
+          }
+
+          // 5. Log final attachment count
+          const finalAttachments = await prismaTx.attachment.findMany({
+            where: { proformaInvoiceId: id },
+          });
+          console.log(`📎 Final attachments count: ${finalAttachments.length}`);
+        } catch (error) {
+          console.error('❌ Error handling attachments:', error);
+          throw new ApiError(
+            httpStatus.INTERNAL_SERVER_ERROR,
+            `Failed to handle attachments: ${error.message}`,
+          );
         }
 
         if (materialQuantityChanged && existingInvoice.project?.id) {
@@ -2093,7 +2142,7 @@ const updateProformaInvoiceseco = async (
         // Prepare invoice update data
         const invoiceUpdateData = {
           ...(!isStore && customerId && { customerId }),
-       
+
           subtotal: Number(subtotal.toFixed(2)),
           vat: Number(vat.toFixed(2)),
           total: Number(total.toFixed(2)),
@@ -2110,7 +2159,6 @@ const updateProformaInvoiceseco = async (
           where: { id },
           data: invoiceUpdateData,
         });
-
 
         // Update banks if provided
         if (banks !== undefined) {
@@ -2469,62 +2517,116 @@ const updateProformaInvoiceseco = async (
         }
 
         // Handle attachments upload - preserve existing attachments if no new ones are uploaded
-        if (
-          structuredFiles.attachments &&
-          structuredFiles.attachments.length > 0
-        ) {
-          // Delete existing attachments only if new ones are being uploaded
-          await prismaTx.attachment.deleteMany({
+        // Handle attachments - PRESERVE existing, DELETE only marked ones, ADD new ones
+        try {
+          // 1. Get existing attachments
+          const existingAttachments = await prismaTx.attachment.findMany({
             where: { proformaInvoiceId: id },
           });
+          console.log(`📎 Existing attachments: ${existingAttachments.length}`);
 
-          // Create new attachments
-          await Promise.all(
-            structuredFiles.attachments.map(async (file) => {
-              // Save attachment to appropriate path
-              const targetDir = path.join(
-                __dirname,
-                '../../uploads/proforma/attachments',
-              );
+          // 2. Parse attachments to delete from updateData
+          let attachmentsToDelete = [];
+          if (updateData.attachmentsToDelete) {
+            try {
+              attachmentsToDelete =
+                typeof updateData.attachmentsToDelete === 'string'
+                  ? JSON.parse(updateData.attachmentsToDelete)
+                  : updateData.attachmentsToDelete;
 
-              // Use fs.mkdir instead of fs.ensureDir if you don't have fs-extra
-              try {
-                await fs.mkdir(targetDir, { recursive: true });
-              } catch (err) {
-                if (err.code !== 'EEXIST') throw err;
+              // Ensure it's an array
+              if (!Array.isArray(attachmentsToDelete)) {
+                attachmentsToDelete = [attachmentsToDelete];
               }
-
-              const timestamp = Date.now();
-              const randomString = Math.random().toString(36).substring(2, 8);
-              const fileExt = path.extname(file.originalname);
-              const baseName = path.basename(file.originalname, fileExt);
-              // Sanitize filename
-              const sanitizedBaseName = baseName.replace(/[^a-zA-Z0-9]/g, '_');
-              const newFilename = `${timestamp}_${randomString}_${sanitizedBaseName}${fileExt}`;
-              const targetPath = path.join(targetDir, newFilename);
-
-              // Copy file
-              await fs.copyFile(file.path, targetPath);
-              // Clean up temp file
-              await fs.unlink(file.path);
-
-              // Return URL with /uploads prefix
-              const fileUrl = `/uploads/proforma/attachments/${newFilename}`;
-
-              await prismaTx.attachment.create({
-                data: {
-                  proformaInvoiceId: id,
-                  fileUrl,
-                },
-              });
-
-              console.log(`Attachment saved: ${targetPath}`);
-              console.log(`Attachment URL: ${fileUrl}`);
-            }),
+            } catch (e) {
+              // If it's not a JSON string, treat it as a single ID
+              attachmentsToDelete = [updateData.attachmentsToDelete];
+            }
+          }
+          console.log(
+            `🗑️ Attachments marked for deletion: ${attachmentsToDelete.length}`,
           );
-        } else {
-          // If no new attachments, keep existing ones (do nothing)
-          console.log('No new attachments to upload, keeping existing ones');
+
+          // 3. Delete only the attachments marked for deletion
+          if (attachmentsToDelete.length > 0) {
+            const deleteResult = await prismaTx.attachment.deleteMany({
+              where: {
+                proformaInvoiceId: id,
+                id: { in: attachmentsToDelete },
+              },
+            });
+            console.log(`✅ Deleted ${deleteResult.count} attachments`);
+          }
+
+          // 4. Add new attachments (if any)
+          if (
+            structuredFiles.attachments &&
+            structuredFiles.attachments.length > 0
+          ) {
+            console.log(
+              `📤 Adding ${structuredFiles.attachments.length} new attachments`,
+            );
+
+            await Promise.all(
+              structuredFiles.attachments.map(async (file) => {
+                // Save attachment to appropriate path
+                const targetDir = path.join(
+                  __dirname,
+                  '../../uploads/proforma/attachments',
+                );
+
+                try {
+                  await fs.mkdir(targetDir, { recursive: true });
+                } catch (err) {
+                  if (err.code !== 'EEXIST') throw err;
+                }
+
+                const timestamp = Date.now();
+                const randomString = Math.random().toString(36).substring(2, 8);
+                const fileExt = path.extname(file.originalname);
+                const baseName = path.basename(file.originalname, fileExt);
+                // Sanitize filename
+                const sanitizedBaseName = baseName.replace(
+                  /[^a-zA-Z0-9]/g,
+                  '_',
+                );
+                const newFilename = `${timestamp}_${randomString}_${sanitizedBaseName}${fileExt}`;
+                const targetPath = path.join(targetDir, newFilename);
+
+                // Copy file
+                await fs.copyFile(file.path, targetPath);
+                // Clean up temp file
+                await fs.unlink(file.path);
+
+                // Return URL with /uploads prefix
+                const fileUrl = `/uploads/proforma/attachments/${newFilename}`;
+
+                await prismaTx.attachment.create({
+                  data: {
+                    proformaInvoiceId: id,
+                    fileUrl,
+                  },
+                });
+
+                console.log(`✅ Attachment saved: ${targetPath}`);
+                console.log(`✅ Attachment URL: ${fileUrl}`);
+              }),
+            );
+          } else {
+            console.log('ℹ️ No new attachments to upload');
+          }
+
+          // 5. Log final attachment count
+          const finalAttachments = await prismaTx.attachment.findMany({
+            where: { proformaInvoiceId: id },
+          });
+          console.log(`📎 Final attachments count: ${finalAttachments.length}`);
+        } catch (error) {
+          console.error('❌ Error handling attachments:', error);
+          throw new ApiError(
+            httpStatus.INTERNAL_SERVER_ERROR,
+            `Failed to handle attachments: ${error.message}`,
+          );
         }
 
         if (materialQuantityChanged && existingInvoice.project?.id) {
@@ -2657,6 +2759,9 @@ const deleteProformaInvoice = async (id) => {
             proformaItemMaterials: {
               select: { id: true },
             },
+            images: {
+              select: { id: true }, // 👈 ADD THIS - may be missing
+            },
           },
         },
         attachments: {
@@ -2668,6 +2773,10 @@ const deleteProformaInvoice = async (id) => {
         project: {
           select: { id: true },
         },
+        piLogs: {
+          // 👈 ADD THIS - may be missing
+          select: { id: true },
+        },
       },
     });
 
@@ -2676,76 +2785,133 @@ const deleteProformaInvoice = async (id) => {
     }
 
     // Check status restrictions
-    if (
-      existingInvoice.status !== 'PENDING_ST' &&
-      existingInvoice.status !== 'CANCELLED'
-    ) {
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        `Cannot delete invoice with status: ${existingInvoice.status}. Only PENDING_ST or CANCELLED invoices can be deleted.`,
-      );
-    }
 
     // DELETE IN REVERSE ORDER OF DEPENDENCIES:
-    // 1. First delete ProformaItemMaterial records
-    for (const item of existingInvoice.items) {
-      if (item.proformaItemMaterials.length > 0) {
-        // eslint-disable-next-line no-await-in-loop
-        await prisma.proformaItemMaterial.deleteMany({
-          where: { itemId: item.id },
+    try {
+      // 0. Delete PiLogs first (if they exist)
+      if (existingInvoice.piLogs && existingInvoice.piLogs.length > 0) {
+        const deleteLogs = await prisma.piLog.deleteMany({
+          where: { proformaId: id },
         });
       }
-    }
 
-    // 2. Delete ProformaInvoiceItem records
-    if (existingInvoice.items.length > 0) {
-      await prisma.proformaInvoiceItem.deleteMany({
-        where: { invoiceId: id },
+      // 1. Delete ProformaItemMaterial records
+      let totalMaterials = 0;
+      for (const item of existingInvoice.items) {
+        if (item.proformaItemMaterials.length > 0) {
+          const deleteMaterials = await prisma.proformaItemMaterial.deleteMany({
+            where: { itemId: item.id },
+          });
+          totalMaterials += deleteMaterials.count;
+        }
+      }
+
+      // 1.5 Delete Item Images (if they exist)
+      let totalImages = 0;
+      for (const item of existingInvoice.items) {
+        if (item.images && item.images.length > 0) {
+          const deleteImages = await prisma.proformaInvoiceItemImage.deleteMany(
+            {
+              where: { itemId: item.id },
+            },
+          );
+          totalImages += deleteImages.count;
+        }
+      }
+
+      // 2. Delete ProformaInvoiceItem records
+      if (existingInvoice.items.length > 0) {
+        const deleteItems = await prisma.proformaInvoiceItem.deleteMany({
+          where: { invoiceId: id },
+        });
+      }
+
+      // 3. Delete ProformaInvoiceBank records
+      if (existingInvoice.banks.length > 0) {
+        const deleteBanks = await prisma.proformaInvoiceBank.deleteMany({
+          where: { proformaInvoiceId: id },
+        });
+      }
+
+      // 4. Delete Attachment records
+      if (existingInvoice.attachments.length > 0) {
+        // Optional: Delete physical files from disk
+        for (const attachment of existingInvoice.attachments) {
+          if (attachment.fileUrl) {
+            try {
+              const filePath = path.join(
+                __dirname,
+                '../..',
+                attachment.fileUrl,
+              );
+              if (fs.existsSync(filePath)) {
+                await fs.unlink(filePath);
+              } else {
+              }
+            } catch (fileError) {}
+          }
+        }
+
+        const deleteAttachments = await prisma.attachment.deleteMany({
+          where: { proformaInvoiceId: id },
+        });
+      }
+
+      const deletedInvoice = await prisma.proformaInvoice.delete({
+        where: { id },
       });
-    }
 
-    // 3. Delete ProformaInvoiceBank records
-    if (existingInvoice.banks.length > 0) {
-      await prisma.proformaInvoiceBank.deleteMany({
-        where: { proformaInvoiceId: id },
+      const result = {
+        message: 'Proforma invoice deleted successfully',
+        deletedInvoiceId: id,
+        deletedInvoiceNumber: deletedInvoice.piNumber,
+        deletedItemsCount: existingInvoice.items.length,
+        deletedAttachmentsCount: existingInvoice.attachments.length,
+        deletedBanksCount: existingInvoice.banks.length,
+        deletedMaterialRelationsCount: totalMaterials,
+        deletedImagesCount: totalImages,
+        deletedLogsCount: existingInvoice.piLogs?.length || 0,
+        timestamp: new Date().toISOString(),
+      };
+
+      return result;
+    } catch (deleteError) {
+      console.error(`❌ Error during deletion process:`, deleteError);
+      console.error(`❌ Error details:`, {
+        code: deleteError.code,
+        message: deleteError.message,
+        meta: deleteError.meta,
       });
+      throw deleteError;
     }
-
-    // 4. Delete Attachment records
-    if (existingInvoice.attachments.length > 0) {
-      await prisma.attachment.deleteMany({
-        where: { proformaInvoiceId: id },
-      });
-    }
-
-    // 5. Finally delete the ProformaInvoice
-    await prisma.proformaInvoice.delete({
-      where: { id },
+  } catch (error) {
+    console.error(`❌ Fatal error in deleteProformaInvoice:`, error);
+    console.error(`❌ Error details:`, {
+      code: error.code,
+      message: error.message,
+      meta: error.meta,
     });
 
-    return {
-      message: 'Proforma invoice deleted successfully',
-      deletedInvoiceId: id,
-      deletedItemsCount: existingInvoice.items.length,
-      deletedAttachmentsCount: existingInvoice.attachments.length,
-      deletedBanksCount: existingInvoice.banks.length,
-      deletedMaterialRelationsCount: existingInvoice.items.reduce(
-        (total, item) => total + item.proformaItemMaterials.length,
-        0,
-      ),
-      timestamp: new Date().toISOString(),
-    };
-  } catch (error) {
     // Handle Prisma specific errors
     if (error.code === 'P2003') {
+      console.error(
+        `❌ Foreign key constraint failed. Missing related records to delete.`,
+      );
       throw new ApiError(
         httpStatus.CONFLICT,
-        'Foreign key constraint failed. This usually means there are still related records that need to be deleted first.',
+        `Foreign key constraint failed. This usually means there are still related records that need to be deleted first. Error: ${error.message}`,
       );
     } else if (error.code === 'P2025') {
+      console.error(`❌ Record not found.`);
       throw new ApiError(
         httpStatus.NOT_FOUND,
         'Record not found or already deleted.',
+      );
+    } else if (error.code === 'P2002') {
+      console.error(`❌ Unique constraint violation.`);
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        `Unique constraint violation: ${error.message}`,
       );
     }
 
