@@ -46,7 +46,13 @@ router.post(
   checkPermission('CREATE_PROFORMA'),
   proformaInvoiceController.createProformaInvoice,
 );
-
+router.post(
+  '/api/proforma-invoices/:invoiceId/attachments',
+  auth,
+  debugUploadProformaInvoice,
+  checkPermission('UPDATE_PROFORMA'), // Or 'ADD_ATTACHMENT' permission
+  proformaInvoiceController.addAttachments,
+);
 // Get all Proforma Invoices with filters
 router.get(
   '/api/proforma-invoices',

@@ -595,7 +595,59 @@ const updateProformaInvoiceAdditionalQuantity = catchAsync(async (req, res) => {
     invoice,
   });
 });
+const addAttachments = catchAsync(async (req, res) => {
+  const { invoiceId } = req.params;
+
+  // Get files from request
+  let files = [];
+  if (Array.isArray(req.files)) {
+    files = req.files;
+  } else if (req.files) {
+    // If using fields, extract all files
+    for (const [fieldname, fileList] of Object.entries(req.files)) {
+      if (Array.isArray(fileList)) {
+        files = files.concat(fileList);
+      } else {
+        files.push(fileList);
+      }
+    }
+  }
+
+  // Check if files exist
+  if (!files || files.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'At least one file is required');
+  }
+
+  try {
+    const result = await proformaInvoiceService.addProformaInvoiceAttachment(
+      invoiceId,
+      files,
+    );
+
+    res.status(httpStatus.OK).send({
+      success: true,
+      message: result.message,
+      data: {
+        attachments: result.attachments,
+        invoiceId: result.invoiceId,
+        totalAttachments: result.attachments.length,
+      },
+    });
+  } catch (error) {
+    // Check if it's already an ApiError
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    // Convert to ApiError if not
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to add attachments: ${error.message}`,
+    );
+  }
+});
 module.exports = {
+  addAttachments,
   createProformaInvoice,
   getProformaInvoice,
   getProformaInvoices,

@@ -3780,7 +3780,74 @@ const updateProformaInvoiceAdditionalQuantity = async (id, materialUpdates) => {
     { timeout: 60000, maxWait: 20000 },
   );
 };
+const addProformaInvoiceAttachment = async (invoiceId, files) => {
+  try {
+    // 1. Check if invoice exists
+    const invoice = await prisma.proformaInvoice.findUnique({
+      where: { id: invoiceId },
+    });
+
+    if (!invoice) {
+      throw new Error(`Proforma invoice with ID ${invoiceId} not found`);
+    }
+
+    // 2. Validate files
+    if (!files || files.length === 0) {
+      throw new Error('At least one file is required');
+    }
+
+    // 3. Save files and create attachment records
+    const attachments = [];
+
+    for (const file of files) {
+      // Create attachments directory
+      const targetDir = path.join(
+        process.cwd(),
+        'uploads/proforma/attachments',
+      );
+      await fs.mkdir(targetDir, { recursive: true });
+
+      // Generate unique filename
+      const timestamp = Date.now();
+      const randomString = Math.random().toString(36).substring(2, 8);
+      const fileExt = path.extname(file.originalname);
+      const baseName = path.basename(file.originalname, fileExt);
+      const sanitizedBaseName = baseName.replace(/[^a-zA-Z0-9]/g, '_');
+      const newFilename = `${timestamp}_${randomString}_${sanitizedBaseName}${fileExt}`;
+      const targetPath = path.join(targetDir, newFilename);
+
+      // Save file
+      await fs.copyFile(file.path, targetPath);
+      await fs.unlink(file.path).catch(() => {});
+
+      const fileUrl = `/uploads/proforma/attachments/${newFilename}`;
+
+      // Create attachment record in database
+      const attachment = await prisma.attachment.create({
+        data: {
+          proformaInvoiceId: invoiceId,
+          fileUrl,
+        },
+      });
+
+      attachments.push(attachment);
+    }
+
+    // 4. Return the created attachments
+    return {
+      success: true,
+      message: `Successfully added ${attachments.length} attachment(s)`,
+      attachments,
+      invoiceId,
+    };
+  } catch (error) {
+    console.error('Error adding attachments:', error);
+    throw error;
+  }
+};
+
 module.exports = {
+  addProformaInvoiceAttachment,
   createProformaInvoice,
   updateProformaInvoice,
   updateProformaInvoiceseco,
