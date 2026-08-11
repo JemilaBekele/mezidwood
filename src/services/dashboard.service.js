@@ -1739,7 +1739,123 @@ const getDeliveryDateComparisonReportFunctional = async () => {
     throw error;
   }
 };
+const getCompletedProjectsReport = async () => {
+  try {
+    const projects = await prisma.project.findMany({
+      where: {
+        status: 'COMPLETED',
+      },
 
+      include: {
+        stages: {
+          orderBy: {
+            startDate: 'asc',
+          },
+        },
+
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            phone1: true,
+            address: true,
+          },
+        },
+
+        invoice: {
+          select: {
+            piNumber: true,
+            customerId: true,
+          },
+        },
+      },
+    });
+
+    const initialReport = {
+      generatedAt: new Date(),
+      summary: {
+        totalProjectsAnalyzed: projects.length,
+        projectsWithMismatch: 0,
+      },
+      mismatchedProjects: [],
+    };
+
+    const report = projects.reduce((acc, project) => {
+      const deliveryStage = project.stages.find(
+        (stage) => stage.stage === 'DELIVERY',
+      );
+
+      // Skip projects without delivery stage
+      if (!deliveryStage) {
+        return acc;
+      }
+
+      const projectDeliveryDate =
+        project.manualDelivery || project.calculatedDelivery;
+      const stageDeliveryDate = deliveryStage.endDate;
+
+      // Skip projects with missing dates
+      if (!projectDeliveryDate || !stageDeliveryDate) {
+        return acc;
+      }
+
+      const projectDate = new Date(projectDeliveryDate);
+      const stageDate = new Date(stageDeliveryDate);
+
+      if (projectDate.toDateString() !== stageDate.toDateString()) {
+        const diffDays = Math.ceil(
+          Math.abs(projectDate.getTime() - stageDate.getTime()) /
+            (1000 * 60 * 60 * 24),
+        );
+
+        return {
+          ...acc,
+          summary: {
+            ...acc.summary,
+            projectsWithMismatch: acc.summary.projectsWithMismatch + 1,
+          },
+          mismatchedProjects: [
+            ...acc.mismatchedProjects,
+            {
+              projectId: project.id,
+              customerName: project.customer?.name || 'No Customer',
+              customerPhone: project.customer?.phone1 || 'No Phone',
+              piNumber: project.invoice?.piNumber || project.invoiceId,
+              projectStatus: project.status,
+              dates: {
+                calculatedDelivery: project.calculatedDelivery,
+                manualDelivery: project.manualDelivery,
+                requestedDelivery: project.requestedDelivery,
+                projectFinalDelivery: projectDeliveryDate,
+                stageDeliveryDate,
+              },
+              comparison: {
+                differenceInDays: diffDays,
+                whichIsEarlier:
+                  projectDate < stageDate
+                    ? 'Project Delivery Date'
+                    : 'Stage Delivery Date',
+                suggestion:
+                  projectDate < stageDate
+                    ? 'Consider updating stage delivery date or recalculating schedule'
+                    : 'Consider updating project delivery date or checking stage delays',
+              },
+              scheduleMode: project.scheduleMode,
+              difficulty: project.difficulty,
+            },
+          ],
+        };
+      }
+
+      return acc;
+    }, initialReport);
+
+    return report;
+  } catch (error) {
+    console.error('Error in delivery report service:', error);
+    throw error;
+  }
+};
 module.exports = {
   getDeliveryDateComparisonReportFunctional,
   getDetailedFinishedProductsReportFunctional,
@@ -1755,4 +1871,5 @@ module.exports = {
   getTopSoldProducts,
   getTopRequestedProductsFromPI,
   getCombinedReport,
+  getCompletedProjectsReport,
 };

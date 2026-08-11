@@ -46,4 +46,10 @@ router.get(
   // checkPermission('VIEW_DELIVERY_DATE_REPORT'),
   reportController.getDeliveryDateComparisonReport,
 );
+router.get(
+  '/api/reports/completed-projects',
+  auth,
+  // checkPermission('VIEW_COMPLETED_PROJECTS_REPORT'),
+  reportController.getCompletedProjectsReport,
+);
 module.exports = router;

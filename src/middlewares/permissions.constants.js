@@ -23,10 +23,6 @@ module.exports = {
       description: 'View main dashboard',
     },
 
-    VIEW_REPORT: {
-      name: 'VIEW_SALES_REPORT_VIEW_DASHBOARD',
-      description: 'View sales report',
-    },
     VIEW_PROJECT_DASHBOARD: {
       name: 'VIEW_PROJECT_DASHBOARD',
     },

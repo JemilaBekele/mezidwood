@@ -199,6 +199,37 @@ const getDeliveryDateComparisonReport = catchAsync(async (req, res) => {
     });
   }
 });
+const getCompletedProjectsReport = catchAsync(async (req, res) => {
+  try {
+    const report =
+      await reportService.getCompletedProjectsReport();
+
+    res.status(httpStatus.OK).json({
+      success: true,
+      message: 'Delivery date comparison report fetched successfully',
+      data: report,
+    });
+  } catch (error) {
+    // Prisma error handling
+    if (error.code) {
+      console.error('Prisma error code:', error.code);
+      console.error('Prisma error meta:', error.meta);
+    }
+
+    // Handle custom ApiError
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        error: error.message,
+      });
+    }
+
+    res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: 'Failed to fetch delivery date comparison report',
+    });
+  }
+});
 module.exports = {
   getDeliveryDateComparisonReport,
   getDetailedFinishedProductsReport,
@@ -206,4 +237,5 @@ module.exports = {
   getCombinedReport,
   getDashboardCounts,
   getMonthlyBreakdown,
+  getCompletedProjectsReport,
 };
