@@ -239,8 +239,7 @@ const createProject = async (projectData, userId) => {
     materials.laminatedMDF +
     materials.plainMDF +
     materials.wood +
-    materials.metal +
-    materials.other;
+    materials.metal;
 
   // Material-driven stage quantities (single source: scheduling engine).
   const invoiceStageQuantities = computeStageQuantities(materials);

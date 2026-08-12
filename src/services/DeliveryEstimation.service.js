@@ -145,7 +145,11 @@ const deriveStageQuantities = async ({ materials, items } = {}) => {
   }
 
   const stageQuantities = computeStageQuantities(totals);
-  const total = Object.values(totals).reduce((s, v) => s + v, 0);
+  const total =
+    (totals.laminatedMDF || 0) +
+    (totals.plainMDF || 0) +
+    (totals.wood || 0) +
+    (totals.metal || 0);
 
   return {
     materials: { ...totals, total },
