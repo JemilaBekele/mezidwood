@@ -117,9 +117,7 @@ const createProjectStageWorkLog = async (workLogData) => {
         }
 
         // Get planned work units (convert to float if needed)
-        const plannedWorkUnits = parseFloat(
-          projectStage.workUnits || projectStage.capacityDays || 0,
-        );
+        const plannedWorkUnits = parseFloat(projectStage.workUnits || 0);
 
         // Calculate new total with exact precision
         const newTotalActualUnits = totalLoggedUnits + exactDoneUnits;
@@ -742,8 +740,7 @@ const deleteProjectStageWorkLog = async (id) => {
         );
         console.log('🧮 New total actual units:', newTotalActualUnits);
 
-        const plannedWorkUnits =
-          projectStage.workUnits || projectStage.capacityDays || 0;
+        const plannedWorkUnits = projectStage.workUnits || 0;
         console.log('📊 Planned work units:', plannedWorkUnits);
 
         // Determine if stage should still be marked as finished

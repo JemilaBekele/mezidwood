@@ -430,17 +430,27 @@ const updateProjectStage = catchAsync(async (req, res) => {
   // ===============================
   // VALIDATION
   // ===============================
-  if (!projectId || !stageName || newQuantity === undefined) {
+  if (!projectId || !stageName) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      'projectId, stageName, and newQuantity are required',
+      'projectId and stageName are required',
     );
   }
 
-  if (typeof newQuantity !== 'number' || newQuantity < 0) {
+  // newQuantity is only required when creating a stage — on an edit of an
+  // existing stage (date/time move, manual override, etc.) it may be omitted
+  // entirely, in which case the stage's current workUnits is preserved.
+  if (newQuantity !== undefined) {
+    if (typeof newQuantity !== 'number' || newQuantity < 0) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'newQuantity must be a positive number',
+      );
+    }
+  } else if (isNewStage) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      'newQuantity must be a positive number',
+      'newQuantity is required when creating a new stage',
     );
   }
 
