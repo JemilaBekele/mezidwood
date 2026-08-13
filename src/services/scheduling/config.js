@@ -306,6 +306,17 @@ const applyDeliveryBuffer = (baseWorkingDays, difficulty, settings = {}) =>
 
 const VALID_DIFFICULTIES = ['EASY', 'MEDIUM', 'HARD'];
 
+/**
+ * Every value the ProjectStatus enum defines — the workflow stages plus the two
+ * terminal states.
+ *
+ * Three mutually incompatible hand-rolled status lists existed across
+ * Project.service.js, none of which matched the schema: they permitted
+ * PENDING/IN_PROGRESS/ON_HOLD/DELIVERED (absent from the enum) while rejecting
+ * every real stage value. This is the single list to validate against.
+ */
+const VALID_PROJECT_STATUSES = [...WORKFLOW_ORDER, 'COMPLETED', 'CANCELLED'];
+
 module.exports = {
   EPS,
   WORKING_TIMEZONE,
@@ -337,4 +348,5 @@ module.exports = {
   deliveryBufferDays,
   applyDeliveryBuffer,
   VALID_DIFFICULTIES,
+  VALID_PROJECT_STATUSES,
 };

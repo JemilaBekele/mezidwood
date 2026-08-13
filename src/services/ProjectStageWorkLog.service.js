@@ -5,6 +5,17 @@ const ApiError = require('../utils/ApiError');
 const prisma = require('./prisma');
 const reschedule = require('./scheduling/reschedule');
 
+/**
+ * Midnight of `date`, matching the day granularity `releaseStageCapacity` uses
+ * for its cutoff — so the audit log reports exactly the allocations that the
+ * release actually freed.
+ */
+const startOfDay = (date) => {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
 // Create ProjectStage Work Log
 const createProjectStageWorkLog = async (workLogData) => {
   try {
@@ -171,8 +182,7 @@ const createProjectStageWorkLog = async (workLogData) => {
         const isComplete = newTotalActualUnits >= plannedWorkUnits - epsilon;
 
         if (isComplete) {
-          // ===== STEP 1: GET ALL CAPACITY ALLOCATIONS =====
-          console.log('🔍 Fetching capacity allocations for finished stage...');
+          // ===== STEP 1: GET ALL CAPACITY ALLOCATIONS (for the audit log) =====
           const stageAllocations =
             await tx.projectStageCapacityAllocation.findMany({
               where: { projectStageId },
@@ -186,57 +196,44 @@ const createProjectStageWorkLog = async (workLogData) => {
               },
             });
 
-          // ===== STEP 2: SUBTRACT ALLOCATED CAPACITY FROM DAILY CAPACITIES =====
-          let totalFreedUnits = 0;
-          let totalFreedHours = 0;
-          const allocationDetails = [];
+          // ===== STEP 2: RELEASE FUTURE CAPACITY ONLY =====
+          //
+          // This block used to decrement EVERY allocation — including days
+          // already worked — and then delete all the allocation rows, before
+          // `onStageCompleted` ran post-commit and found nothing left to
+          // release. Freeing past days is what drifted the ledger: a completed
+          // stage's consumed history vanished, so later projects rebooked days
+          // that had actually been worked, and the bare `{ decrement }` with no
+          // floor could push `usedCapacity` negative.
+          //
+          // `releaseStageCapacity` already implements the correct contract —
+          // past days stay consumed, planned future days are freed — so it owns
+          // this now. Running it inside the transaction (rather than after
+          // commit, where a failure was swallowed into console.error) keeps the
+          // ledger consistent with the work log that triggered it.
+          const completionInstant = new Date();
+          const releasedFrom = completionInstant;
 
-          for (const allocation of stageAllocations) {
-            const dateStr = allocation.allocationDate
-              .toISOString()
-              .split('T')[0];
-            console.log(`\n🔄 Processing allocation from ${dateStr}:`);
-            console.log(`  Allocated Units: ${allocation.allocatedUnits}`);
-            console.log(`  Allocated Hours: ${allocation.allocatedHours}`);
-            console.log(
-              `  Current Daily UsedCapacity: ${allocation.dailyStageCapacity.usedCapacity}`,
-            );
+          const totalFreedUnits = stageAllocations
+            .filter((a) => new Date(a.allocationDate) >= startOfDay(releasedFrom))
+            .reduce((sum, a) => sum + (a.allocatedUnits || 0), 0);
+          const totalFreedHours = stageAllocations
+            .filter((a) => new Date(a.allocationDate) >= startOfDay(releasedFrom))
+            .reduce((sum, a) => sum + (a.allocatedHours || 0), 0);
+          const allocationDetails = stageAllocations.map((a) => ({
+            date: a.allocationDate.toISOString().split('T')[0],
+            allocatedUnits: a.allocatedUnits,
+            allocatedHours: a.allocatedHours,
+            previousUsedCapacity: a.dailyStageCapacity.usedCapacity,
+            released: new Date(a.allocationDate) >= startOfDay(releasedFrom),
+            shift: a.shift,
+          }));
 
-            // Update daily capacity - subtract the allocation
-            await tx.dailyStageCapacity.update({
-              where: { id: allocation.dailyStageCapacityId },
-              data: {
-                usedCapacity: {
-                  decrement: allocation.allocatedUnits,
-                },
-                usedHours: {
-                  decrement: allocation.allocatedHours,
-                },
-              },
-            });
-
-            totalFreedUnits += allocation.allocatedUnits;
-            totalFreedHours += allocation.allocatedHours;
-
-            allocationDetails.push({
-              date: dateStr,
-              allocatedUnits: allocation.allocatedUnits,
-              allocatedHours: allocation.allocatedHours,
-              previousUsedCapacity: allocation.dailyStageCapacity.usedCapacity,
-              newUsedCapacity:
-                allocation.dailyStageCapacity.usedCapacity -
-                allocation.allocatedUnits,
-              shift: allocation.shift,
-            });
-
-            // Verify the update
-            const updatedDaily = await tx.dailyStageCapacity.findUnique({
-              where: { id: allocation.dailyStageCapacityId },
-            });
-            console.log(
-              `  ✅ Updated Daily UsedCapacity: ${updatedDaily.usedCapacity} (freed ${allocation.allocatedUnits} units)`,
-            );
-          }
+          await reschedule.releaseStageCapacity(
+            projectStageId,
+            completionInstant,
+            tx,
+          );
 
           // ===== STEP 3: CREATE COMPREHENSIVE LOG =====
 
@@ -298,28 +295,13 @@ const createProjectStageWorkLog = async (workLogData) => {
             },
           });
 
-          // ===== STEP 4: DELETE ALLOCATION RECORDS =====
-          const deletedCount =
-            await tx.projectStageCapacityAllocation.deleteMany({
-              where: { projectStageId },
-            });
-
-          // ===== STEP 5: CREATE DELETE CONFIRMATION LOG =====
-          const deleteLogAction = `DELETED_ALLOCATIONS: Removed ${
-            deletedCount.count
-          } capacity allocation records for completed stage "${
-            projectStageInfo.stage
-          }" (Project: ${
-            projectStageInfo.project.name ||
-            projectStageInfo.project.projectNumber
-          })`;
-
-          await tx.log.create({
-            data: {
-              action: deleteLogAction,
-              userId: doneById || null,
-            },
-          });
+          // ===== STEP 4: (removed) =====
+          // Allocation rows are no longer bulk-deleted here. Deleting them all
+          // erased the record of what the stage actually consumed, leaving the
+          // daily counters with nothing to reconcile against — the invariant
+          // "a day's usedCapacity equals the sum of its allocation rows" broke
+          // on every completion. `releaseStageCapacity` above deletes exactly
+          // the future rows it frees and leaves worked days intact.
 
           // ===== STEP 6: UPDATE STAGE STATUS =====
           isFinished = true;
@@ -629,22 +611,28 @@ const createProjectStageWorkLog = async (workLogData) => {
       )}%)`;
     }
 
-    // Post-commit cascade: when a stage completes, free its unused future
-    // capacity and reschedule downstream stages from the real completion moment,
-    // then refresh the project's delivery date. Best-effort — a failure here must
-    // never undo the work log that already committed.
+    // Post-commit cascade: reschedule downstream stages from the real completion
+    // moment and refresh the project's delivery date. The capacity RELEASE now
+    // happens inside the transaction above, so the ledger is already consistent
+    // by this point; what remains here is the downstream date cascade, which is
+    // too heavy to hold a transaction open for.
+    //
+    // A failure must not undo the committed work log — but it must not vanish
+    // into console.error either, which is how downstream dates were left
+    // permanently stale with the UI reporting success. Surface it to the caller.
+    let cascadeWarning = null;
     if (result.stageFinished) {
       try {
         await reschedule.onStageCompleted(
           projectStage.projectId,
           projectStage.stage,
         );
-        console.log('🔁 Downstream reschedule + delivery recompute done');
       } catch (cascadeErr) {
         console.error(
           '⚠️ reschedule cascade failed (work log still saved):',
           cascadeErr.message,
         );
+        cascadeWarning = `The stage was saved, but downstream stages could not be rescheduled: ${cascadeErr.message}. The project's delivery date may be out of date — re-run scheduling for this project.`;
       }
     }
 
@@ -657,6 +645,7 @@ const createProjectStageWorkLog = async (workLogData) => {
       nextStage: result.nextStage,
       projectStatus: result.projectUpdated?.status,
       stockUpdates: result.stockUpdateResults || [],
+      cascadeWarning,
       message: successMessage,
     };
   } catch (error) {

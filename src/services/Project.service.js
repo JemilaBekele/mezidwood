@@ -15,6 +15,7 @@ const {
   CAPACITY_STAGES,
   DEFAULT_STAGE_SHIFT,
   VALID_DIFFICULTIES,
+  VALID_PROJECT_STATUSES,
   OVERCAPACITY_FACTOR,
 } = require('./scheduling/config');
 const reschedule = require('./scheduling/reschedule');
@@ -587,40 +588,51 @@ const updateProject = async (id, updateBody, userId) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Project not found');
   }
 
-  // Clean the updateBody to remove any undefined or null values
+  // Explicit allowlist. The previous version skipped only id/createdAt/updatedAt
+  // and wrote everything else straight through, so a client could overwrite
+  // scheduler-owned columns (calculatedDelivery, scheduleMode, finalDelivery)
+  // and ownership columns (createdById) by naming them in the body.
+  const UPDATABLE_FIELDS = [
+    'status',
+    'difficulty',
+    'requestedDelivery',
+    'manualDelivery',
+    'designStatus',
+    'customerId',
+    'invoiceId',
+    'totalDays',
+    'totalProjectQuantity',
+    'remark',
+  ];
+
   const cleanedUpdateBody = {};
   for (const [key, value] of Object.entries(updateBody)) {
-    if (value !== undefined && value !== null) {
-      // Skip fields that shouldn't be updated directly
-      if (['id', 'createdAt', 'updatedAt'].includes(key)) continue;
-
-      // Handle special fields
-      if (key === 'stages') continue; // Stages are updated separately
-
-      cleanedUpdateBody[key] = typeof value === 'string' ? value.trim() : value;
-    }
+    if (value === undefined || value === null) continue;
+    if (!UPDATABLE_FIELDS.includes(key)) continue;
+    cleanedUpdateBody[key] = typeof value === 'string' ? value.trim() : value;
   }
 
-  // Validate status if provided
+  // Validate status against the Prisma enum. The hand-rolled list here allowed
+  // PENDING/IN_PROGRESS/ON_HOLD/DELIVERED — none of which exist in
+  // ProjectStatus — while rejecting every real stage value (DESIGN, CUTTING,
+  // INSTALLATION, …), so a legitimate status change was always a 400.
   if (cleanedUpdateBody.status) {
-    const validStatuses = [
-      'PENDING',
-      'IN_PROGRESS',
-      'ON_HOLD',
-      'COMPLETED',
-      'CANCELLED',
-      'DELIVERED',
-    ];
-    if (!validStatuses.includes(cleanedUpdateBody.status)) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid project status');
+    if (!VALID_PROJECT_STATUSES.includes(cleanedUpdateBody.status)) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Invalid project status. Must be one of: ${VALID_PROJECT_STATUSES.join(', ')}`,
+      );
     }
   }
 
-  // Validate difficulty if provided
+  // Validate difficulty against the enum — the old list included EXPERT, which
+  // DifficultyLevel does not define, so it would have failed at the DB layer.
   if (cleanedUpdateBody.difficulty) {
-    const validDifficulties = ['EASY', 'MEDIUM', 'HARD', 'EXPERT'];
-    if (!validDifficulties.includes(cleanedUpdateBody.difficulty)) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid difficulty level');
+    if (!VALID_DIFFICULTIES.includes(cleanedUpdateBody.difficulty)) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Invalid difficulty level. Must be one of: ${VALID_DIFFICULTIES.join(', ')}`,
+      );
     }
   }
 
@@ -635,15 +647,8 @@ const updateProject = async (id, updateBody, userId) => {
     );
   }
 
-  if (
-    cleanedUpdateBody.calculatedDelivery &&
-    isNaN(Date.parse(cleanedUpdateBody.calculatedDelivery))
-  ) {
-    throw new ApiError(
-      httpStatus.BAD_REQUEST,
-      'Invalid calculated delivery date',
-    );
-  }
+  // calculatedDelivery is owned by the scheduler and is no longer accepted from
+  // the client, so there is nothing to validate for it here.
 
   // Validate totalDays if provided
   if (cleanedUpdateBody.totalDays !== undefined) {
@@ -694,7 +699,9 @@ const updateProject = async (id, updateBody, userId) => {
   // Add updatedBy tracking
   cleanedUpdateBody.updatedById = userId;
 
-  // Update project
+  // Update project. The include used to reference `stages.order` and
+  // `User.firstName/lastName` — none of which exist on those models — so this
+  // endpoint threw a Prisma validation error on every single call.
   const updatedProject = await prisma.project.update({
     where: { id },
     data: cleanedUpdateBody,
@@ -703,27 +710,43 @@ const updateProject = async (id, updateBody, userId) => {
       invoice: true,
       stages: {
         orderBy: {
-          order: 'asc',
+          startDate: 'asc',
         },
       },
       createdBy: {
         select: {
           id: true,
-          firstName: true,
-          lastName: true,
+          name: true,
           email: true,
         },
       },
       updatedBy: {
         select: {
           id: true,
-          firstName: true,
-          lastName: true,
+          name: true,
           email: true,
         },
       },
     },
   });
+
+  // The delivery promise is derived from difficulty and the requested date, so a
+  // change to either must re-run the buffer rather than leave a stale date on
+  // the record.
+  if (
+    cleanedUpdateBody.difficulty !== undefined ||
+    cleanedUpdateBody.requestedDelivery !== undefined
+  ) {
+    await reschedule.recomputeProjectDelivery(id);
+    return prisma.project.findUnique({
+      where: { id },
+      include: {
+        customer: true,
+        invoice: true,
+        stages: { orderBy: { startDate: 'asc' } },
+      },
+    });
+  }
 
   return updatedProject;
 };
@@ -786,6 +809,26 @@ const deleteProject = async (id) => {
 
 
 
+      // Reverse the two status writes createProject makes (see the
+      // 'APPROVED_CREATE_PROJECT' / 'PROJECT_CREATED' block in createProject).
+      // Without this the estimate stayed PROJECT_CREATED pointing at a project
+      // row that no longer exists, so the reconvert guard in createProject threw
+      // CONFLICT forever — the quote could never become a project again — and
+      // the invoice stayed flagged as already converted.
+      if (existingProject.deliveryEstimationcode) {
+        await tx.deliveryEstimation.updateMany({
+          where: { code: existingProject.deliveryEstimationcode },
+          data: { status: 'CONFIRMED', projectId: null },
+        });
+      }
+
+      if (existingProject.invoiceId) {
+        await tx.proformaInvoice.update({
+          where: { id: existingProject.invoiceId },
+          data: { status: 'APPROVED_CLIENT' },
+        });
+      }
+
       // Delete the project itself
       // This will automatically cascade delete projectLogs and scheduleHistories
       // because of the @relation with onDelete: Cascade in your schema
@@ -794,10 +837,13 @@ const deleteProject = async (id) => {
       });
     });
 
-    return { 
+    return {
       message: 'Project deleted successfully',
-      invoiceKept: existingProject.invoiceId ? true : false,
       invoiceId: existingProject.invoiceId || null,
+      invoiceStatusReset: existingProject.invoiceId ? 'APPROVED_CLIENT' : null,
+      estimationReset: existingProject.deliveryEstimationcode
+        ? 'CONFIRMED'
+        : null,
       stagesDeleted: existingProject.stages.length,
     };
   } catch (error) {
@@ -823,6 +869,30 @@ const deleteProject = async (id) => {
     );
   }
 };
+
+/**
+ * Columns a client may sort by.
+ *
+ * `sortBy` was previously spread straight into Prisma's `orderBy`. An unknown
+ * column raised a validation error that the catch-all below turned into an
+ * empty 200 — so a typo in a query string silently returned "no projects"
+ * rather than an error.
+ */
+const PROJECT_SORT_FIELDS = [
+  'createdAt',
+  'updatedAt',
+  'status',
+  'difficulty',
+  'requestedDelivery',
+  'calculatedDelivery',
+  'finalDelivery',
+  'totalDays',
+];
+
+const safeSort = (sortBy, sortOrder) => ({
+  [PROJECT_SORT_FIELDS.includes(sortBy) ? sortBy : 'createdAt']:
+    sortOrder === 'asc' ? 'asc' : 'desc',
+});
 
 // Get all Projects with filtering, sorting, and pagination
 const getAllProjects = async (filters = {}) => {
@@ -901,9 +971,7 @@ const getAllProjects = async (filters = {}) => {
       where,
       skip,
       take,
-      orderBy: {
-        [sortBy]: sortOrder,
-      },
+      orderBy: safeSort(sortBy, sortOrder),
       include: {
         customer: {
           select: {
@@ -958,25 +1026,28 @@ const getAllProjects = async (filters = {}) => {
       },
     });
 
+    // `total` used to report `projects.length`, which can never exceed `limit`,
+    // while `totalPages` in the same object was computed from the real DB count
+    // — the two contradicted each other and no client could paginate. Count once
+    // and derive both from it.
+    const total = await prisma.project.count({ where });
+
     return {
       projects,
       count: projects.length,
-      total: projects.length, // You might want to return the actual total count from the database
+      total,
       page,
       limit,
-      totalPages: Math.ceil((await prisma.project.count({ where })) / limit),
+      totalPages: Math.max(1, Math.ceil(total / limit)),
     };
   } catch (findError) {
-    // Return empty result instead of throwing to prevent API from crashing
-    return {
-      projects: [],
-      count: 0,
-      total: 0,
-      page,
-      limit,
-      totalPages: 0,
-      error: findError.message,
-    };
+    // This used to swallow every failure into an empty 200 with an `error` field
+    // no caller reads — so a bad `sortBy`, a dropped connection and "genuinely
+    // no projects" were indistinguishable, all rendering as an empty table.
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to fetch projects: ${findError.message}`,
+    );
   }
 };
 const getAllProjectBystatus = async (filters = {}) => {
@@ -992,9 +1063,7 @@ const getAllProjectBystatus = async (filters = {}) => {
   try {
     const projects = await prisma.project.findMany({
       where,
-      orderBy: {
-        [sortBy]: sortOrder,
-      },
+      orderBy: safeSort(sortBy, sortOrder),
       include: {
         customer: {
           select: {
@@ -1048,12 +1117,12 @@ const getAllProjectBystatus = async (filters = {}) => {
       total,
     };
   } catch (error) {
-    return {
-      projects: [],
-      count: 0,
-      total: 0,
-      error: error.message,
-    };
+    // Same fault as getAllProjects: a swallowed failure rendered as an empty
+    // list, so the caller could not tell "no projects" from "query failed".
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to fetch projects by status: ${error.message}`,
+    );
   }
 };
 // Helper function to calculate project progress based on stages

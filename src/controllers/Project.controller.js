@@ -145,10 +145,14 @@ const searchProjects = catchAsync(async (req, res) => {
     page: 1,
   });
 
+  // getAllProjects returns a FLAT shape (projects, count, total, page, limit,
+  // totalPages) — there is no `pagination` object, so reading
+  // `result.pagination.total` threw a TypeError and this endpoint 500'd on
+  // every call.
   res.status(httpStatus.OK).send({
     success: true,
     projects: result.projects,
-    count: result.pagination.total,
+    count: result.total,
   });
 });
 

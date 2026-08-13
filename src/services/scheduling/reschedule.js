@@ -226,9 +226,18 @@ const releaseStageCapacity = async (projectStageId, releaseFrom = null, client =
       where: { id: a.dailyStageCapacityId },
     });
     if (daily) {
+      // Clamp at zero. A bare `{ decrement }` trusts that the counter still
+      // holds at least what this allocation booked; any drift (a double
+      // release, a partially-applied write) then pushed usedCapacity negative,
+      // which reads downstream as "this day has MORE than full capacity free"
+      // and silently overbooks it.
       const decrementData = {
-        usedCapacity: { decrement: a.allocatedUnits },
-        usedHours: { decrement: a.allocatedHours },
+        usedCapacity: {
+          decrement: Math.min(a.allocatedUnits, daily.usedCapacity || 0),
+        },
+        usedHours: {
+          decrement: Math.min(a.allocatedHours, daily.usedHours || 0),
+        },
       };
       // If this allocation was marked as overcapacity, also decrement the over fields
       if (a.isOverCapacity && (daily.overCapacityUsed || 0) > 0) {
