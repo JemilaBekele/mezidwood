@@ -32,7 +32,11 @@ const errorHandler = (err, req, res, next) => {
   };
   res.locals.errorMessage = message;
   if (config.env === 'development') {
-    logger.error(err);
+    if (err.isOperational) {
+      logger.error(`${statusCode} - ${message}`);
+    } else {
+      logger.error(err);
+    }
   }
   res.status(statusCode).send(response);
 };

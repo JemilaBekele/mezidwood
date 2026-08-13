@@ -239,8 +239,7 @@ const createProject = async (projectData, userId) => {
     materials.laminatedMDF +
     materials.plainMDF +
     materials.wood +
-    materials.metal +
-    materials.other;
+    materials.metal;
 
   // Material-driven stage quantities (single source: scheduling engine).
   const invoiceStageQuantities = computeStageQuantities(materials);
@@ -2481,6 +2480,15 @@ const updateProjectStage = async (
       `Stage ${stageName} not found on this project`,
     );
   }
+
+  // newQuantity is optional on edits (e.g. a pure date/time move) — when the
+  // caller omits it, preserve the stage's current workUnits instead of
+  // treating the missing value as an explicit "clear this stage's work".
+  const effectiveQuantity =
+    newQuantity === undefined || newQuantity === null
+      ? existingStage?.workUnits || 0
+      : newQuantity;
+
   const cal = await getCalendar();
   // Working hours per day is DERIVED from the configured shift and lunch
   // windows and lives on the calendar — it is no longer an independent setting
@@ -2513,7 +2521,7 @@ const updateProjectStage = async (
           data: {
             projectId,
             stage: stageName,
-            workUnits: newQuantity,
+            workUnits: effectiveQuantity,
             capacityDays: 1,
             startDate: startDt,
             endDate: startDt,
@@ -2540,11 +2548,11 @@ const updateProjectStage = async (
         : null;
 
       let updatedStage;
-      if (newQuantity > 0) {
+      if (effectiveQuantity > 0) {
         const plan = manualTimeline
           ? null
           : await scheduleProject({
-              stageQuantities: { [stageName]: newQuantity },
+              stageQuantities: { [stageName]: effectiveQuantity },
               startDate: chosenStart,
               difficulty: project.difficulty,
               mode: 'commit',
@@ -2576,7 +2584,7 @@ const updateProjectStage = async (
         updatedStage = await tx.projectStage.update({
           where: { id: stage.id },
           data: {
-            workUnits: newQuantity,
+            workUnits: effectiveQuantity,
             startDateTime,
             startDate: startDateTime,
             endDateTime,
@@ -2596,7 +2604,7 @@ const updateProjectStage = async (
             cal,
             stageId: stage.id,
             stageName,
-            quantity: newQuantity,
+            quantity: effectiveQuantity,
             segments: manualTimeline.segments,
             workingHoursPerDay,
           });
@@ -2623,7 +2631,7 @@ const updateProjectStage = async (
         // Zero quantity: keep the row but clear its work.
         updatedStage = await tx.projectStage.update({
           where: { id: stage.id },
-          data: { workUnits: 0, autoSchedule: !manualOverride },
+          data: { workUnits: effectiveQuantity, autoSchedule: !manualOverride },
         });
       }
 

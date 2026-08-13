@@ -163,7 +163,10 @@ const sumMaterialQuantities = (invoice) => {
 };
 
 const totalMaterialQuantity = (materials) =>
-  Object.values(materials || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+  Number(materials?.laminatedMDF || 0) +
+  Number(materials?.plainMDF || 0) +
+  Number(materials?.wood || 0) +
+  Number(materials?.metal || 0);
 
 const materialStageQuantities = (invoice, existingByStage = new Map()) => {
   const materials = sumMaterialQuantities(invoice);

@@ -94,7 +94,7 @@ const computeStageQuantities = (materials) => {
     metal: materials.metal || 0,
     other: materials.other || 0,
   };
-  const total = m.laminatedMDF + m.plainMDF + m.wood + m.metal + m.other;
+  const total = m.laminatedMDF + m.plainMDF + m.wood + m.metal; // excluded m.other
   const panelTotal = total - m.metal; // everything that is not metal goes through panel stages
 
   return {
