@@ -2,7 +2,9 @@
 const httpStatus = require('http-status');
 const catchAsync = require('../utils/catchAsync');
 const { projectService } = require('../services');
-const { prisma } = require('../services/prisma'); // Adjust the path if your prisma client is elsewhere
+// NOTE: services/prisma exports the client directly (`module.exports = prisma`),
+// so destructuring it yielded `undefined` and every statistics query threw.
+const prisma = require('../services/prisma');
 const ApiError = require('../utils/ApiError');
 const {
   rescheduleStageAndDownstream,
@@ -132,10 +134,10 @@ const searchProjects = catchAsync(async (req, res) => {
   const limit = parseInt(req.query.limit, 10) || 10;
 
   if (!query) {
-    return res.status(httpStatus.BAD_REQUEST).send({
-      success: false,
-      error: 'Search query parameter "query" is required',
-    });
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Search query parameter "query" is required',
+    );
   }
 
   // Use the getAllProjects service with search filter
@@ -145,10 +147,11 @@ const searchProjects = catchAsync(async (req, res) => {
     page: 1,
   });
 
-  res.status(httpStatus.OK).send({
+  // NOTE: getAllProjects returns a flat shape — there is no `pagination` key.
+  return res.status(httpStatus.OK).send({
     success: true,
     projects: result.projects,
-    count: result.pagination.total,
+    count: result.total,
   });
 });
 

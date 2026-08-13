@@ -9,6 +9,8 @@
     "prettier": "prettier --check **/*.js",
     "prettier:fix": "prettier --check **/*.js",
     "lint-staged": "lint-staged",
+    "seed": "node prisma/seed.js",
+    "seed:proforma": "node prisma/seed-proforma-invoice.js",
     "prepare": "husky install"
   },
   "dependencies": {
@@ -56,5 +58,8 @@
     "nodemon": "^2.0.21",
     "prettier": "^3.0.0",
     "prisma": "^6.13.0"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
   }
 }

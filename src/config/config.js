@@ -6,7 +6,12 @@ const { value: envVars, error } = envValidation.validate(process.env);
 const logger = require('./logger');
 
 if (error) {
-  logger.error(error);
+  logger.error(`Environment validation failed: ${error.message}`);
+  // Booting with a missing JWT_SECRET or DATABASE_URL produces confusing
+  // runtime failures much later. Fail fast everywhere except local dev.
+  if (envVars.NODE_ENV !== 'development') {
+    throw new Error(`Environment validation failed: ${error.message}`);
+  }
 }
 
 const parseBoolean = (value) => {

@@ -19,6 +19,18 @@ const {
 } = require('./scheduling/config');
 const reschedule = require('./scheduling/reschedule');
 
+// `sortBy` arrives from the query string and is interpolated straight into
+// Prisma's `orderBy`, so it must be whitelisted — an unknown field throws.
+const PROJECT_SORTABLE_FIELDS = [
+  'createdAt',
+  'updatedAt',
+  'status',
+  'difficulty',
+  'requestedDelivery',
+  'calculatedDelivery',
+  'finalDelivery',
+];
+
 const round2 = (n) => Math.round(n * 100) / 100;
 
 /**
@@ -840,8 +852,15 @@ const getAllProjects = async (filters = {}) => {
     endDate,
   } = filters;
 
-  const skip = (page - 1) * limit;
-  const take = parseInt(limit, 10);
+  // Query-string values arrive as strings; normalise before doing arithmetic.
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const take = Math.min(200, Math.max(1, parseInt(limit, 10) || 10));
+  const skip = (pageNum - 1) * take;
+
+  const orderByField = PROJECT_SORTABLE_FIELDS.includes(sortBy)
+    ? sortBy
+    : 'createdAt';
+  const orderByDir = sortOrder === 'asc' ? 'asc' : 'desc';
 
   // Build where clause
   const where = {};
@@ -896,13 +915,13 @@ const getAllProjects = async (filters = {}) => {
     }
   }
 
-  try {
-    const projects = await prisma.project.findMany({
+  const [projects, total] = await Promise.all([
+    prisma.project.findMany({
       where,
       skip,
       take,
       orderBy: {
-        [sortBy]: sortOrder,
+        [orderByField]: orderByDir,
       },
       include: {
         customer: {
@@ -956,28 +975,21 @@ const getAllProjects = async (filters = {}) => {
           },
         },
       },
-    });
+    }),
+    prisma.project.count({ where }),
+  ]);
 
-    return {
-      projects,
-      count: projects.length,
-      total: projects.length, // You might want to return the actual total count from the database
-      page,
-      limit,
-      totalPages: Math.ceil((await prisma.project.count({ where })) / limit),
-    };
-  } catch (findError) {
-    // Return empty result instead of throwing to prevent API from crashing
-    return {
-      projects: [],
-      count: 0,
-      total: 0,
-      page,
-      limit,
-      totalPages: 0,
-      error: findError.message,
-    };
-  }
+  // NOTE: `total` is the real row count, not the page length. Errors are no
+  // longer swallowed into an empty 200 — a failed query must surface as a
+  // failure, otherwise a bad filter is indistinguishable from "no projects".
+  return {
+    projects,
+    count: projects.length,
+    total,
+    page: pageNum,
+    limit: take,
+    totalPages: Math.ceil(total / take),
+  };
 };
 const getAllProjectBystatus = async (filters = {}) => {
   const { status, sortBy = 'createdAt', sortOrder = 'desc' } = filters;
@@ -989,11 +1001,16 @@ const getAllProjectBystatus = async (filters = {}) => {
     where.status = status;
   }
 
-  try {
-    const projects = await prisma.project.findMany({
+  const orderByField = PROJECT_SORTABLE_FIELDS.includes(sortBy)
+    ? sortBy
+    : 'createdAt';
+  const orderByDir = sortOrder === 'asc' ? 'asc' : 'desc';
+
+  const [projects, total] = await Promise.all([
+    prisma.project.findMany({
       where,
       orderBy: {
-        [sortBy]: sortOrder,
+        [orderByField]: orderByDir,
       },
       include: {
         customer: {
@@ -1038,23 +1055,15 @@ const getAllProjectBystatus = async (filters = {}) => {
           },
         },
       },
-    });
+    }),
+    prisma.project.count({ where }),
+  ]);
 
-    const total = await prisma.project.count({ where });
-
-    return {
-      projects,
-      count: projects.length,
-      total,
-    };
-  } catch (error) {
-    return {
-      projects: [],
-      count: 0,
-      total: 0,
-      error: error.message,
-    };
-  }
+  return {
+    projects,
+    count: projects.length,
+    total,
+  };
 };
 // Helper function to calculate project progress based on stages
 const getProjectById = async (id) => {

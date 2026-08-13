@@ -65,6 +65,7 @@ updatetransfers Transfer[] @relation("UpdatedTransfer")
 scheduleHistories ScheduleHistory[]
 piLogs PiLog[]
 capacityLotHistories CapacityLotHistory[]
+notifications Notification[]
 }
 
 model Role {
@@ -206,7 +207,10 @@ model UnitOfMeasure {
 model Showroom {
   id          String @id @default(uuid()) @map("_id") @db.Char(36)
   name        String
-  isMain      Boolean  @default(false) @unique
+  // NOT @unique: a UNIQUE index on a non-null boolean allows at most two rows
+  // in the whole table (one true, one false), so creating a third showroom
+  // failed with P2002. "Only one main" is enforced in the service layer.
+  isMain      Boolean  @default(false)
 
   inventoryStocks InventoryStock[]
 
@@ -231,7 +235,8 @@ model Showroom {
 model Store {
   id          String @id @default(uuid()) @map("_id") @db.Char(36)
   name        String
-  isMain      Boolean  @default(false) @unique
+  // NOT @unique — see the note on Showroom.isMain. Capped the table at 2 rows.
+  isMain      Boolean  @default(false)
 
   inventoryStocks InventoryStock[]
 
@@ -635,8 +640,10 @@ model Sell {
   
   paymentStatus SellPaymentStatus @default(PENDING) // Paid, Pending, Partial, Unpaid
   grandTotal    Float             @default(0)
-  balance       Int               @default(0)
-  totalPaid     Int               @default(0)
+  // Were Int while grandTotal is Float — every assignment of a non-whole
+  // amount (i.e. anything with cents) was truncated or rejected outright.
+  balance       Float             @default(0)
+  totalPaid     Float             @default(0)
 storeId        String           @db.Char(36)
   store          Store            @relation(fields: [storeId], references: [id])
 
@@ -782,7 +789,7 @@ model ProformaInvoiceBank {
 
   createdBy User?          @relation(fields: [createdById], references: [id], name: "creator")
   createdById          String?        @db.Char(36)
-  amount             Float?
+  amount             Decimal? @db.Decimal(12, 2)
   createdAt          DateTime @default(now())
 
   @@map("proforma_invoice_banks")
@@ -793,11 +800,11 @@ model ProformaInvoiceItem {
   invoiceId   String
   invoice     ProformaInvoice @relation(fields: [invoiceId], references: [id])
 
-  description String  @db.Text 
+  description String  @db.Text
   size        String?
   quantity    Int
-  unitPrice   Float
-  amount      Float
+  unitPrice   Decimal @db.Decimal(12, 2)
+  amount      Decimal @db.Decimal(12, 2)
 
     itemId      String?  // Add this field
   item        Items?   @relation(fields: [itemId], references: [id]) // Add this relation
@@ -836,12 +843,15 @@ model ProformaInvoice {
 
   store       Boolean @default(false)
   status      PIStatus
-  subtotal    Float
-  vat         Float?  @default(0)
-  total       Float
+  // Money is Decimal, not Float: binary floating point cannot represent cents
+  // exactly, which left exactly-settled invoices stuck on PARTIAL because
+  // `balance <= 0` failed on a residue like 4.4e-16.
+  subtotal    Decimal @db.Decimal(12, 2)
+  vat         Decimal? @default(0) @db.Decimal(12, 2)
+  total       Decimal @db.Decimal(12, 2)
 
-  amountPaid  Float    @default(0)
-  balance     Float
+  amountPaid  Decimal @default(0) @db.Decimal(12, 2)
+  balance     Decimal @db.Decimal(12, 2)
   amountDate   DateTime?
 
   preparedBy User?          @relation(fields: [preparedById], references: [id], name: "creator")
@@ -889,11 +899,14 @@ model ProformaItemMaterial {
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  materials   ProformaItemMaterial[] @relation("ProformaItemMaterialToMaterial")  // 👈 one item → many materials
+
+  // NOTE: a self-referential many-to-many ("ProformaItemMaterialToMaterial")
+  // used to be declared here. It pointed the model at itself rather than at
+  // Material, was never queried, and only added a junction table. The real
+  // relations are `item` and `material` above.
 
   @@unique([itemId, materialId]) // prevent duplicate material per item
   @@map("proforma_item_materials")
-  proformaItemMaterials ProformaItemMaterial[] @relation("ProformaItemMaterialToMaterial")
   materialIssues MaterialIssue[]
 }
 enum MaterialIssueStatus {
@@ -1000,7 +1013,10 @@ model ProjectStageWorkLog {
   id            String   @id @default(uuid())
 
   projectStageId String
-  projectStage   ProjectStage @relation(fields: [projectStageId], references: [id])
+  // Cascade: deleting a stage must take its work logs with it. Without this the
+  // FK defaulted to RESTRICT and every projectStage.delete() threw P2003, even
+  // though the calling code assumed a cascade.
+  projectStage   ProjectStage @relation(fields: [projectStageId], references: [id], onDelete: Cascade)
 
   doneUnits      Float           // how many units completed in this entry
   hours          Float?          // actual working hours logged for this entry
@@ -1019,7 +1035,15 @@ model Project {
 
   customerId           String?
   customer             Customer? @relation(fields: [customerId], references: [id])
-  deliveryEstimationcode String?
+
+  // Real FK (was a bare, unindexed string). Restrict: an estimation that has
+  // been converted into a project must not be deletable out from under it —
+  // that left the project pointing at a code that no longer existed.
+  // @unique: an estimation converts to exactly one project. MySQL permits
+  // multiple NULLs, so projects created without an estimate are unaffected.
+  deliveryEstimationcode String? @unique
+  deliveryEstimation     DeliveryEstimation? @relation("ProjectEstimation", fields: [deliveryEstimationcode], references: [code], onDelete: Restrict)
+
   invoiceId            String   @unique
   invoice              ProformaInvoice @relation(fields: [invoiceId], references: [id])
   
@@ -1304,6 +1328,9 @@ model DailyStageCapacity {
   updatedAt DateTime @updatedAt
 
   @@unique([stage, date])
+  // The allocator filters on `date` alone, which cannot use the composite
+  // index above (its leading column is `stage`).
+  @@index([date])
 
   @@map("daily_stage_capacities")
 
@@ -1313,7 +1340,7 @@ model DailyStageCapacity {
 model ProjectStage {
   id        String   @id @default(uuid())
   projectId String
-  project   Project @relation(fields: [projectId], references: [id])
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   stage        ProjectStatus
   capacityDays Int
@@ -1321,15 +1348,17 @@ model ProjectStage {
 
   finished Boolean @default(false)
 
-  startDate DateTime
-  endDate   DateTime
+  // Nullable: reverting a completed stage (deleting its last work log) clears
+  // the end date. These were NOT NULL, so that path threw P2011.
+  startDate DateTime?
+  endDate   DateTime?
 
   // MORNING   => 2:30 - 6:30
   // AFTERNOON => 7:30 - 11:00
   // FULL_DAY  => both shifts
   // CUSTOM    => any custom range like 2:30 - 3:00
-  startDateTime  DateTime
-    endDateTime  DateTime
+  startDateTime  DateTime?
+    endDateTime  DateTime?
 
   shift WorkShift? @default(FULL_DAY)
   timeTaken Int?
@@ -1341,6 +1370,12 @@ model ProjectStage {
 
   autoSchedule Boolean     @default(true)
   status       StageStatus @default(ACTIVE)
+
+  // ProjectStage previously had no indexes at all, while the capacity checks
+  // run a count() per day of a date range.
+  @@index([projectId, stage])
+  @@index([stage, startDate, endDate])
+  @@index([stage, finished])
 
   @@map("project_stages")
 
@@ -1422,6 +1457,9 @@ model DeliveryEstimation {
   // directions (Project.deliveryEstimationcode is the other side).
   projectId String?
 
+  // Back-relation for the FK declared on Project.deliveryEstimationcode.
+  project   Project? @relation("ProjectEstimation")
+
   piId               String?
   pi                 ProformaInvoice? @relation(fields: [piId], references: [id])
 
@@ -1436,7 +1474,13 @@ model DeliveryEstimation {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt   // ✅ recommended
 
+  // status / piId / createdAt are the query predicates on every list and the
+  // hold-expiry sweep, and were all unindexed.
+  @@index([status])
+  @@index([createdAt])
+  @@index([status, holdUntil])
 
+  @@map("delivery_estimations")
 }
 
 enum EstimationStatus {
@@ -1546,11 +1590,21 @@ model Notification {
   message           String
   type              NotificationType
   read              Boolean            @default(false)
+
+  // The recipient. This column did not exist, yet every read and write in the
+  // (now removed) notification service referenced it.
+  userId            String?            @db.Char(36)
+  user              User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   relatedEntityType RelatedEntityType?
   relatedEntityId   String?             @db.Char(36)
   createdAt         DateTime           @default(now()) @map("created_at")
   readAt            DateTime?          @map("read_at")
-  @@index([ read])
+
+  // Indexing `read` alone is useless (two distinct values); the real query is
+  // "unread for this user, newest first".
+  @@index([userId, read, createdAt])
+
   @@map("notifications")
 }
 

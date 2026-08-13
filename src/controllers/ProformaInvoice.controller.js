@@ -2,6 +2,7 @@ const httpStatus = require('http-status');
 const catchAsync = require('../utils/catchAsync');
 const { proformaInvoiceService } = require('../services');
 const ApiError = require('../utils/ApiError');
+const money = require('../utils/money');
 
 // Create Proforma Invoice
 // Create Proforma Invoice
@@ -456,50 +457,48 @@ const getInvoiceSummary = catchAsync(async (req, res) => {
   const { period = 'month' } = req.query; // day, week, month, year
 
   try {
-    // Calculate date range based on period
-    const now = new Date();
-    let startDate;
+    // Calculate date range based on period.
+    // NOTE: Date setters MUTATE the receiver. Deriving `startDate` from `now`
+    // via `now.setDate(...)` also moved `now` itself, so the window's end was
+    // taken from an already-rewound clock. Each branch now works on its own copy.
+    const endDate = new Date();
+    const startDate = new Date(endDate);
 
     switch (period) {
       case 'day':
-        startDate = new Date(now.setHours(0, 0, 0, 0));
+        startDate.setHours(0, 0, 0, 0);
         break;
       case 'week':
-        startDate = new Date(now.setDate(now.getDate() - 7));
-        break;
-      case 'month':
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
+        startDate.setDate(startDate.getDate() - 7);
         break;
       case 'year':
-        startDate = new Date(now.setFullYear(now.getFullYear() - 1));
+        startDate.setFullYear(startDate.getFullYear() - 1);
         break;
+      case 'month':
       default:
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
+        startDate.setMonth(startDate.getMonth() - 1);
+        break;
     }
 
     // Get invoices for the period
     const invoices = await proformaInvoiceService.getAllProformaInvoices({
       startDate,
-      endDate: new Date(),
+      endDate,
       limit: 1000, // Get all invoices for summary
     });
 
-    // Calculate summary statistics
+    // Calculate summary statistics.
+    // money.sum() is required here: total/amountPaid/balance are Decimal
+    // columns, and `+` on Decimal instances concatenates strings.
     const summary = {
       totalInvoices: invoices.invoices.length,
-      totalAmount: invoices.invoices.reduce((sum, inv) => sum + inv.total, 0),
-      totalPaid: invoices.invoices.reduce(
-        (sum, inv) => sum + inv.amountPaid,
-        0,
-      ),
-      totalBalance: invoices.invoices.reduce(
-        (sum, inv) => sum + inv.balance,
-        0,
-      ),
+      totalAmount: money.sum(invoices.invoices.map((inv) => inv.total)),
+      totalPaid: money.sum(invoices.invoices.map((inv) => inv.amountPaid)),
+      totalBalance: money.sum(invoices.invoices.map((inv) => inv.balance)),
       statusCounts: {},
       period: {
         start: startDate,
-        end: new Date(),
+        end: endDate,
         type: period,
       },
     };

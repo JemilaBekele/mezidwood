@@ -42,7 +42,11 @@ const { errorHandler, errorConverter } = require('../middlewares/error');
 const ApiError = require('../utils/ApiError');
 const morgan = require('../config/morgan');
 const { jwtStrategy } = require('../config/passport');
-const { cspOptions, env } = require('../config/config');
+const {
+  cspOptions,
+  env,
+  cors: corsConfig,
+} = require('../config/config');
 
 module.exports = async (app) => {
   app.use(morgan.successHandler);
@@ -50,7 +54,8 @@ module.exports = async (app) => {
   // jwt authentication
   app.use(passport.initialize());
   passport.use('jwt', jwtStrategy);
-  app.use(express.json());
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
 
   // security
@@ -63,19 +68,14 @@ module.exports = async (app) => {
   );
   app.use(mongoSanitize());
   if (env === 'production') {
-    app.use(
-      cors({
-        origin: ['https://rcf.ordere.net/', 'http://localhost:3030'],
-        credentials: true,
-      }),
+    // NOTE: an Origin header never carries a trailing slash, so entries must be
+    // normalised or every preflight fails. Driven by CORS_ALLOWED_ORIGINS.
+    const allowedOrigins = corsConfig.allowedOrigins.map((origin) =>
+      origin.replace(/\/+$/, ''),
     );
-    app.options(
-      '*',
-      cors({
-        origin: ['https://rcf.ordere.net/', 'http://localhost:3030'],
-        credentials: true,
-      }),
-    );
+    const corsOptions = { origin: allowedOrigins, credentials: true };
+    app.use(cors(corsOptions));
+    app.options('*', cors(corsOptions));
   } else {
     // enabling all cors
     app.use(cors());

@@ -37,8 +37,15 @@ const startServer = async () => {
       logger.info(`Environment: ${config.env}`);
     });
     // startInvoiceCron(); // ✅ Start the cron after system is ready
+    // An uncaught exception leaves the process in an undefined state — exit.
     process.on('uncaughtException', (err) => exitHandler(server, err));
-    process.on('unhandledRejection', (err) => exitHandler(server, err));
+
+    // An unhandled rejection does not. Several code paths intentionally
+    // fire-and-forget (e.g. post-commit reschedule cascades); tearing the
+    // server down over one would take the whole app offline.
+    process.on('unhandledRejection', (err) => {
+      logger.error('Unhandled promise rejection (server kept running):', err);
+    });
     process.on('SIGTERM', () => {
       logger.info('SIGTERM received');
       if (server) {

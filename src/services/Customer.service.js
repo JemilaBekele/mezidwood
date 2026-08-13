@@ -284,102 +284,145 @@ const updateCustomer = async (id, updateBody) => {
     }
   }
 
+  // Explicit allowlist: `updateBody` is unvalidated req.body, and writing it
+  // through let a client flip `isdefault`, which silently zeroes DELIVERY and
+  // INSTALLATION on every future project for that customer.
+  const UPDATABLE_FIELDS = [
+    'name',
+    'companyName',
+    'phone1',
+    'phone2',
+    'tinNumber',
+    'address',
+    'email',
+  ];
+
+  const data = {};
+  UPDATABLE_FIELDS.forEach((field) => {
+    if (updateBody[field] !== undefined) {
+      data[field] = updateBody[field];
+    }
+  });
+
   return prisma.customer.update({
     where: { id },
-    data: updateBody,
+    data,
   });
 };
+/**
+ * Customer picker source: search results when a term is given, otherwise the
+ * top customers by sales value, falling back to the first few alphabetically.
+ *
+ * NOTE: this previously used raw SQL against `Customer`/`Sell` with `c.id`.
+ * The real tables are `customers`/`sells` and the PK column is `_id`, so the
+ * query always threw and was silently caught — the "top customers" branch had
+ * never once executed. It is expressed through Prisma now, which keeps the
+ * @map()ping correct by construction.
+ */
 const getCustomersWithFallback = async (search = '') => {
-  try {
-    if (search.trim()) {
-      const searchLower = search.toLowerCase();
+  // The internal "Stock" customer must never appear in a picker; getAllCustomers
+  // already excludes it and this endpoint must agree.
+  const excludeDefault = { isdefault: false };
 
-      const customers = await prisma.customer.findMany({
-        where: {
-          OR: [
-            { name: { contains: search } },
-            { companyName: { contains: search } },
-            { phone1: { contains: search } },
-            { phone2: { contains: search } },
-          ],
-        },
-        orderBy: { name: 'asc' },
-        take: 50,
-      });
-      const filteredCustomers = search.trim()
-        ? customers.filter(
-            (customer) =>
-              customer.name?.toLowerCase().includes(searchLower) ||
-              customer.companyName?.toLowerCase().includes(searchLower) ||
-              customer.phone1?.includes(search) || // phone numbers are usually case-insensitive
-              customer.phone2?.includes(search),
-          )
-        : customers;
-      return {
-        customers: filteredCustomers,
-        count: filteredCustomers.length,
-        isSearchResults: true,
-      };
-    }
-    try {
-      const topCustomers = await prisma.$queryRaw`
-        SELECT c.*
-        FROM Customer c
-        LEFT JOIN Sell s ON c.id = s.customerId
-        GROUP BY c.id
-        ORDER BY COALESCE(SUM(s.grandTotal), 0) DESC
-        LIMIT 10
-      `;
-      if (
-        topCustomers &&
-        Array.isArray(topCustomers) &&
-        topCustomers.length > 0
-      ) {
-        const mappedCustomers = topCustomers.map((customer) => ({
-          id: customer.id || customer._id,
-          name: customer.name,
-          companyName: customer.companyName || customer.companyname,
-          phone1: customer.phone1,
-          phone2: customer.phone2,
-          tinNumber: customer.tinNumber || customer.tinnumber,
-          address: customer.address,
-          createdAt: customer.createdAt || customer.createdat,
-          updatedAt: customer.updatedAt || customer.updatedat,
-        }));
-        return {
-          customers: mappedCustomers,
-          count: mappedCustomers.length,
-          isTopCustomers: true,
-        };
-      }
-    } catch (error) {
-      console.error('❌ Error fetching top customers:', error.message);
-      console.error('❌ Error details:', error);
-      // Continue to fallback
-    }
-
-    // Fallback: get first 10 customers alphabetically
-    const defaultCustomers = await prisma.customer.findMany({
+  if (search.trim()) {
+    const customers = await prisma.customer.findMany({
+      where: {
+        ...excludeDefault,
+        OR: [
+          { name: { contains: search } },
+          { companyName: { contains: search } },
+          { phone1: { contains: search } },
+          { phone2: { contains: search } },
+        ],
+      },
       orderBy: { name: 'asc' },
-      take: 10,
+      take: 50,
     });
+
     return {
-      customers: defaultCustomers,
-      count: defaultCustomers.length,
-      isDefaultCustomers: true,
-    };
-  } catch (error) {
-    return {
-      customers: [],
-      count: 0,
-      error: error.message,
+      customers,
+      count: customers.length,
+      isSearchResults: true,
     };
   }
+
+  // Top customers by total sales value.
+  const salesByCustomer = await prisma.sell.groupBy({
+    by: ['customerId'],
+    _sum: { grandTotal: true },
+    where: { customerId: { not: null } },
+    orderBy: { _sum: { grandTotal: 'desc' } },
+    take: 10,
+  });
+
+  const topCustomerIds = salesByCustomer
+    .map((row) => row.customerId)
+    .filter(Boolean);
+
+  if (topCustomerIds.length > 0) {
+    const topCustomers = await prisma.customer.findMany({
+      where: { ...excludeDefault, id: { in: topCustomerIds } },
+    });
+
+    // Preserve the ranking from the aggregate, which findMany does not keep.
+    const rank = new Map(topCustomerIds.map((id, index) => [id, index]));
+    topCustomers.sort((a, b) => rank.get(a.id) - rank.get(b.id));
+
+    if (topCustomers.length > 0) {
+      return {
+        customers: topCustomers,
+        count: topCustomers.length,
+        isTopCustomers: true,
+      };
+    }
+  }
+
+  // Fallback: first 10 customers alphabetically
+  const defaultCustomers = await prisma.customer.findMany({
+    where: excludeDefault,
+    orderBy: { name: 'asc' },
+    take: 10,
+  });
+
+  return {
+    customers: defaultCustomers,
+    count: defaultCustomers.length,
+    isDefaultCustomers: true,
+  };
 };
 const deleteCustomer = async (id) => {
   const existingCustomer = await getCustomerById(id);
   if (!existingCustomer) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Customer not found');
+  }
+
+  if (existingCustomer.isdefault) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'The default customer cannot be deleted',
+    );
+  }
+
+  // Customer is referenced by projects, proforma invoices and sells. Without
+  // this check the FK violation escaped as an opaque error; report what is
+  // actually blocking the delete instead.
+  const [projects, proformaInvoices, sells] = await Promise.all([
+    prisma.project.count({ where: { customerId: id } }),
+    prisma.proformaInvoice.count({ where: { customerId: id } }),
+    prisma.sell.count({ where: { customerId: id } }),
+  ]);
+
+  if (projects > 0 || proformaInvoices > 0 || sells > 0) {
+    const blockers = [
+      projects && `${projects} project(s)`,
+      proformaInvoices && `${proformaInvoices} proforma invoice(s)`,
+      sells && `${sells} sale(s)`,
+    ].filter(Boolean);
+
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      `Customer cannot be deleted because it is still linked to ${blockers.join(', ')}`,
+    );
   }
 
   await prisma.customer.delete({ where: { id } });

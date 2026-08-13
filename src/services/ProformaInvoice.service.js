@@ -4,6 +4,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const httpStatus = require('http-status');
 const ApiError = require('../utils/ApiError');
+const money = require('../utils/money');
 const prisma = require('./prisma');
 const reschedule = require('./scheduling/reschedule');
 
@@ -30,14 +31,19 @@ const generatePINumber = async () => {
   return `PI-${sequence.toString().padStart(4, '0')}`;
 };
 
-// Calculate invoice totals
-const calculateTotals = (items) => {
-  const subtotal = items.reduce((sum, item) => {
-    return sum + item.unitPrice * item.quantity;
-  }, 0);
+const VAT_RATE = 0.15;
 
-  const vat = subtotal * 0.15; // Assuming 15% VAT, adjust as needed
-  const total = subtotal + vat;
+// Calculate invoice totals.
+// Goes through the money helpers because `items` may come either from the
+// request payload (plain numbers) or from the database, where `unitPrice` is a
+// Decimal — and `+` on a Decimal concatenates strings.
+const calculateTotals = (items) => {
+  const subtotal = money.sum(
+    items.map((item) => money.multiply(item.unitPrice, item.quantity)),
+  );
+
+  const vat = money.multiply(subtotal, VAT_RATE);
+  const total = money.sum(subtotal, vat);
 
   return { subtotal, vat, total };
 };
@@ -345,11 +351,11 @@ const createProformaInvoice = async (
         const invoiceData = {
           piNumber,
           status,
-          subtotal: Number(subtotal.toFixed(2)),
-          vat: Number(vat.toFixed(2)),
-          total: Number(total.toFixed(2)),
-          amountPaid: Number(amountPaid.toFixed(2)), // Always 0
-          balance: Number(balance.toFixed(2)),
+          subtotal: money.round(subtotal),
+          vat: money.round(vat),
+          total: money.round(total),
+          amountPaid: money.round(amountPaid), // Always 0
+          balance: money.round(balance),
           amountDate: amountDate ? new Date(amountDate) : null,
           preparedById: userId,
           store: isStore,
@@ -1169,15 +1175,14 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
     total = existingInvoice.total;
   }
 
-  // Convert amountPaid to number
-  const parsedAmountPaid =
-    typeof amountPaid === 'string' ? parseFloat(amountPaid) : amountPaid || 0;
-
-  const balance = total - parsedAmountPaid;
+  // Money read back from the DB is Decimal — normalise before any arithmetic.
+  const parsedAmountPaid = money.round(amountPaid);
+  const totalAmount = money.round(total);
+  const balance = money.subtract(totalAmount, parsedAmountPaid);
 
   // Handle payment updates
   let updatedAmountDate = amountDate;
-  if (parsedAmountPaid !== existingInvoice.amountPaid) {
+  if (!money.equals(parsedAmountPaid, existingInvoice.amountPaid)) {
     if (parsedAmountPaid < 0) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
@@ -1185,7 +1190,7 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
       );
     }
 
-    if (parsedAmountPaid > total) {
+    if (money.greaterThan(parsedAmountPaid, totalAmount)) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
         'Amount paid cannot exceed total amount',
@@ -1193,7 +1198,7 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
     }
 
     // Set amountDate if payment is made and date not provided
-    if (parsedAmountPaid > 0 && !updatedAmountDate) {
+    if (money.isPositive(parsedAmountPaid) && !updatedAmountDate) {
       updatedAmountDate = new Date();
     }
   }
@@ -1205,11 +1210,11 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
         const invoiceUpdateData = {
           ...(!isStore && customerId && { customerId }),
           status,
-          subtotal: Number(subtotal.toFixed(2)),
-          vat: Number(vat.toFixed(2)),
-          total: Number(total.toFixed(2)),
-          amountPaid: Number(parsedAmountPaid.toFixed(2)),
-          balance: Number(balance.toFixed(2)),
+          subtotal: money.round(subtotal),
+          vat: money.round(vat),
+          total: money.round(total),
+          amountPaid: money.round(parsedAmountPaid),
+          balance: money.round(balance),
           store: isStore,
           ...(updatedAmountDate && { amountDate: new Date(updatedAmountDate) }),
           ...(preparedById && { preparedById }),
@@ -2107,15 +2112,14 @@ const updateProformaInvoiceseco = async (
     total = existingInvoice.total;
   }
 
-  // Convert amountPaid to number
-  const parsedAmountPaid =
-    typeof amountPaid === 'string' ? parseFloat(amountPaid) : amountPaid || 0;
-
-  const balance = total - parsedAmountPaid;
+  // Money read back from the DB is Decimal — normalise before any arithmetic.
+  const parsedAmountPaid = money.round(amountPaid);
+  const totalAmount = money.round(total);
+  const balance = money.subtract(totalAmount, parsedAmountPaid);
 
   // Handle payment updates
   let updatedAmountDate = amountDate;
-  if (parsedAmountPaid !== existingInvoice.amountPaid) {
+  if (!money.equals(parsedAmountPaid, existingInvoice.amountPaid)) {
     if (parsedAmountPaid < 0) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
@@ -2123,7 +2127,7 @@ const updateProformaInvoiceseco = async (
       );
     }
 
-    if (parsedAmountPaid > total) {
+    if (money.greaterThan(parsedAmountPaid, totalAmount)) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
         'Amount paid cannot exceed total amount',
@@ -2131,7 +2135,7 @@ const updateProformaInvoiceseco = async (
     }
 
     // Set amountDate if payment is made and date not provided
-    if (parsedAmountPaid > 0 && !updatedAmountDate) {
+    if (money.isPositive(parsedAmountPaid) && !updatedAmountDate) {
       updatedAmountDate = new Date();
     }
   }
@@ -2143,11 +2147,11 @@ const updateProformaInvoiceseco = async (
         const invoiceUpdateData = {
           ...(!isStore && customerId && { customerId }),
 
-          subtotal: Number(subtotal.toFixed(2)),
-          vat: Number(vat.toFixed(2)),
-          total: Number(total.toFixed(2)),
-          amountPaid: Number(parsedAmountPaid.toFixed(2)),
-          balance: Number(balance.toFixed(2)),
+          subtotal: money.round(subtotal),
+          vat: money.round(vat),
+          total: money.round(total),
+          amountPaid: money.round(parsedAmountPaid),
+          balance: money.round(balance),
           store: isStore,
           ...(updatedAmountDate && { amountDate: new Date(updatedAmountDate) }),
           ...(preparedById && { preparedById }),
@@ -3462,73 +3466,64 @@ const addPayment = async (
   paidBy, // This is now a string (customer name or ID)
   userId, // This is the user ID (relation to User model)
 ) => {
+  const paymentAmount = money.round(amountPaid);
+
+  if (!money.isPositive(paymentAmount)) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Payment amount must be greater than zero',
+    );
+  }
+
   try {
-    const invoice = await prisma.proformaInvoice.findUnique({
-      where: { id: invoiceId },
-      include: {
-        banks: true,
-      },
-    });
-    if (!invoice) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Invoice not found');
-    }
-
-    const newTotalPaid = invoice.amountPaid + amountPaid;
-    const newBalance = invoice.total - newTotalPaid;
-
-    // ✅ Determine payment status based on new balance
-    let paymentStatus;
-    if (newBalance <= 0) {
-      paymentStatus = 'PAID'; // Balance is zero or negative (shouldn't be negative)
-    } else if (newTotalPaid > 0 && newTotalPaid < invoice.total) {
-      paymentStatus = 'PARTIAL'; // Partial payment received
-    } else if (newTotalPaid === 0) {
-      paymentStatus = 'PENDING'; // No payment made yet
-    } else {
-      paymentStatus = 'PENDING'; // Default
-    }
-
-    console.log(`Payment status updating to: ${paymentStatus}`);
-    console.log(`New balance: ${newBalance}, New total paid: ${newTotalPaid}`);
-
-    // Check if bank exists in database
-    if (bankId) {
-      try {
-        const bankExists = await prisma.bank.findUnique({
-          where: { id: bankId },
-        });
-        if (!bankExists) {
-          console.warn(`Bank with ID ${bankId} not found in database`);
-        }
-      } catch (bankCheckError) {
-        console.error('Error checking bank:', bankCheckError);
-      }
-    }
-
-    // Check if user exists in database
-    if (userId) {
-      try {
-        const userExists = await prisma.user.findUnique({
-          where: { id: userId },
-        });
-        if (!userExists) {
-          console.warn(`User with ID ${userId} not found in database`);
-        }
-      } catch (userCheckError) {
-        console.error('Error checking user:', userCheckError);
-      }
-    }
-
-    // Update invoice with payment
+    // Update invoice with payment.
+    // NOTE: the invoice is read INSIDE the transaction. Reading the balance
+    // before opening it let two concurrent payments both see the old
+    // amountPaid — the later write won and one payment vanished from the
+    // totals while its bank row survived, so ledger and invoice disagreed.
     const updatedInvoice = await prisma.$transaction(
       async (tx) => {
+        const invoice = await tx.proformaInvoice.findUnique({
+          where: { id: invoiceId },
+        });
+
+        if (!invoice) {
+          throw new ApiError(httpStatus.NOT_FOUND, 'Invoice not found');
+        }
+
+        const invoiceTotal = money.toNumber(invoice.total);
+        const alreadyPaid = money.toNumber(invoice.amountPaid);
+        const newTotalPaid = money.sum(alreadyPaid, paymentAmount);
+        const newBalance = money.subtract(invoiceTotal, newTotalPaid);
+
+        // Reject overpayment rather than storing a negative balance.
+        if (money.greaterThan(newTotalPaid, invoiceTotal)) {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `Payment of ${paymentAmount} exceeds the outstanding balance of ${money.subtract(invoiceTotal, alreadyPaid)}`,
+          );
+        }
+
+        // Comparisons go through the money helpers so a settled invoice is not
+        // left PARTIAL forever by a sub-cent floating point residue.
+        let paymentStatus;
+        if (money.isSettled(newBalance)) {
+          paymentStatus = 'PAID';
+        } else if (money.isPositive(newTotalPaid)) {
+          paymentStatus = 'PARTIAL';
+        } else {
+          paymentStatus = 'PENDING';
+        }
+
         // Update the invoice with payment AND paymentStatus
         const updatedInvoiceData = await tx.proformaInvoice.update({
           where: { id: invoiceId },
           data: {
             amountPaid: newTotalPaid,
             balance: newBalance,
-            amountDate: amountDate ? new Date(amountDate) : null,
+            // Only advance the date when one was supplied — this used to write
+            // `null` on any payment without a date, erasing the previous one.
+            ...(amountDate ? { amountDate: new Date(amountDate) } : {}),
             paymentStatus, // ✅ Update payment status
           },
           include: {
@@ -3546,12 +3541,12 @@ const addPayment = async (
 
         // If bankId is provided, ALWAYS CREATE NEW bank record
         if (bankId) {
-          try {
+          {
             // Prepare the data for bank record creation
             const bankData = {
               proformaInvoiceId: invoiceId,
               bankId,
-              amount: amountPaid, // Store the payment amount for this specific transaction
+              amount: paymentAmount, // Store the payment amount for this specific transaction
             };
 
             // Add paidBy as string if provided
@@ -3564,7 +3559,13 @@ const addPayment = async (
               bankData.createdById = userId;
             }
 
-            const newBank = await tx.proformaInvoiceBank.create({
+            // NOTE: this used to be wrapped in a try/catch that logged and
+            // deliberately did NOT rethrow ("continue even if bank linking
+            // fails"). Because it runs inside the transaction, that committed
+            // the invoice's amountPaid with no payment record behind it —
+            // money recorded against no source. A failure here must roll the
+            // whole payment back.
+            await tx.proformaInvoiceBank.create({
               data: bankData,
               include: {
                 bank: true,
@@ -3572,40 +3573,7 @@ const addPayment = async (
               },
             });
 
-            console.log(`Bank record created for payment: ${amountPaid}`);
-          } catch (createError) {
-            // Check if it's a foreign key constraint error
-            if (createError.code === 'P2003') {
-              console.error('Foreign key constraint failed. Check if:');
-              console.error('1. Bank with ID', bankId, 'exists in Bank table');
-              console.error(
-                '2. Invoice with ID',
-                invoiceId,
-                'exists in ProformaInvoice table',
-              );
-              if (userId) {
-                console.error(
-                  '3. User with ID',
-                  userId,
-                  'exists in User table',
-                );
-              }
-            }
-
-            // Check if it's a unique constraint error
-            if (createError.code === 'P2002') {
-              console.error(
-                'Unique constraint violation. The bank relation might already exist.',
-              );
-              console.error(
-                'Note: Your schema now has @@unique([bankId]) which means each bank can only be used once.',
-              );
-              console.error(
-                'If you need multiple payments from the same bank, remove the unique constraint.',
-              );
-            }
-
-            // Don't throw - continue with payment even if bank linking fails
+            console.log(`Bank record created for payment: ${paymentAmount}`);
           }
         } else {
           console.log('No bankId provided, skipping bank record processing');
