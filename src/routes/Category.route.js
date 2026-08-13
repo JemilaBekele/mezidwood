@@ -35,6 +35,13 @@ router.post(
   // auth,
   categoryController.rebuildCapacityLedgerweek,
 );
+// Reconcile the ledger: recompute daily counters from their allocation rows.
+// `?dryRun=true` reports drift without writing. Mirrors `npm run capacity:rebuild`.
+router.post(
+  '/api/daily-stage-capacities/reconcile',
+  auth,
+  categoryController.reconcileCapacityLedger,
+);
 router.get(
   '/api/categories',
   checkPermission('VIEW_CATEGORY'),

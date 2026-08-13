@@ -326,8 +326,22 @@ const makeCalendar = (sets, workingTime) => {
   const hoursBetween = (start, end) =>
     (new Date(end).getTime() - new Date(start).getTime()) / (1000 * 60 * 60);
 
-  /** Business-timezone calendar-day key, e.g. '2026-06-01'. */
+  /**
+   * Business-timezone calendar-day key, e.g. '2026-06-01'.
+   *
+   * USE THIS for any arbitrary INSTANT (a completion moment, a drag target, a
+   * "now"). The tempting `date.toISOString().slice(0, 10)` gives the UTC day
+   * instead, which is a different day whenever the instant falls outside the
+   * span where the business day and the UTC day happen to coincide — e.g. a
+   * stage completed at 01:00 in Addis (UTC+3) is still "yesterday" in UTC, so a
+   * release cutoff computed that way frees a day that should have stayed
+   * consumed. The two only agree for positive UTC offsets during working hours,
+   * which is why this went unnoticed.
+   */
   const dayKey = (date) => toDjs(date).format('YYYY-MM-DD');
+
+  /** Alias of `dayKey`, named for call sites that want the intent to be loud. */
+  const businessDayKey = dayKey;
 
   /** Start-of-day (business tz) as an absolute instant. */
   const startOfDay = (date) => toDjs(date).startOf('day').toDate();
@@ -364,9 +378,22 @@ const makeCalendar = (sets, workingTime) => {
     shiftBoundaries,
     hoursBetween,
     dayKey,
+    businessDayKey,
     startOfDay,
   };
 };
+
+/**
+ * Read the day label back out of a stored day MARKER.
+ *
+ * `DailyStageCapacity.date` and `ProjectStageCapacityAllocation.allocationDate`
+ * hold a calendar day encoded as UTC midnight (see `dailyCapacityDate`). They
+ * are labels, not instants, so they must be read in UTC — formatting one in the
+ * business timezone would shift it to the previous day for any negative UTC
+ * offset. This is the exact inverse of `dailyCapacityDate`, and deliberately
+ * NOT the same operation as `businessDayKey`.
+ */
+const markerDayKey = (date) => new Date(date).toISOString().slice(0, 10);
 
 /**
  * Load (and cache) holidays + working-time settings, returning a calendar with
@@ -393,4 +420,5 @@ module.exports = {
   makeCalendar,
   makeCalendarFromHolidays,
   invalidateHolidayCache,
+  markerDayKey,
 };

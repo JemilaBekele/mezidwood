@@ -75,6 +75,25 @@ const rebuildCapacityLedgerweek = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Reconcile the capacity ledger: recompute every daily counter from its
+ * allocation rows. `?dryRun=true` reports the drift without writing.
+ *
+ * Same implementation as `npm run capacity:rebuild`.
+ */
+const reconcileCapacityLedger = catchAsync(async (req, res) => {
+  const dryRun = req.query.dryRun === 'true' || req.body?.dryRun === true;
+  const result = await categoryService.reconcileCapacityLedger(dryRun);
+
+  res.status(httpStatus.OK).send({
+    success: true,
+    message: result.clean
+      ? 'Capacity ledger is consistent — no drift found.'
+      : `${dryRun ? 'Drift found' : 'Ledger repaired'}: ${result.correctedDays} day(s) corrected, ${result.orphanAllocationsDeleted} orphan allocation(s), ${result.emptyDaysDeleted} empty day(s).`,
+    result,
+  });
+});
+
 // Telemetry stats for a date range
 const getCapacityTelemetry = catchAsync(async (req, res) => {
   const { from, to, stage } = req.query;
@@ -201,6 +220,7 @@ const deleteColour = catchAsync(async (req, res) => {
 
 module.exports = {
   rebuildCapacityLedgerweek,
+  reconcileCapacityLedger,
   resetDailyStageCapacities,
   rebuildCapacityLedger,
   getCapacityTelemetry,

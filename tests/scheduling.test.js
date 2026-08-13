@@ -663,3 +663,52 @@ test('manual move: every segment of a multi-day split sits inside working hours'
   assert.strictEqual(total, 20 * 60, 'the full duration must be allocated');
   assert.ok(hourOf(end) <= 17);
 });
+
+/* ================================================================== *
+ * Day keys — business timezone vs UTC.
+ *
+ * A stored day MARKER (DailyStageCapacity.date, allocationDate) is a label
+ * encoded as UTC midnight and must be read in UTC. An arbitrary INSTANT (a
+ * completion moment, a drag target) must be resolved in the business timezone.
+ * Conflating the two is what let a release cutoff free a day already worked.
+ * ================================================================== */
+const { markerDayKey } = require('../src/services/scheduling/calendar');
+
+test('day keys: an after-midnight instant resolves to the LOCAL day, not the UTC day', () => {
+  // 22:30 UTC on 3 Aug = 01:30 on 4 Aug in Addis (UTC+3).
+  const instant = new Date('2026-08-03T22:30:00.000Z');
+
+  assert.strictEqual(
+    cal.businessDayKey(instant),
+    '2026-08-04',
+    'the business day is already the 4th in Addis',
+  );
+  assert.strictEqual(
+    instant.toISOString().slice(0, 10),
+    '2026-08-03',
+    'the old UTC slice reported the 3rd — a day earlier',
+  );
+  assert.notStrictEqual(
+    cal.businessDayKey(instant),
+    instant.toISOString().slice(0, 10),
+    'this divergence is exactly the bug the helper split fixes',
+  );
+});
+
+test('day keys: a stored UTC-midnight marker round-trips unchanged', () => {
+  const marker = new Date('2026-08-04T00:00:00.000Z');
+  assert.strictEqual(markerDayKey(marker), '2026-08-04');
+});
+
+test('day keys: working-hour instants agree under both readings', () => {
+  // Why this went unnoticed: during the 08:30-17:00 Addis window the business
+  // day and the UTC day are always the same date.
+  for (const iso of [
+    '2026-08-03T05:30:00.000Z', // 08:30 Addis
+    '2026-08-03T09:00:00.000Z', // 12:00 Addis
+    '2026-08-03T14:00:00.000Z', // 17:00 Addis
+  ]) {
+    const d = new Date(iso);
+    assert.strictEqual(cal.businessDayKey(d), d.toISOString().slice(0, 10));
+  }
+});

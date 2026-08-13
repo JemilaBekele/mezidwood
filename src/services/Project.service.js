@@ -113,30 +113,31 @@ const allocateManualStageCapacity = async ({
     });
     const nextUsedCapacity = (existing?.usedCapacity || 0) + allocatedUnits;
     const nextUsedHours = (existing?.usedHours || 0) + allocatedHours;
-    const daily = existing
-      ? await tx.dailyStageCapacity.update({
-          where: { id: existing.id },
-          data: {
-            usedCapacity: { increment: allocatedUnits },
-            usedHours: { increment: allocatedHours },
-            maxCapacity,
-            workingHours: workingHoursPerDay,
-            maxHours: workingHoursPerDay,
-            shift: DEFAULT_STAGE_SHIFT,
-          },
-        })
-      : await tx.dailyStageCapacity.create({
-          data: {
-            stage: stageName,
-            date,
-            shift: DEFAULT_STAGE_SHIFT,
-            usedCapacity: allocatedUnits,
-            maxCapacity,
-            workingHours: workingHoursPerDay,
-            usedHours: allocatedHours,
-            maxHours: workingHoursPerDay,
-          },
-        });
+    // Upsert rather than check-then-create: the findUnique above is a
+    // non-locking snapshot, so two manual stage edits touching the same
+    // previously-untouched day both saw "no row" and raced to create it,
+    // failing the stage_date unique key with P2002.
+    const daily = await tx.dailyStageCapacity.upsert({
+      where: { stage_date: { stage: stageName, date } },
+      create: {
+        stage: stageName,
+        date,
+        shift: DEFAULT_STAGE_SHIFT,
+        usedCapacity: allocatedUnits,
+        maxCapacity,
+        workingHours: workingHoursPerDay,
+        usedHours: allocatedHours,
+        maxHours: workingHoursPerDay,
+      },
+      update: {
+        usedCapacity: { increment: allocatedUnits },
+        usedHours: { increment: allocatedHours },
+        maxCapacity,
+        workingHours: workingHoursPerDay,
+        maxHours: workingHoursPerDay,
+        shift: DEFAULT_STAGE_SHIFT,
+      },
+    });
 
     await tx.projectStageCapacityAllocation.create({
       data: {
