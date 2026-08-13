@@ -88,8 +88,26 @@ const hourOf = (d) => {
 const dayName = (d) =>
   new Date(d).toLocaleDateString('en-GB', { timeZone: TZ, weekday: 'long' });
 
+/* ------------------------------------------------------------------ *
+ * The workshop's actual day, pinned here once.
+ *
+ *   08:30 open — 12:30 lunch — 13:30 resume — 17:30 close
+ *   => 4.0h morning + 4.0h afternoon = 8.0 working hours, Mon-Sat
+ *
+ * On the local (Ethiopian) clock that is 2:30 ጧት to 11:30 — Ethiopian time runs
+ * six hours behind the Gregorian wall clock. Timezone is East Africa Time
+ * (UTC+3, no DST), so local = UTC + 3.
+ *
+ * Change these constants together with config.js if the shift changes.
+ * ------------------------------------------------------------------ */
+const OPEN = 8.5; // 08:30  (2:30 local)
+const CLOSE = 17.5; // 17:30  (11:30 local)
+const LUNCH_END = 13.5; // 13:30
+const MORNING_HOURS = 4.0; // 08:30 -> 12:30
+const HOURS_PER_DAY = 8.0;
+
 // Monday 3 August 2026, 05:30 UTC = 08:30 Addis (start of shift).
-const MONDAY_0830 = new Date('2026-08-03T05:30:00.000Z');
+const MONDAY_OPEN = new Date('2026-08-03T05:30:00.000Z');
 
 const plan = (opts = {}) =>
   buildSchedule({
@@ -102,7 +120,7 @@ const plan = (opts = {}) =>
       FINISHING: 10,
       DELIVERY: 10,
     },
-    startDate: opts.startDate || MONDAY_0830,
+    startDate: opts.startDate || MONDAY_OPEN,
     difficulty: opts.difficulty || 'EASY',
     settings: opts.settings || { contingencyDays: 0, difficultyBuffer: { EASY: 0, MEDIUM: 0.4, HARD: 0.5 } },
     existingUsage: opts.existingUsage,
@@ -114,11 +132,11 @@ const plan = (opts = {}) =>
  * WT-1 — work is never scheduled outside the working window
  * ================================================================== */
 test('WT-1: a project created after closing starts the NEXT working morning', () => {
-  // 18:00 UTC = 21:00 Addis, Monday — four hours after the 17:00 close.
+  // 18:00 UTC = 21:00 Addis, Monday — well after the 17:30 close.
   const p = plan({ startDate: new Date('2026-08-03T18:00:00.000Z') });
   const first = p.stages.find((s) => s.stage === 'DESIGN').startDateTime;
 
-  assert.strictEqual(hourOf(first), 8.5, 'must start at 08:30');
+  assert.strictEqual(hourOf(first), OPEN, 'must start at 08:00');
   assert.strictEqual(dayName(first), 'Tuesday', 'must roll to the next day');
   assert.ok(
     first.getTime() > new Date('2026-08-03T18:00:00.000Z').getTime(),
@@ -126,11 +144,11 @@ test('WT-1: a project created after closing starts the NEXT working morning', ()
   );
 });
 
-test('WT-1: a project created before opening starts the SAME day at 08:30', () => {
-  // 02:00 UTC = 05:00 Addis, Monday — before the 08:30 open.
+test('WT-1: a project created before opening starts the SAME day at 08:00', () => {
+  // 02:00 UTC = 05:00 Addis, Monday — before the 08:00 open.
   const p = plan({ startDate: new Date('2026-08-03T02:00:00.000Z') });
   const first = p.stages.find((s) => s.stage === 'DESIGN').startDateTime;
-  assert.strictEqual(hourOf(first), 8.5);
+  assert.strictEqual(hourOf(first), OPEN);
   assert.strictEqual(dayName(first), 'Monday');
 });
 
@@ -138,7 +156,7 @@ test('WT-1: a project created during lunch starts when lunch ends', () => {
   // 09:45 UTC = 12:45 Addis — inside the 12:30-13:30 lunch gap.
   const p = plan({ startDate: new Date('2026-08-03T09:45:00.000Z') });
   const first = p.stages.find((s) => s.stage === 'DESIGN').startDateTime;
-  assert.strictEqual(hourOf(first), 13.5, 'must resume at 13:30, not 08:30');
+  assert.strictEqual(hourOf(first), 13.5, 'must resume at 13:30, not 08:00');
   assert.strictEqual(dayName(first), 'Monday');
 });
 
@@ -155,7 +173,7 @@ test('WT-1: a project created on a non-working day rolls to the next one', () =>
   const p = plan({ startDate: new Date('2026-08-02T09:00:00.000Z') });
   const first = p.stages.find((s) => s.stage === 'DESIGN').startDateTime;
   assert.strictEqual(dayName(first), 'Monday');
-  assert.strictEqual(hourOf(first), 8.5);
+  assert.strictEqual(hourOf(first), OPEN);
 });
 
 test('WT-1: a holiday is skipped like a weekend', () => {
@@ -165,7 +183,7 @@ test('WT-1: a holiday is skipped like a weekend', () => {
   // Tuesday the 4th is a holiday -> next working start is Wednesday the 5th.
   const next = withHoliday.nextWorkingStart(new Date('2026-08-04T05:00:00.000Z'));
   assert.strictEqual(dayName(next), 'Wednesday');
-  assert.strictEqual(hourOf(next), 8.5);
+  assert.strictEqual(hourOf(next), OPEN);
 });
 
 test('WT-1: NO allocation of ANY stage ever falls outside working hours', () => {
@@ -191,8 +209,8 @@ test('WT-1: NO allocation of ANY stage ever falls outside working hours', () => 
       );
       const sh = hourOf(a.startDateTime);
       const eh = hourOf(a.endDateTime);
-      assert.ok(sh >= 8.5 - 1e-9, `${stage.stage} starts before opening: ${local(a.startDateTime)}`);
-      assert.ok(eh <= 17.0 + 1e-9, `${stage.stage} ends after closing: ${local(a.endDateTime)}`);
+      assert.ok(sh >= OPEN - 1e-9, `${stage.stage} starts before opening: ${local(a.startDateTime)}`);
+      assert.ok(eh <= CLOSE + 1e-9, `${stage.stage} ends after closing: ${local(a.endDateTime)}`);
       // Must not sit entirely inside the lunch gap.
       assert.ok(
         !(sh >= 12.5 - 1e-9 && eh <= 13.5 + 1e-9 && eh > sh),
@@ -212,54 +230,58 @@ test('WT-2: INSTALLATION does not run overnight', () => {
   });
   const install = p.stages.find((s) => s.stage === 'INSTALLATION');
   assert.ok(install, 'INSTALLATION must be scheduled');
-  assert.ok(hourOf(install.endDateTime) <= 17.0 + 1e-9, 'must end by closing time');
+  assert.ok(hourOf(install.endDateTime) <= CLOSE + 1e-9, 'must end by closing time');
   assert.ok(cal.isWorkingDay(install.endDateTime), 'must end on a working day');
 
-  // 100 working hours at 7.5h/day spans at least 13 working days.
+  // 100 working hours at 8.5h/day spans at least 11 working days.
   const spanDays = cal.workingDaysBetween(install.startDateTime, install.endDateTime);
-  assert.ok(spanDays >= 13, `expected >= 13 working days, got ${spanDays}`);
+  assert.ok(spanDays >= 11, `expected >= 11 working days, got ${spanDays}`);
 });
 
 test('WT-2: PURCHASING respects the calendar', () => {
   const p = plan({ stageQuantities: { DESIGN: 10, PURCHASING: 200 } });
   const purch = p.stages.find((s) => s.stage === 'PURCHASING');
   assert.ok(cal.isWorkingDay(purch.endDateTime));
-  assert.ok(hourOf(purch.endDateTime) <= 17.0 + 1e-9);
+  assert.ok(hourOf(purch.endDateTime) <= CLOSE + 1e-9);
 });
 
 /* ================================================================== *
  * WT-3 — the lunch break is real
  * ================================================================== */
-test('WT-3: a full working day ends at 17:00, not 16:00', () => {
+test('WT-3: a full working day ends at 17:30, not early', () => {
   // capacity 10, quantity 10 => exactly one full day of work.
   const p = plan({ stageQuantities: { DESIGN: 10 }, capacity: 10 });
   const design = p.stages.find((s) => s.stage === 'DESIGN');
-  assert.strictEqual(hourOf(design.startDateTime), 8.5);
+  assert.strictEqual(hourOf(design.startDateTime), OPEN);
   assert.strictEqual(
     hourOf(design.endDateTime),
-    17.0,
-    'a 7.5h day must span 08:30-17:00 across the lunch gap, ending at 17:00',
+    CLOSE,
+    'an 8.5h day must span 08:00-17:30 across the lunch gap, ending at 17:30',
   );
 });
 
 test('WT-3: addWorkingHours skips the lunch gap', () => {
   // 08:30 + 4.5 working hours = 12:30 (4h) + 0.5h after lunch = 14:00
-  const end = cal.addWorkingHours(MONDAY_0830, 4.5);
+  // 08:30 + 4.5 working hours = 4h to 12:30, then 0.5h after lunch = 14:00.
+  const end = cal.addWorkingHours(MONDAY_OPEN, 4.5);
   assert.strictEqual(hourOf(end), 14.0);
+
+  // Exactly the morning segment lands on the lunch boundary, not past it.
+  assert.strictEqual(hourOf(cal.addWorkingHours(MONDAY_OPEN, MORNING_HOURS)), 12.5);
 });
 
 test('WT-3: workingHoursBetween excludes lunch, nights and weekends', () => {
   // 08:30 Monday -> 17:00 Monday is 7.5 WORKING hours (8.5 wall-clock hours).
-  const close = cal.endOfWorkingDay(MONDAY_0830);
-  assert.strictEqual(cal.workingHoursBetween(MONDAY_0830, close), 7.5);
+  const close = cal.endOfWorkingDay(MONDAY_OPEN);
+  assert.strictEqual(cal.workingHoursBetween(MONDAY_OPEN, close), HOURS_PER_DAY);
 
   // 08:30 Monday -> 17:00 Tuesday is 15 working hours, not 32.5 wall hours.
-  const tueClose = cal.endOfWorkingDay(cal.addWorkingDays(MONDAY_0830, 1));
-  assert.strictEqual(cal.workingHoursBetween(MONDAY_0830, tueClose), 15);
+  const tueClose = cal.endOfWorkingDay(cal.addWorkingDays(MONDAY_OPEN, 1));
+  assert.strictEqual(cal.workingHoursBetween(MONDAY_OPEN, tueClose), HOURS_PER_DAY * 2);
 });
 
-test('WT-3: the working day is exactly 7.5 hours by default', () => {
-  assert.strictEqual(cal.workingHoursPerDay, 7.5);
+test('WT-3: the working day is exactly 8.5 hours by default', () => {
+  assert.strictEqual(cal.workingHoursPerDay, HOURS_PER_DAY);
 });
 
 /* ================================================================== *
@@ -290,13 +312,13 @@ test('WT-4: a five-day week is honoured', () => {
 test('WT-4: an incoherent working-time config falls back, never widens the window', () => {
   // shiftEnd before shiftStart is nonsense — must NOT produce a 24h day.
   const wt = normalizeWorkingTime({ shiftStart: 18, shiftEnd: 6 });
-  assert.strictEqual(wt.shiftStart, 8.5);
-  assert.strictEqual(wt.shiftEnd, 17.0);
-  assert.strictEqual(wt.workingHoursPerDay, 7.5);
+  assert.strictEqual(wt.shiftStart, OPEN);
+  assert.strictEqual(wt.shiftEnd, CLOSE);
+  assert.strictEqual(wt.workingHoursPerDay, HOURS_PER_DAY);
 
   // A lunch window outside the shift means "no lunch", not a negative day.
   const wt2 = normalizeWorkingTime({ lunchStart: 20, lunchEnd: 21 });
-  assert.strictEqual(wt2.workingHoursPerDay, 8.5);
+  assert.strictEqual(wt2.workingHoursPerDay, CLOSE - OPEN);
 });
 
 test('WT-4: workingDays parses every accepted shape', () => {
@@ -343,7 +365,7 @@ test('AL-1: the buffer is walked from the END of production, not the start', () 
 
 test('AL-1: the delivery date is close of business, not the morning', () => {
   const p = plan();
-  assert.strictEqual(hourOf(p.deliveryDate), 17.0);
+  assert.strictEqual(hourOf(p.deliveryDate), CLOSE);
 });
 
 test('AL-1: the delivery date always lands on a working day', () => {
@@ -446,7 +468,7 @@ test('capacity is never exceeded on any day', () => {
     calendar: cal,
     capacityConfig: cfg,
     stageQuantities: { DESIGN: 37 },
-    startDate: MONDAY_0830,
+    startDate: MONDAY_OPEN,
     difficulty: 'EASY',
     settings: { contingencyDays: 0, difficultyBuffer: { EASY: 0 } },
   });
@@ -467,7 +489,7 @@ test('overcapacity raises the unit ceiling but NOT the working window', () => {
     calendar: cal,
     capacityConfig: capacityConfig(10),
     stageQuantities: { DESIGN: 12 },
-    startDate: MONDAY_0830,
+    startDate: MONDAY_OPEN,
     difficulty: 'EASY',
     settings: { contingencyDays: 0, difficultyBuffer: { EASY: 0 } },
     overCapacityFactor: 1.25,
@@ -477,7 +499,7 @@ test('overcapacity raises the unit ceiling but NOT the working window', () => {
   assert.strictEqual(allocs.length, 1);
   assert.ok(allocs[0].units <= 12.5 + 1e-6);
   // ...but that day still ends at 17:00.
-  assert.ok(hourOf(allocs[0].endDateTime) <= 17.0 + 1e-9);
+  assert.ok(hourOf(allocs[0].endDateTime) <= CLOSE + 1e-9);
 });
 
 test('FN-7: an empty plan reports a consistent zero', () => {
@@ -489,12 +511,12 @@ test('FN-7: an empty plan reports a consistent zero', () => {
 });
 
 test('existing usage from other projects pushes a stage to the next free day', () => {
-  const monday = cal.dayKey(MONDAY_0830);
+  const monday = cal.dayKey(MONDAY_OPEN);
   const p = buildSchedule({
     calendar: cal,
     capacityConfig: capacityConfig(10),
     stageQuantities: { DESIGN: 10 },
-    startDate: MONDAY_0830,
+    startDate: MONDAY_OPEN,
     difficulty: 'EASY',
     settings: { contingencyDays: 0, difficultyBuffer: { EASY: 0 } },
     existingUsage: { usage: { [`DESIGN|${monday}`]: 10 } }, // Monday is full
@@ -517,7 +539,7 @@ test('a manual duration is honoured in WORKING time', () => {
   assert.strictEqual(design.timeTaken, 1200);
   assert.strictEqual(design.allocations.length, 3);
   design.allocations.forEach((a) => {
-    assert.ok(hourOf(a.endDateTime) <= 17.0 + 1e-9);
+    assert.ok(hourOf(a.endDateTime) <= CLOSE + 1e-9);
     assert.ok(cal.isWorkingDay(a.startDateTime));
   });
 });
@@ -586,7 +608,7 @@ test('units are conserved exactly across a multi-day split', () => {
     calendar: cal,
     capacityConfig: capacityConfig(7),
     stageQuantities: { DESIGN: 100 },
-    startDate: MONDAY_0830,
+    startDate: MONDAY_OPEN,
     difficulty: 'EASY',
     settings: { contingencyDays: 0, difficultyBuffer: { EASY: 0 } },
   });
@@ -623,16 +645,15 @@ test('manual move: a 3-hour stage starting 10:06 ends at 14:06, not 13:06', () =
   assert.strictEqual(dayName(end), 'Monday');
 });
 
-test('manual move: a 1h19 stage starting 16:21 rolls past the 17:00 close', () => {
-  // 13:21 UTC = 16:21 Addis. Only 39 minutes remain before closing, so the
-  // balance must land the NEXT working morning — never at 17:40.
-  const start = new Date('2026-08-03T13:21:00.000Z');
+test('manual move: a stage starting near close rolls over instead of running late', () => {
+  // 14:21 UTC = 17:21 Addis — only 9 minutes remain before the 17:30 close.
+  const start = new Date('2026-08-03T14:21:00.000Z');
   const { end } = splitWorkingMinutes(cal, start, 79);
 
-  // 39 minutes fit before the close; the remaining 40 resume at 08:30 → 09:10.
-  assert.ok(hourOf(end) <= 17, `must not end after the 17:00 close: ${local(end)}`);
+  // 9 minutes fit before the close; the remaining 70 resume at 08:30 → 09:40.
+  assert.ok(hourOf(end) <= CLOSE, `must not end after the 17:30 close: ${local(end)}`);
   assert.strictEqual(dayName(end), 'Tuesday', `expected next day, got ${local(end)}`);
-  assert.strictEqual(hourOf(end), 9.0 + 10 / 60, `expected 09:10, got ${local(end)}`);
+  assert.strictEqual(hourOf(end), 9.0 + 40 / 60, `expected 09:40, got ${local(end)}`);
 });
 
 test('manual move: a night-time start is pulled into the working window', () => {
@@ -641,14 +662,14 @@ test('manual move: a night-time start is pulled into the working window', () => 
   const picked = new Date('2026-08-03T19:00:00.000Z');
   const normalized = cal.nextWorkingStart(picked);
 
-  assert.strictEqual(hourOf(normalized), 8.5, `expected 08:30, got ${local(normalized)}`);
+  assert.strictEqual(hourOf(normalized), OPEN, `expected 08:00, got ${local(normalized)}`);
   assert.strictEqual(dayName(normalized), 'Tuesday');
   assert.ok(cal.isWithinWorkingHours(normalized));
 });
 
 test('manual move: every segment of a multi-day split sits inside working hours', () => {
   // 20 hours of work from Monday morning spills across three days.
-  const { segments, end } = splitWorkingMinutes(cal, MONDAY_0830, 20 * 60);
+  const { segments, end } = splitWorkingMinutes(cal, MONDAY_OPEN, 20 * 60);
 
   assert.ok(segments.length > 1, 'a 20-hour duration must span several days');
   for (const seg of segments) {
@@ -656,12 +677,12 @@ test('manual move: every segment of a multi-day split sits inside working hours'
       cal.isWithinWorkingHours(seg.start),
       `segment starts out of hours: ${local(seg.start)}`,
     );
-    assert.ok(hourOf(seg.end) <= 17, `segment ends after close: ${local(seg.end)}`);
+    assert.ok(hourOf(seg.end) <= CLOSE, `segment ends after close: ${local(seg.end)}`);
     assert.notStrictEqual(dayName(seg.start), 'Sunday', 'Sunday is not worked');
   }
   const total = segments.reduce((s, x) => s + x.minutes, 0);
   assert.strictEqual(total, 20 * 60, 'the full duration must be allocated');
-  assert.ok(hourOf(end) <= 17);
+  assert.ok(hourOf(end) <= CLOSE);
 });
 
 /* ================================================================== *

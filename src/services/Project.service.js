@@ -2375,7 +2375,10 @@ const getDateCapacityStatus = async (stage, date) => {
   });
 
   const maxCapacity = capacityLot.capacity || 1;
-  const maxHours = 7.5;
+  // Read the configured day length rather than assuming 7.5 — the workshop runs
+  // 08:00-12:30 / 13:30-17:30 (8.5h), and a hardcoded figure here reported every
+  // day as fuller than it is.
+  const maxHours = (await getCalendar()).workingHoursPerDay;
   const usedCapacity = dailyRecord?.usedCapacity || 0;
   const overCapacityUsed = dailyRecord?.overCapacityUsed || 0;
   const usedHours = dailyRecord?.usedHours || 0;
@@ -2418,7 +2421,8 @@ const addOverCapacityAllocation = async (
   }
 
   const maxCapacity = capacityLot.capacity || 1;
-  const maxHours = 7.5;
+  // Configured day length, not a hardcoded 7.5 — see getDateCapacityStatus.
+  const maxHours = (await getCalendar()).workingHoursPerDay;
 
   const result = await prisma.$transaction(async (tx) => {
     const existingRecord = await tx.dailyStageCapacity.findUnique({

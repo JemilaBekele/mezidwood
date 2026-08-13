@@ -8,8 +8,8 @@
  *   2. WORKING TIME — which weekdays are worked, when the shift opens and
  *      closes, when lunch falls, and the business timezone. These used to be
  *      hardcoded constants, which meant the business could set
- *      `workingHoursPerDay` in the UI while the shift window stayed fixed at
- *      08:30-17:00 — any value other than 7.5 scheduled work past closing.
+ *      `workingHoursPerDay` in the UI while the shift window stayed fixed —
+ *      any value other than the window's own total scheduled work past closing.
  *      `workingHoursPerDay` is now DERIVED from the shift and lunch windows and
  *      is never accepted as independent input.
  *

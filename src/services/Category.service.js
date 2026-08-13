@@ -3,7 +3,12 @@ const ApiError = require('../utils/ApiError');
 const prisma = require('./prisma');
 const reschedule = require('./scheduling/reschedule');
 const rebuildLedger = require('./scheduling/rebuildLedger');
-const { WORKING_DAYS, CAPACITY_STAGES, OVERCAPACITY_FACTOR } = require('./scheduling/config');
+const {
+  WORKING_DAYS,
+  CAPACITY_STAGES,
+  OVERCAPACITY_FACTOR,
+  WORKING_HOURS_PER_DAY,
+} = require('./scheduling/config');
 
 /**
  * Count working days in a date range, excluding weekly off-days and holidays.
@@ -404,7 +409,7 @@ const getCapacityTelemetry = async (from, to, stageFilter) => {
   lots.forEach((lot) => {
     lotMap[lot.stage] = {
       dailyUnits: (lot.capacity || 0) * (lot.parallelSlots || 1),
-      dailyHours: lot.workingHours || 7.5,
+      dailyHours: lot.workingHours || WORKING_HOURS_PER_DAY,
     };
   });
 
@@ -416,7 +421,7 @@ const getCapacityTelemetry = async (from, to, stageFilter) => {
   let totalEff = 0;
   let totalMaxH = 0;
   stagesToCount.forEach((s) => {
-    const l = lotMap[s] || { dailyUnits: 0, dailyHours: 7.5 };
+    const l = lotMap[s] || { dailyUnits: 0, dailyHours: WORKING_HOURS_PER_DAY };
     totalEff += l.dailyUnits * workingDays;
     totalMaxH += l.dailyHours * workingDays;
   });

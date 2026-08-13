@@ -10,7 +10,7 @@
  * A working day is a list of SEGMENTS, not one contiguous span. With the default
  * settings a day is:
  *
- *     [ 08:30 - 12:30 ]  lunch  [ 13:30 - 17:00 ]     = 7.5 working hours
+ *     [ 08:30 - 12:30 ]  lunch  [ 13:30 - 17:30 ]     = 8.0 working hours
  *
  * Every duration this module hands out is measured in WORKING hours: it never
  * counts the lunch gap, never counts the night, never counts a Sunday and never

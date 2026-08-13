@@ -33,6 +33,7 @@ const {
   NON_CAPACITY_HOURS_PER_UNIT,
   DIFFICULTY_BUFFER,
   CONTINGENCY_DAYS,
+  WORKING_HOURS_PER_DAY,
   deliveryBufferDays,
 } = require('./config');
 
@@ -679,7 +680,7 @@ const flushUsage = async (capacityConfig, deltas, client = prisma, cal = null) =
     const date = dailyCapacityDate(dateKey);
     const cfg = capacityConfig[stage] || {};
     const dailyMax = effectiveDailyMax(cfg);
-    const maxHours = whpd || cfg.workingHours || 7.5;
+    const maxHours = whpd || cfg.workingHours || WORKING_HOURS_PER_DAY;
 
     // eslint-disable-next-line no-await-in-loop
     const existing = await client.dailyStageCapacity.findUnique({
