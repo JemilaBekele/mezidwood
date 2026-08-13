@@ -731,40 +731,93 @@ const updateProject = async (id, updateBody, userId) => {
 
 // Delete Project
 const deleteProject = async (id) => {
-  // Check if project exists
+  // Check if project exists with all related data
   const existingProject = await prisma.project.findUnique({
     where: { id },
+    include: {
+      invoice: true,
+      stages: {
+        include: {
+          projectStageWorkLogs: true,
+          projectStageCapacityAllocations: true,
+        }
+      },
+    },
   });
 
   if (!existingProject) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Project not found');
   }
 
-  // Delete project with cascade (if cascade is enabled in schema)
-  // If cascade is not enabled, we need to delete stages first
   try {
     // Single transaction to delete everything
     await prisma.$transaction(async (tx) => {
-      // Return this project's reserved capacity to the daily pool FIRST, so the
-      // DailyStageCapacity counters don't keep counting a project that no longer
-      // exists (deleting the stages only cascades the allocation rows away — it
-      // does not decrement the shared usedCapacity/usedHours totals).
+      // Return this project's reserved capacity to the daily pool FIRST
       await reschedule.releaseProjectCapacity(id, tx);
 
-      // Delete associated project stages (cascades remaining allocation rows)
-      await tx.projectStage.deleteMany({
-        where: { projectId: id },
-      });
+      // Get all stage IDs for this project
+      const stageIds = existingProject.stages.map(stage => stage.id);
 
-      // Delete the project itself (cascades ScheduleHistory + ProjectLog rows)
+      if (stageIds.length > 0) {
+        // 1. Delete ProjectStageWorkLogs for all stages
+        await tx.projectStageWorkLog.deleteMany({
+          where: {
+            projectStageId: {
+              in: stageIds,
+            },
+          },
+        });
+
+        // 2. Delete ProjectStageCapacityAllocations for all stages
+        await tx.projectStageCapacityAllocation.deleteMany({
+          where: {
+            projectStageId: {
+              in: stageIds,
+            },
+          },
+        });
+
+        // 3. Delete the project stages themselves
+        await tx.projectStage.deleteMany({
+          where: {
+            projectId: id,
+          },
+        });
+      }
+
+
+
+      // Delete the project itself
+      // This will automatically cascade delete projectLogs and scheduleHistories
+      // because of the @relation with onDelete: Cascade in your schema
       await tx.project.delete({
         where: { id },
       });
     });
 
-    return { message: 'Project deleted successfully' };
+    return { 
+      message: 'Project deleted successfully',
+      invoiceKept: existingProject.invoiceId ? true : false,
+      invoiceId: existingProject.invoiceId || null,
+      stagesDeleted: existingProject.stages.length,
+    };
   } catch (error) {
     console.error('Error deleting project:', error);
+    
+    // Enhanced error logging
+    console.error('Error details:', {
+      code: error.code,
+      meta: error.meta,
+      message: error.message,
+      stack: error.stack,
+    });
+    
+    if (error.code === 'P2003') {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        `Cannot delete project: ${error.meta?.field_name || 'Related records exist'}`,
+      );
+    }
     throw new ApiError(
       httpStatus.INTERNAL_SERVER_ERROR,
       'Failed to delete project',
