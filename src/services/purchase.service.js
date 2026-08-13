@@ -734,7 +734,73 @@ const acceptPurchase = async (purchaseId, paymentStatus, userId) => {
     throw error;
   }
 };
+const deleteAllMaterialsAndItems = async () => {
+  // Check if anything exists to delete
+  const materialCount = await prisma.material.count();
+  const itemCount = await prisma.items.count();
+  
+  if (materialCount === 0 && itemCount === 0) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'No materials or items found to delete');
+  }
 
+  await prisma.$transaction(async (tx) => {
+    // === DELETE ALL MATERIALS RELATED RECORDS ===
+    // 1. Delete all stock ledgers
+    await tx.stockLedger.deleteMany({});
+
+    // 2. Delete all inventory stocks
+    await tx.inventoryStock.deleteMany({});
+
+    // 3. Delete all stock correction items (for materials)
+    await tx.stockCorrectionItem.deleteMany({});
+
+    // 4. Delete all transfer items (for materials)
+    await tx.transferItem.deleteMany({});
+
+    // 5. Delete all purchase items
+    await tx.purchaseItem.deleteMany({});
+
+    // === DELETE ALL ITEMS RELATED RECORDS ===
+    // 6. Delete all item stock ledgers
+    await tx.itemStockLedger.deleteMany({});
+
+    // 7. Delete all item stocks
+    await tx.itemStock.deleteMany({});
+
+    // 8. Delete all proforma invoice items
+    await tx.proformaInvoiceItem.deleteMany({});
+
+    // 9. Delete all sell items
+    await tx.sellItem.deleteMany({});
+
+    // 10. Delete all stock correction items (for items)
+    await tx.stockCorrectionItem.deleteMany({});
+
+    // 11. Delete all transfer items (for items)
+    await tx.transferItem.deleteMany({});
+
+    // 12. Delete all item images
+    await tx.itemImage.deleteMany({});
+
+    // 13. Delete all item materials (junction table - shared)
+    await tx.itemMaterial.deleteMany({});
+
+    // === DELETE MAIN ENTITIES ===
+    // 14. Delete ALL items
+    await tx.items.deleteMany({});
+
+    // 15. Delete ALL materials
+    await tx.material.deleteMany({});
+  });
+
+  return {
+    message: 'All materials and items deleted successfully',
+    materialsDeleted: materialCount,
+    itemsDeleted: itemCount,
+    totalDeleted: materialCount + itemCount,
+    deletedAt: new Date().toISOString(),
+  };
+};
 module.exports = {
   getPurchaseById,
   getPurchaseByInvoiceNo,
