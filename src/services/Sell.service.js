@@ -65,14 +65,7 @@ const getSellById = async (identifier) => {
           showroom: true,
         },
       },
-      sellPayments: {
-        include: {
-          createdBy: {
-            select: { id: true, name: true, email: true },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-      },
+      sellPayments: true,
     },
   });
   return sell;
