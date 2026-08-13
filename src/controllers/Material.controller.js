@@ -105,7 +105,7 @@ const getMaterials = catchAsync(async (req, res) => {
 
 // Delete Material
 const deleteMaterial = catchAsync(async (req, res) => {
-  await materialService.deleteAllMaterialsAndItems();
+  await materialService.deleteMaterial(req.params.id);
   res.status(httpStatus.OK).send({
     success: true,
     message: 'Material deleted successfully',
