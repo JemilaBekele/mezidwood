@@ -1237,18 +1237,20 @@ const getProjectsByCustomerId = async (customerId, filters = {}) => {
       invoice: {
         select: {
           id: true,
-          invoiceNumber: true,
-          totalAmount: true,
+          piNumber: true,
+          total: true,
         },
       },
       stages: {
         orderBy: {
-          order: 'asc',
+          startDate: 'asc',
         },
         select: {
           id: true,
-          name: true,
+          stage: true,
           status: true,
+          startDate: true,
+          endDate: true,
         },
       },
     },
@@ -2517,6 +2519,10 @@ const updateProjectStage = async (
             new Date(),
           );
         }
+        // WT-1: a user-picked instant may land at night, in the lunch gap, on a
+        // weekend or on a holiday. Roll it forward to the first instant work may
+        // legally begin so a stage can never be born outside the working window.
+        startDt = cal.nextWorkingStart(startDt);
         stage = await tx.projectStage.create({
           data: {
             projectId,
@@ -2538,11 +2544,14 @@ const updateProjectStage = async (
       await reschedule.releaseStageCapacity(stage.id, null, tx);
 
       // Where does this stage start? A manual drag pins the start; otherwise
-      // keep its current position.
-      const chosenStart =
+      // keep its current position. Either way the instant is normalized onto the
+      // working calendar (WT-1) so an out-of-hours pick from the UI can never be
+      // persisted verbatim.
+      const chosenStart = cal.nextWorkingStart(
         manualOverride && customDates && customDates.startDate
           ? new Date(customDates.startDate)
-          : new Date(stage.startDateTime || stage.startDate || Date.now());
+          : new Date(stage.startDateTime || stage.startDate || Date.now()),
+      );
       const manualTimeline = hasManualDuration
         ? splitWorkingMinutes(cal, chosenStart, timeTakenMinutes)
         : null;
@@ -2628,11 +2637,48 @@ const updateProjectStage = async (
           );
         }
       } else {
-        // Zero quantity: keep the row but clear its work.
+        // Zero quantity: the row carries no capacity work, but it is still a
+        // real stage on the timeline. This branch used to write only workUnits,
+        // which silently threw away any date/time the user had just picked —
+        // "changing the stage date does nothing" for stages like METAL_WORKS
+        // that legitimately have no units. Honour the move here too: the
+        // position comes from the (already calendar-normalized) chosenStart and
+        // the span from the manual duration when one was supplied.
+        const startDateTime = manualTimeline ? manualTimeline.start : chosenStart;
+        const endDateTime = manualTimeline
+          ? manualTimeline.end
+          : manualOverride && customDates && customDates.endDate
+          ? cal.nextWorkingStart(new Date(customDates.endDate))
+          : startDateTime;
         updatedStage = await tx.projectStage.update({
           where: { id: stage.id },
-          data: { workUnits: effectiveQuantity, autoSchedule: !manualOverride },
+          data: {
+            workUnits: effectiveQuantity,
+            startDateTime,
+            startDate: startDateTime,
+            endDateTime,
+            endDate: endDateTime,
+            capacityDays: Math.max(
+              1,
+              cal.workingDaysBetween(startDateTime, endDateTime),
+            ),
+            timeTaken: hasManualDuration ? timeTakenMinutes : stage.timeTaken,
+            autoSchedule: !manualOverride,
+          },
         });
+        // A zero-unit stage reserves no capacity, so there is nothing to
+        // allocate — but the time the user logged against it is still real.
+        if (manualTimeline && createManualWorkLog && timeTakenMinutes > 0) {
+          await tx.projectStageWorkLog.create({
+            data: {
+              projectStageId: stage.id,
+              doneUnits: 0,
+              hours: round2(timeTakenMinutes / 60),
+              doneById: userId || null,
+              note: 'Manual timeline time adjustment',
+            },
+          });
+        }
       }
 
       // Cascade to downstream stages and refresh the delivery date — all on the

@@ -603,3 +603,63 @@ test('a schedule is deterministic — same input, same output', () => {
   assert.strictEqual(a.deliveryDate.getTime(), b.deliveryDate.getTime());
   assert.strictEqual(a.lastEnd.getTime(), b.lastEnd.getTime());
 });
+
+/* ================================================================== *
+ * Manual stage moves — the "Manage Project Stages" edit path.
+ *
+ * These pin the three failures reported from the stage screen: an end time
+ * shown past closing, an end time that ran straight through lunch, and a
+ * user-picked night-time start being taken at face value.
+ * ================================================================== */
+const { splitWorkingMinutes } = require('../src/services/Project.service').__private;
+
+test('manual move: a 3-hour stage starting 10:06 ends at 14:06, not 13:06', () => {
+  // 07:06 UTC = 10:06 Addis, Monday. Three hours of WORK spans the 12:30-13:30
+  // lunch break, so it finishes an hour later on the wall clock.
+  const start = new Date('2026-08-03T07:06:00.000Z');
+  const { end } = splitWorkingMinutes(cal, start, 180);
+
+  assert.strictEqual(hourOf(end), 14.1, `expected 14:06, got ${local(end)}`);
+  assert.strictEqual(dayName(end), 'Monday');
+});
+
+test('manual move: a 1h19 stage starting 16:21 rolls past the 17:00 close', () => {
+  // 13:21 UTC = 16:21 Addis. Only 39 minutes remain before closing, so the
+  // balance must land the NEXT working morning — never at 17:40.
+  const start = new Date('2026-08-03T13:21:00.000Z');
+  const { end } = splitWorkingMinutes(cal, start, 79);
+
+  // 39 minutes fit before the close; the remaining 40 resume at 08:30 → 09:10.
+  assert.ok(hourOf(end) <= 17, `must not end after the 17:00 close: ${local(end)}`);
+  assert.strictEqual(dayName(end), 'Tuesday', `expected next day, got ${local(end)}`);
+  assert.strictEqual(hourOf(end), 9.0 + 10 / 60, `expected 09:10, got ${local(end)}`);
+});
+
+test('manual move: a night-time start is pulled into the working window', () => {
+  // 19:00 UTC = 22:00 Addis, Monday — long after closing. This is the instant a
+  // user could pick in the stage dialog; it must never be persisted verbatim.
+  const picked = new Date('2026-08-03T19:00:00.000Z');
+  const normalized = cal.nextWorkingStart(picked);
+
+  assert.strictEqual(hourOf(normalized), 8.5, `expected 08:30, got ${local(normalized)}`);
+  assert.strictEqual(dayName(normalized), 'Tuesday');
+  assert.ok(cal.isWithinWorkingHours(normalized));
+});
+
+test('manual move: every segment of a multi-day split sits inside working hours', () => {
+  // 20 hours of work from Monday morning spills across three days.
+  const { segments, end } = splitWorkingMinutes(cal, MONDAY_0830, 20 * 60);
+
+  assert.ok(segments.length > 1, 'a 20-hour duration must span several days');
+  for (const seg of segments) {
+    assert.ok(
+      cal.isWithinWorkingHours(seg.start),
+      `segment starts out of hours: ${local(seg.start)}`,
+    );
+    assert.ok(hourOf(seg.end) <= 17, `segment ends after close: ${local(seg.end)}`);
+    assert.notStrictEqual(dayName(seg.start), 'Sunday', 'Sunday is not worked');
+  }
+  const total = segments.reduce((s, x) => s + x.minutes, 0);
+  assert.strictEqual(total, 20 * 60, 'the full duration must be allocated');
+  assert.ok(hourOf(end) <= 17);
+});
