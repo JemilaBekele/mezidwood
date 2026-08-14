@@ -2788,106 +2788,92 @@ const deleteProformaInvoice = async (id) => {
       throw new ApiError(httpStatus.NOT_FOUND, 'Proforma invoice not found');
     }
 
-    // Check status restrictions
-
-    // DELETE IN REVERSE ORDER OF DEPENDENCIES:
-    try {
-      // 0. Delete PiLogs first (if they exist)
-      if (existingInvoice.piLogs && existingInvoice.piLogs.length > 0) {
-        const deleteLogs = await prisma.piLog.deleteMany({
-          where: { proformaId: id },
-        });
-      }
-
-      // 1. Delete ProformaItemMaterial records
-      let totalMaterials = 0;
-      for (const item of existingInvoice.items) {
-        if (item.proformaItemMaterials.length > 0) {
-          const deleteMaterials = await prisma.proformaItemMaterial.deleteMany({
-            where: { itemId: item.id },
-          });
-          totalMaterials += deleteMaterials.count;
-        }
-      }
-
-      // 1.5 Delete Item Images (if they exist)
-      let totalImages = 0;
-      for (const item of existingInvoice.items) {
-        if (item.images && item.images.length > 0) {
-          const deleteImages = await prisma.proformaInvoiceItemImage.deleteMany(
-            {
-              where: { itemId: item.id },
-            },
-          );
-          totalImages += deleteImages.count;
-        }
-      }
-
-      // 2. Delete ProformaInvoiceItem records
-      if (existingInvoice.items.length > 0) {
-        const deleteItems = await prisma.proformaInvoiceItem.deleteMany({
-          where: { invoiceId: id },
-        });
-      }
-
-      // 3. Delete ProformaInvoiceBank records
-      if (existingInvoice.banks.length > 0) {
-        const deleteBanks = await prisma.proformaInvoiceBank.deleteMany({
-          where: { proformaInvoiceId: id },
-        });
-      }
-
-      // 4. Delete Attachment records
-      if (existingInvoice.attachments.length > 0) {
-        // Optional: Delete physical files from disk
-        for (const attachment of existingInvoice.attachments) {
-          if (attachment.fileUrl) {
-            try {
-              const filePath = path.join(
-                __dirname,
-                '../..',
-                attachment.fileUrl,
-              );
-              if (fs.existsSync(filePath)) {
-                await fs.unlink(filePath);
-              } else {
-              }
-            } catch (fileError) {}
-          }
-        }
-
-        const deleteAttachments = await prisma.attachment.deleteMany({
-          where: { proformaInvoiceId: id },
-        });
-      }
-
-      const deletedInvoice = await prisma.proformaInvoice.delete({
-        where: { id },
-      });
-
-      const result = {
-        message: 'Proforma invoice deleted successfully',
-        deletedInvoiceId: id,
-        deletedInvoiceNumber: deletedInvoice.piNumber,
-        deletedItemsCount: existingInvoice.items.length,
-        deletedAttachmentsCount: existingInvoice.attachments.length,
-        deletedBanksCount: existingInvoice.banks.length,
-        deletedMaterialRelationsCount: totalMaterials,
-        deletedImagesCount: totalImages,
-        deletedLogsCount: existingInvoice.piLogs?.length || 0,
-        timestamp: new Date().toISOString(),
-      };
-
-      return result;
-    } catch (deleteError) {
-      console.error(`❌ Error during deletion process:`, deleteError);
-      console.error(`❌ Error details:`, {
-        code: deleteError.code,
-        message: deleteError.message,
-        meta: deleteError.meta,
-      });
-      throw deleteError;
+    // GUARD FIRST. `Project.invoiceId` is a required unique FK, so an invoice
+    // that has a project can never be deleted — the final delete always fails
+    // with P2003. Previously this relation was fetched and then ignored, so the
+    // six deleteMany calls below ran first, destroying every line item, price,
+    // image, bank row and attachment, and only THEN hit the constraint. With no
+    // transaction wrapping them, none of it rolled back: the invoice survived
+    // with all of its contents irrecoverably gone.
+    if (existingInvoice.project) {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        'This proforma invoice has a project and cannot be deleted. Delete the project first.',
+      );
     }
+
+    const itemIds = existingInvoice.items.map((i) => i.id);
+
+    // One transaction: either the whole invoice and its children go, or nothing
+    // does. Ordered child-first so no FK is violated mid-flight.
+    const { deletedInvoice, totalMaterials, totalImages } =
+      await prisma.$transaction(async (tx) => {
+        await tx.piLog.deleteMany({ where: { proformaId: id } });
+
+        let materials = 0;
+        let images = 0;
+        if (itemIds.length > 0) {
+          materials = (
+            await tx.proformaItemMaterial.deleteMany({
+              where: { itemId: { in: itemIds } },
+            })
+          ).count;
+          images = (
+            await tx.proformaInvoiceItemImage.deleteMany({
+              where: { itemId: { in: itemIds } },
+            })
+          ).count;
+          await tx.proformaInvoiceItem.deleteMany({ where: { invoiceId: id } });
+        }
+
+        await tx.proformaInvoiceBank.deleteMany({
+          where: { proformaInvoiceId: id },
+        });
+        await tx.attachment.deleteMany({ where: { proformaInvoiceId: id } });
+
+        const invoice = await tx.proformaInvoice.delete({ where: { id } });
+        return {
+          deletedInvoice: invoice,
+          totalMaterials: materials,
+          totalImages: images,
+        };
+      });
+
+    // Files are removed only AFTER the transaction commits — deleting them
+    // first meant a rolled-back or failed delete still destroyed them on disk,
+    // with nothing to restore from.
+    let deletedFiles = 0;
+    for (const attachment of existingInvoice.attachments) {
+      if (!attachment.fileUrl) continue;
+      try {
+        // `fs` here is fs/promises, which has no existsSync — the previous code
+        // called it anyway and threw straight into an empty catch, so no file
+        // was ever actually removed. unlink + ENOENT is the promise-API way.
+        await fs.unlink(path.join(__dirname, '../..', attachment.fileUrl));
+        deletedFiles += 1;
+      } catch (fileError) {
+        if (fileError.code !== 'ENOENT') {
+          console.error(
+            `Failed to delete attachment file ${attachment.fileUrl}:`,
+            fileError.message,
+          );
+        }
+      }
+    }
+
+    return {
+      message: 'Proforma invoice deleted successfully',
+      deletedInvoiceId: id,
+      deletedInvoiceNumber: deletedInvoice.piNumber,
+      deletedItemsCount: existingInvoice.items.length,
+      deletedAttachmentsCount: existingInvoice.attachments.length,
+      deletedBanksCount: existingInvoice.banks.length,
+      deletedMaterialRelationsCount: totalMaterials,
+      deletedImagesCount: totalImages,
+      deletedLogsCount: existingInvoice.piLogs?.length || 0,
+      deletedFilesCount: deletedFiles,
+      timestamp: new Date().toISOString(),
+    };
   } catch (error) {
     console.error(`❌ Fatal error in deleteProformaInvoice:`, error);
     console.error(`❌ Error details:`, {

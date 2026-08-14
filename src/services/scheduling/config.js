@@ -23,15 +23,18 @@ const EPS = 0.001;
  * Working-time defaults
  * ------------------------------------------------------------------ */
 
-// Business timezone. All wall-clock scheduling (shift windows, day boundaries)
-// is computed in this zone, then stored as UTC. See calendar.js.
+// Business timezone: East Africa Time (UTC+3), no DST.
+// All wall-clock scheduling (shift windows, day boundaries) is computed in this
+// zone, then stored as UTC. See calendar.js.
 const WORKING_TIMEZONE = 'Africa/Addis_Ababa';
 
-// Factory clock, as decimal hours in the business timezone:
-//   08:30 open, 12:30-13:30 lunch (non-working), 17:00 close
-//   => 4.0h morning + 3.5h afternoon = 7.5 working hours per day
+// Factory clock, as decimal hours in the business timezone. These match the
+// workshop's actual day. Local (Ethiopian) clock times are given alongside,
+// since that is how the floor reads them — Ethiopian = Gregorian - 6h:
+//   08:30 open  (2:30 ጧት), 12:30-13:30 lunch (non-working), 17:30 close (11:30)
+//   => 4.0h morning + 4.0h afternoon = 8.0 working hours per day
 const DEFAULT_SHIFT_START = 8.5;
-const DEFAULT_SHIFT_END = 17.0;
+const DEFAULT_SHIFT_END = 17.5;
 const DEFAULT_LUNCH_START = 12.5;
 const DEFAULT_LUNCH_END = 13.5;
 
@@ -306,6 +309,17 @@ const applyDeliveryBuffer = (baseWorkingDays, difficulty, settings = {}) =>
 
 const VALID_DIFFICULTIES = ['EASY', 'MEDIUM', 'HARD'];
 
+/**
+ * Every value the ProjectStatus enum defines — the workflow stages plus the two
+ * terminal states.
+ *
+ * Three mutually incompatible hand-rolled status lists existed across
+ * Project.service.js, none of which matched the schema: they permitted
+ * PENDING/IN_PROGRESS/ON_HOLD/DELIVERED (absent from the enum) while rejecting
+ * every real stage value. This is the single list to validate against.
+ */
+const VALID_PROJECT_STATUSES = [...WORKFLOW_ORDER, 'COMPLETED', 'CANCELLED'];
+
 module.exports = {
   EPS,
   WORKING_TIMEZONE,
@@ -337,4 +351,5 @@ module.exports = {
   deliveryBufferDays,
   applyDeliveryBuffer,
   VALID_DIFFICULTIES,
+  VALID_PROJECT_STATUSES,
 };

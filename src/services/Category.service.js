@@ -2,7 +2,13 @@ const httpStatus = require('http-status');
 const ApiError = require('../utils/ApiError');
 const prisma = require('./prisma');
 const reschedule = require('./scheduling/reschedule');
-const { WORKING_DAYS, CAPACITY_STAGES, OVERCAPACITY_FACTOR } = require('./scheduling/config');
+const rebuildLedger = require('./scheduling/rebuildLedger');
+const {
+  WORKING_DAYS,
+  CAPACITY_STAGES,
+  OVERCAPACITY_FACTOR,
+  WORKING_HOURS_PER_DAY,
+} = require('./scheduling/config');
 
 /**
  * Count working days in a date range, excluding weekly off-days and holidays.
@@ -182,7 +188,18 @@ const resetDailyStageCapacities = async () => {
  * projects are never moved, and if nothing can move nothing is written.
  * See reschedule.compactCurrentWeek.
  */
+// NOTE: despite the name this does NOT reconcile the ledger — it pulls work
+// forward into gaps in the current week. Use `reconcileCapacityLedger` below to
+// repair drifted counters.
 const rebuildCapacityLedger = async () => reschedule.compactCurrentWeek();
+
+/**
+ * Recompute every daily capacity counter from its allocation rows, enforcing
+ * `usedCapacity === Σ allocatedUnits`. Shares its implementation with
+ * `npm run capacity:rebuild` so the endpoint and the CLI cannot drift apart.
+ */
+const reconcileCapacityLedger = async (dryRun = false) =>
+  rebuildLedger.rebuildCapacityLedger({ dryRun });
 // Create Category
 const createCategory = async (categoryBody) => {
   // Check if category with same name already exists
@@ -392,7 +409,7 @@ const getCapacityTelemetry = async (from, to, stageFilter) => {
   lots.forEach((lot) => {
     lotMap[lot.stage] = {
       dailyUnits: (lot.capacity || 0) * (lot.parallelSlots || 1),
-      dailyHours: lot.workingHours || 7.5,
+      dailyHours: lot.workingHours || WORKING_HOURS_PER_DAY,
     };
   });
 
@@ -404,7 +421,7 @@ const getCapacityTelemetry = async (from, to, stageFilter) => {
   let totalEff = 0;
   let totalMaxH = 0;
   stagesToCount.forEach((s) => {
-    const l = lotMap[s] || { dailyUnits: 0, dailyHours: 7.5 };
+    const l = lotMap[s] || { dailyUnits: 0, dailyHours: WORKING_HOURS_PER_DAY };
     totalEff += l.dailyUnits * workingDays;
     totalMaxH += l.dailyHours * workingDays;
   });
@@ -525,6 +542,7 @@ module.exports = {
   getAllDailyStageCapacities,
   resetDailyStageCapacities,
   rebuildCapacityLedger,
+  reconcileCapacityLedger,
   getCapacityTelemetry,
   getStageLoadRail,
   getCategoryById,

@@ -19,13 +19,14 @@
  *     regardless of scheduleMode. Only DATE MOVEMENT is gated by the mode.
  */
 const prisma = require('../prisma');
-const { getCalendar } = require('./calendar');
+const { getCalendar, markerDayKey } = require('./calendar');
 const { getSchedulingSettings } = require('./settings');
 const {
   computeStageQuantities,
   scheduleProject,
   dailyCapacityDate,
   deliveryDateFor,
+  effectiveDailyMax,
   PHASES,
 } = require('./engine');
 const { deliveryBufferDays, OVERCAPACITY_FACTOR } = require('./config');
@@ -215,8 +216,14 @@ const releaseStageCapacity = async (projectStageId, releaseFrom = null, client =
   const allocations = await client.projectStageCapacityAllocation.findMany({
     where: { projectStageId },
   });
+  // `releaseFrom` is an arbitrary INSTANT (usually the completion moment), so
+  // its day must be read in the business timezone. Slicing the ISO string gave
+  // the UTC day instead: a stage completed after midnight local time resolved
+  // to the previous day, moving the cutoff back and freeing a day that had
+  // already been worked.
+  const cal = releaseFrom ? await getCalendar() : null;
   const cutoff = releaseFrom
-    ? dailyCapacityDate(new Date(releaseFrom).toISOString().slice(0, 10))
+    ? dailyCapacityDate(cal.businessDayKey(new Date(releaseFrom)))
     : null;
 
   for (const a of allocations) {
@@ -226,9 +233,18 @@ const releaseStageCapacity = async (projectStageId, releaseFrom = null, client =
       where: { id: a.dailyStageCapacityId },
     });
     if (daily) {
+      // Clamp at zero. A bare `{ decrement }` trusts that the counter still
+      // holds at least what this allocation booked; any drift (a double
+      // release, a partially-applied write) then pushed usedCapacity negative,
+      // which reads downstream as "this day has MORE than full capacity free"
+      // and silently overbooks it.
       const decrementData = {
-        usedCapacity: { decrement: a.allocatedUnits },
-        usedHours: { decrement: a.allocatedHours },
+        usedCapacity: {
+          decrement: Math.min(a.allocatedUnits, daily.usedCapacity || 0),
+        },
+        usedHours: {
+          decrement: Math.min(a.allocatedHours, daily.usedHours || 0),
+        },
       };
       // If this allocation was marked as overcapacity, also decrement the over fields
       if (a.isOverCapacity && (daily.overCapacityUsed || 0) > 0) {
@@ -270,10 +286,39 @@ const persistStageAllocations = async (projectStageId, stage, allocations, clien
   for (const alloc of allocations || []) {
     const date = dailyCapacityDate(alloc.date);
     // eslint-disable-next-line no-await-in-loop
-    const daily = await client.dailyStageCapacity.findUnique({
+    let daily = await client.dailyStageCapacity.findUnique({
       where: { stage_date: { stage, date } },
     });
-    if (!daily) continue;
+    // A missing daily row used to `continue`, silently dropping the allocation.
+    // The commit run has ALREADY incremented that day's usedCapacity, so
+    // skipping the row left counted capacity with no allocation backing it —
+    // permanently unreleasable, and a direct violation of the invariant that a
+    // day's usedCapacity equals the sum of its allocations. Materialise the row
+    // instead so the two sides stay reconcilable.
+    if (!daily) {
+      // eslint-disable-next-line no-await-in-loop
+      const lot = await client.capacityLot.findUnique({ where: { stage } });
+      const cal = await getCalendar();
+      const dailyMax = effectiveDailyMax({
+        capacity: lot?.capacity || 1,
+        parallelSlots: lot?.parallelSlots || 1,
+      });
+      // eslint-disable-next-line no-await-in-loop
+      daily = await client.dailyStageCapacity.upsert({
+        where: { stage_date: { stage, date } },
+        create: {
+          stage,
+          date,
+          shift: alloc.shift || 'FULL_DAY',
+          usedCapacity: round2(alloc.units),
+          maxCapacity: dailyMax,
+          workingHours: cal.workingHoursPerDay,
+          usedHours: round2(alloc.hours),
+          maxHours: cal.workingHoursPerDay,
+        },
+        update: {},
+      });
+    }
     // An allocation is overcapacity when the factor was > 1.0 AND this day's
     // total usage now exceeds the base (non-overcapacity) maximum.
     const isOver = overCapacityFactor > 1.0
@@ -359,7 +404,7 @@ const recomputeStageSpan = async (stageId, tx) => {
   const ends = allAllocs.map((a) => new Date(a.endDateTime || a.customEndTime || a.allocationDate).getTime());
   const newStart = new Date(Math.min(...starts));
   const newEnd = new Date(Math.max(...ends));
-  const days = new Set(allAllocs.map((a) => new Date(a.allocationDate).toISOString().slice(0, 10))).size;
+  const days = new Set(allAllocs.map((a) => markerDayKey(a.allocationDate))).size;
   const totalHours = allAllocs.reduce((sum, a) => sum + (a.allocatedHours || 0), 0);
   await tx.projectStage.update({
     where: { id: stageId },
@@ -525,7 +570,17 @@ const rescheduleWholeProject = async (projectId, startInstant, client = null) =>
     const active = project.stages.filter(
       (s) => s.status !== 'CANCELLED' && s.status !== 'COMPLETED' && !s.finished,
     );
-    for (const s of active) {
+
+    // DELIVERY is manually managed and is deliberately skipped by the update
+    // loop below. It must therefore be skipped HERE too: releasing its capacity
+    // and then letting the commit run re-book it — while never re-persisting its
+    // allocation rows — left counted capacity with nothing backing it, which no
+    // later release could ever return to the pool. DELIVERY is now left entirely
+    // untouched by a whole-project rebuild: same dates, same allocations, same
+    // capacity.
+    const rebuildable = active.filter((s) => s.stage !== 'DELIVERY');
+
+    for (const s of rebuildable) {
       // eslint-disable-next-line no-await-in-loop
       await releaseStageCapacity(s.id, null, tx);
     }
@@ -535,8 +590,11 @@ const rescheduleWholeProject = async (projectId, startInstant, client = null) =>
     // stage/team instead of pushing the whole project behind all workshop work.
     const effStart = new Date(startInstant);
 
+    // DELIVERY is excluded from the plan as well — a commit run books capacity
+    // for every stage it is given, so including it here is what created the
+    // orphaned reservation described above.
     const stageQuantities = {};
-    active.forEach((s) => {
+    rebuildable.forEach((s) => {
       stageQuantities[s.stage] = s.workUnits || 0;
     });
 
@@ -547,18 +605,16 @@ const rescheduleWholeProject = async (projectId, startInstant, client = null) =>
       mode: 'commit',
       tx,
       // A user-fixed duration sticks through a full rebuild too.
-      manualDurations: manualDurationsOf(active),
+      manualDurations: manualDurationsOf(rebuildable),
     });
     const planByStage = {};
     plan.stages.forEach((p) => {
       planByStage[p.stage] = p;
     });
 
-    for (const s of active) {
+    for (const s of rebuildable) {
       const p = planByStage[s.stage];
       if (!p) continue;
-      // DELIVERY stage dates are manually managed — never overwrite during rebuild
-      if (s.stage === 'DELIVERY') continue;
       // eslint-disable-next-line no-await-in-loop
       await tx.projectStage.update({
         where: { id: s.id },
@@ -1009,8 +1065,13 @@ const rescheduleStageAndDownstream = async (
     });
 
     const effectiveFromDate = fromDate ? new Date(fromDate) : null;
+    // `fromDate` is the instant the user dragged FROM, so its calendar day must
+    // be resolved in the business timezone — a UTC slice picks the wrong day for
+    // any instant outside the window where the two calendars coincide, and this
+    // cutoff decides which allocation cells get moved.
+    const dragCal = effectiveFromDate ? await getCalendar() : null;
     const fromDateCutoff = effectiveFromDate
-      ? dailyCapacityDate(effectiveFromDate.toISOString().slice(0, 10))
+      ? dailyCapacityDate(dragCal.businessDayKey(effectiveFromDate))
       : null;
     const effStart = new Date(newStartDate);
 
@@ -1022,7 +1083,7 @@ const rescheduleStageAndDownstream = async (
     if (pastCellMove && fromDateCutoff) {
       const cellUnitsOnDay = (s) =>
         (s.projectStageCapacityAllocations || [])
-          .filter((a) => dailyCapacityDate(new Date(a.allocationDate).toISOString().slice(0, 10)).getTime() === fromDateCutoff.getTime())
+          .filter((a) => dailyCapacityDate(markerDayKey(a.allocationDate)).getTime() === fromDateCutoff.getTime())
           .reduce((sum, a) => sum + (a.allocatedUnits || 0), 0);
 
       const moved = [];
@@ -1078,7 +1139,7 @@ const rescheduleStageAndDownstream = async (
     const cellUnits = fromDateCutoff
       ? (draggedStage.projectStageCapacityAllocations || [])
           .filter((a) => {
-            const ad = dailyCapacityDate(new Date(a.allocationDate).toISOString().slice(0, 10));
+            const ad = dailyCapacityDate(markerDayKey(a.allocationDate));
             return ad.getTime() === fromDateCutoff.getTime();
           })
           .reduce((sum, a) => sum + (a.allocatedUnits || 0), 0)
@@ -1127,13 +1188,13 @@ const rescheduleStageAndDownstream = async (
       const allocsFromCutoff = (s) =>
         (s.projectStageCapacityAllocations || []).filter((a) => {
           if (!fromDateCutoff) return true;
-          const ad = dailyCapacityDate(new Date(a.allocationDate).toISOString().slice(0, 10));
+          const ad = dailyCapacityDate(markerDayKey(a.allocationDate));
           return ad.getTime() >= fromDateCutoff.getTime();
         });
       const allocsBeforeCutoff = (s) =>
         (s.projectStageCapacityAllocations || []).filter((a) => {
           if (!fromDateCutoff) return false;
-          const ad = dailyCapacityDate(new Date(a.allocationDate).toISOString().slice(0, 10));
+          const ad = dailyCapacityDate(markerDayKey(a.allocationDate));
           return ad.getTime() < fromDateCutoff.getTime();
         });
 
@@ -1181,7 +1242,7 @@ const rescheduleStageAndDownstream = async (
         const preservedDayCount = preservedStart
           ? new Set(
               allocsBeforeCutoff(s).map((a) =>
-                new Date(a.allocationDate).toISOString().slice(0, 10),
+                markerDayKey(a.allocationDate),
               ),
             ).size
           : 0;
@@ -1239,16 +1300,37 @@ const rescheduleStageAndDownstream = async (
     };
   });
 
-/** Day-key (YYYY-MM-DD) of the last working day of the current week (Saturday;
- *  Sunday is the non-working day). Operates on date-only keys so it is timezone
- *  safe relative to the calendar's business-tz day boundaries. */
+/**
+ * Day-key (YYYY-MM-DD) of the last working day of the current week.
+ *
+ * This used to hardcode Saturday as the week's end and Sunday as the day off,
+ * which silently ignored the configured `workingDays`: a business running
+ * Mon–Fri had its compaction window extended over a non-working Saturday, and
+ * one working Sunday had its last day excluded entirely. The window is now
+ * derived from the calendar — walk to the last configured working day at or
+ * before the coming Saturday boundary.
+ *
+ * Operates on date-only keys so it stays timezone safe relative to the
+ * calendar's business-tz day boundaries.
+ */
 const endOfWorkingWeekKey = (cal, now) => {
   const nowKey = cal.dayKey(now);
-  const dow = new Date(`${nowKey}T00:00:00Z`).getUTCDay(); // 0=Sun .. 6=Sat
-  const daysToSat = dow === 0 ? 6 : 6 - dow;
-  const end = new Date(`${nowKey}T00:00:00Z`);
-  end.setUTCDate(end.getUTCDate() + daysToSat);
-  return end.toISOString().slice(0, 10);
+  const cursor = new Date(`${nowKey}T00:00:00Z`);
+  const dow = cursor.getUTCDay(); // 0=Sun .. 6=Sat
+  const daysToWeekEnd = dow === 0 ? 6 : 6 - dow;
+
+  // Walk backwards from the calendar week's end to the last day actually worked.
+  const end = new Date(cursor);
+  end.setUTCDate(end.getUTCDate() + daysToWeekEnd);
+  for (let i = 0; i <= daysToWeekEnd; i += 1) {
+    const key = end.toISOString().slice(0, 10);
+    // isWorkingDay reads the configured weekly set and the holiday list.
+    if (cal.isWorkingDay(new Date(`${key}T12:00:00Z`))) return key;
+    end.setUTCDate(end.getUTCDate() - 1);
+  }
+  // No working day left this week — fall back to today so the window is empty
+  // rather than accidentally spanning into next week.
+  return nowKey;
 };
 
 /**

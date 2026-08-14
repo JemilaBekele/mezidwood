@@ -3,6 +3,10 @@
   "scripts": {
     "start": "nodemon src/index.js",
     "test": "node --test tests/*.test.js",
+    "workingtime:check": "node prisma/sync-working-time.js --check",
+    "workingtime:sync": "node prisma/sync-working-time.js",
+    "capacity:check": "node prisma/rebuild-capacity-ledger.js --check",
+    "capacity:rebuild": "node prisma/rebuild-capacity-ledger.js",
     "test:watch": "node --test --watch tests/*.test.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

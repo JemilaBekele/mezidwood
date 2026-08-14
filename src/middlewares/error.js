@@ -4,82 +4,43 @@ const ApiError = require('../utils/ApiError');
 const logger = require('../config/logger');
 
 /**
- * Map a Prisma error to a meaningful HTTP status + message.
- * Returns null when `err` is not a Prisma error we recognise.
+ * Prisma surfaces its failures as codes, not HTTP statuses. Without this map
+ * every constraint violation became an opaque 500 — a duplicate email and a
+ * genuine crash were indistinguishable to the client.
  */
-const convertPrismaError = (err) => {
-  const name = err && err.constructor ? err.constructor.name : '';
-
-  if (name === 'PrismaClientValidationError') {
-    return new ApiError(
-      httpStatus.BAD_REQUEST,
-      'Invalid data supplied for this operation',
-      true,
-      err.stack,
-    );
+const prismaStatus = (error) => {
+  switch (error.code) {
+    case 'P2002': // unique constraint failed
+    case 'P2003': // foreign key constraint failed
+      return httpStatus.CONFLICT;
+    case 'P2025': // record required but not found
+      return httpStatus.NOT_FOUND;
+    case 'P2011': // null constraint violation
+    case 'P2000': // value too long for column
+      return httpStatus.BAD_REQUEST;
+    default:
+      return null;
   }
-
-  if (name === 'PrismaClientKnownRequestError') {
-    const target = (err.meta && (err.meta.target || err.meta.field_name)) || '';
-    switch (err.code) {
-      case 'P2002':
-        return new ApiError(
-          httpStatus.CONFLICT,
-          `A record with this ${target || 'value'} already exists`,
-          true,
-          err.stack,
-        );
-      case 'P2003':
-        return new ApiError(
-          httpStatus.CONFLICT,
-          `This record is still referenced by other records${
-            target ? ` (${target})` : ''
-          } and cannot be changed`,
-          true,
-          err.stack,
-        );
-      case 'P2011':
-      case 'P2012':
-        return new ApiError(
-          httpStatus.BAD_REQUEST,
-          `A required value is missing${target ? `: ${target}` : ''}`,
-          true,
-          err.stack,
-        );
-      case 'P2025':
-        return new ApiError(
-          httpStatus.NOT_FOUND,
-          (err.meta && err.meta.cause) || 'Record not found',
-          true,
-          err.stack,
-        );
-      default:
-        return null;
-    }
-  }
-
-  return null;
 };
 
 const errorConverter = (err, req, res, next) => {
   let error = err;
 
   if (!(error instanceof ApiError)) {
-    const prismaError = convertPrismaError(error);
-    if (prismaError) {
-      error = prismaError;
-    } else {
-      // NOTE: the parentheses matter. This previously read
-      // `error.statusCode || error instanceof X ? 400 : 500`, which `||`
-      // binds tighter than `?:` — so every error carrying a statusCode
-      // (multer, http-errors, ...) was flattened to 400.
-      const statusCode =
-        error.statusCode || error.status || httpStatus.INTERNAL_SERVER_ERROR;
-      const message = error.message || httpStatus[statusCode];
-      error = new ApiError(statusCode, message, false, error.stack);
-    }
+    // The original read `error.statusCode || error instanceof mongoose.Error ? A : B`.
+    // `||` binds tighter than `?:`, so the whole left side collapsed to a
+    // boolean and ANY error carrying a statusCode — 404, 409, 500 alike —
+    // was rewritten to 400. The mongoose branch was dead weight besides: this
+    // project is Prisma-only.
+    const statusCode =
+      error.statusCode ||
+      prismaStatus(error) ||
+      (error.name === 'PrismaClientValidationError'
+        ? httpStatus.BAD_REQUEST
+        : httpStatus.INTERNAL_SERVER_ERROR);
+    const message = error.message || httpStatus[statusCode];
+    error = new ApiError(statusCode, message, false, error.stack);
   }
-
   next(error);
 };
 
@@ -93,8 +54,11 @@ const errorHandler = (err, req, res, next) => {
   }
 
   const response = {
-    // `success: false` is included so clients can test a single field
-    // regardless of which convention a given handler used.
+    // Controllers hand-roll `{success:false, error:'…'}` while this handler
+    // emitted `{error:true, …}` — `error` was a string in one shape and a
+    // boolean in the other, so no single field told a client the request
+    // failed. Emitting both keeps existing call sites working and gives
+    // `success` as the one reliable signal.
     success: false,
     error: true,
     code: statusCode,

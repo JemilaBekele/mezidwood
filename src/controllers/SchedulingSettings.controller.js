@@ -1,5 +1,6 @@
 const httpStatus = require('http-status');
 const catchAsync = require('../utils/catchAsync');
+const ApiError = require('../utils/ApiError');
 const {
   getSchedulingSettingsRow,
   updateSchedulingSettings,
@@ -13,16 +14,34 @@ const getSettings = catchAsync(async (req, res) => {
 
 // PUT — update the tunable delivery-formula knobs. Only known fields are taken;
 // the in-memory cache is invalidated inside the service so changes apply at once.
+// Numeric knobs, validated here. `workingHoursPerDay` is deliberately absent —
+// it is DERIVED from the shift and lunch windows by the service, so accepting it
+// would let a caller store a number that contradicts the window the scheduler
+// actually works.
+const NUMERIC_FIELDS = [
+  'contingencyDays',
+  'easyPercent',
+  'mediumPercent',
+  'hardPercent',
+  'shiftStartHour',
+  'shiftEndHour',
+  'lunchStartHour',
+  'lunchEndHour',
+];
+
+// Non-numeric working-time fields. The service validates the window as a whole
+// (see scheduling/settings.js) once the patch is merged onto the stored row.
+const PASSTHROUGH_FIELDS = ['workingDays', 'timezone'];
+
 const updateSettings = catchAsync(async (req, res) => {
-  const allowedFields = [
-    'contingencyDays',
-    'easyPercent',
-    'mediumPercent',
-    'hardPercent',
-    'workingHoursPerDay',
-  ];
+  // The allowlist used to contain only the four delivery-formula knobs plus the
+  // one field the service refuses. Every working-time field the route's own Joi
+  // schema accepts — working days, shift window, lunch, timezone — was silently
+  // dropped here, so the endpoint answered 200 "updated" having changed nothing
+  // and working time could not be configured at all.
   const data = {};
-  for (const k of allowedFields) {
+
+  for (const k of NUMERIC_FIELDS) {
     const v = req.body[k];
     if (v === undefined || v === null || v === '') continue;
     const num = Number(v);
@@ -30,23 +49,29 @@ const updateSettings = catchAsync(async (req, res) => {
       Number.isNaN(num) ||
       num < 0 ||
       (k === 'contingencyDays' && !Number.isInteger(num)) ||
-      (k === 'workingHoursPerDay' && num <= 0)
+      (k.endsWith('Hour') && num > 24)
     ) {
-      return res.status(httpStatus.BAD_REQUEST).send({
-        success: false,
-        error:
-          'Invalid scheduling settings: contingencyDays must be a non-negative integer, difficulty percentages must be non-negative numbers, and workingHoursPerDay must be greater than 0',
-      });
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Invalid value for ${k}: contingencyDays must be a non-negative integer, difficulty percentages must be non-negative numbers, and hour fields must be between 0 and 24`,
+      );
     }
     data[k] = num;
   }
-  if (Object.keys(data).length === 0) {
-    return res.status(httpStatus.BAD_REQUEST).send({
-      success: false,
-      error:
-        'Provide at least one of: contingencyDays, easyPercent, mediumPercent, hardPercent, workingHoursPerDay',
-    });
+
+  for (const k of PASSTHROUGH_FIELDS) {
+    const v = req.body[k];
+    if (v === undefined || v === null || v === '') continue;
+    data[k] = v;
   }
+
+  if (Object.keys(data).length === 0) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Provide at least one of: ${[...NUMERIC_FIELDS, ...PASSTHROUGH_FIELDS].join(', ')}`,
+    );
+  }
+
   const settings = await updateSchedulingSettings(data);
   res.status(httpStatus.OK).send({
     success: true,

@@ -58,9 +58,7 @@ const getProject = catchAsync(async (req, res) => {
 const allowDeliveryWithBalance = catchAsync(async (req, res) => {
   const { projectId } = req.params;
 
-  const project = await projectService.allowDeliveryWithBalance(
-    projectId,
-  );
+  const project = await projectService.allowDeliveryWithBalance(projectId);
 
   res.status(httpStatus.OK).send({
     success: true,
@@ -76,9 +74,7 @@ const allowDeliveryWithBalance = catchAsync(async (req, res) => {
 const disallowDeliveryWithBalance = catchAsync(async (req, res) => {
   const { projectId } = req.params;
 
-  const project = await projectService.disallowDeliveryWithBalance(
-    projectId,
-  );
+  const project = await projectService.disallowDeliveryWithBalance(projectId);
 
   res.status(httpStatus.OK).send({
     success: true,
@@ -147,8 +143,11 @@ const searchProjects = catchAsync(async (req, res) => {
     page: 1,
   });
 
-  // NOTE: getAllProjects returns a flat shape — there is no `pagination` key.
-  return res.status(httpStatus.OK).send({
+  // getAllProjects returns a FLAT shape (projects, count, total, page, limit,
+  // totalPages) — there is no `pagination` object, so reading
+  // `result.pagination.total` threw a TypeError and this endpoint 500'd on
+  // every call.
+  res.status(httpStatus.OK).send({
     success: true,
     projects: result.projects,
     count: result.total,

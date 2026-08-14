@@ -1,6 +1,7 @@
 /* eslint-disable no-nested-ternary */
 const httpStatus = require('http-status');
 const catchAsync = require('../utils/catchAsync');
+const ApiError = require('../utils/ApiError');
 const { deliveryEstimationService } = require('../services');
 
 // Create Delivery Estimation

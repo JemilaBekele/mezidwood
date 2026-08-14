@@ -33,6 +33,7 @@ const {
   NON_CAPACITY_HOURS_PER_UNIT,
   DIFFICULTY_BUFFER,
   CONTINGENCY_DAYS,
+  WORKING_HOURS_PER_DAY,
   deliveryBufferDays,
 } = require('./config');
 
@@ -679,7 +680,7 @@ const flushUsage = async (capacityConfig, deltas, client = prisma, cal = null) =
     const date = dailyCapacityDate(dateKey);
     const cfg = capacityConfig[stage] || {};
     const dailyMax = effectiveDailyMax(cfg);
-    const maxHours = whpd || cfg.workingHours || 7.5;
+    const maxHours = whpd || cfg.workingHours || WORKING_HOURS_PER_DAY;
 
     // eslint-disable-next-line no-await-in-loop
     const existing = await client.dailyStageCapacity.findUnique({
@@ -713,9 +714,20 @@ const flushUsage = async (capacityConfig, deltas, client = prisma, cal = null) =
     } else {
       const overUnits = Math.max(0, round2(addedUnits - dailyMax));
       const overHours = Math.max(0, round2(addedHours - maxHours));
+      // UPSERT, not create. `stage_date` is unique, and the read above is a
+      // non-locking snapshot: two projects committing against the same
+      // previously-untouched day both saw "no row" and both tried to create it,
+      // so the loser died with P2002 and its whole schedule rolled back.
+      //
+      // If the row appeared between our read and this write, the update branch
+      // fires and INCREMENTS — our units are added to whatever landed first
+      // rather than overwriting it. (The over-capacity delta is then measured
+      // against a stale baseline; that is a reporting nuance the reconcile
+      // pass corrects, not lost or double-counted work.)
       // eslint-disable-next-line no-await-in-loop
-      await client.dailyStageCapacity.create({
-        data: {
+      await client.dailyStageCapacity.upsert({
+        where: { stage_date: { stage, date } },
+        create: {
           stage,
           date,
           shift: DEFAULT_STAGE_SHIFT,
@@ -726,6 +738,16 @@ const flushUsage = async (capacityConfig, deltas, client = prisma, cal = null) =
           maxHours,
           overCapacityUsed: overUnits,
           overHoursCapacityUsed: overHours,
+        },
+        update: {
+          usedCapacity: { increment: addedUnits },
+          usedHours: { increment: addedHours },
+          maxCapacity: dailyMax,
+          maxHours,
+          ...(overUnits > 0 ? { overCapacityUsed: { increment: overUnits } } : {}),
+          ...(overHours > 0
+            ? { overHoursCapacityUsed: { increment: overHours } }
+            : {}),
         },
       });
     }

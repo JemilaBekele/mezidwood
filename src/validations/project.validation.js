@@ -44,10 +44,27 @@ const futureDate = Joi.date().custom((value, helpers) => {
   return value;
 }, 'not in the past');
 
+/**
+ * PURCHASING and INSTALLATION are not capacity stages — they consume time
+ * rather than a daily unit ceiling — but they ARE real columns on
+ * DeliveryEstimation, and `deriveStageQuantities` returns them under
+ * `timeBasedStages`. Omitting them from the accepted keys meant a payload built
+ * from that very response was rejected as containing unknown fields.
+ */
+const TIME_BASED_STAGES = ['PURCHASING', 'INSTALLATION'];
+
 const stageQuantityKeys = CAPACITY_STAGES.reduce((acc, s) => {
   acc[s] = quantity;
   return acc;
 }, {});
+
+const allStageQuantityKeys = [...CAPACITY_STAGES, ...TIME_BASED_STAGES].reduce(
+  (acc, s) => {
+    acc[s] = quantity;
+    return acc;
+  },
+  {},
+);
 
 /* ------------------------------------------------------------------ *
  * Projects
@@ -122,9 +139,10 @@ const createDeliveryEstimation = {
           quantity: quantity.default(1),
         }).unknown(true),
       ),
-      ...stageQuantityKeys,
+      ...allStageQuantityKeys,
     })
     // At least one capacity stage must carry work, or there is nothing to quote.
+    // The time-based stages alone are not enough to price a calendar promise.
     .or(...CAPACITY_STAGES),
 };
 
