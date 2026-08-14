@@ -71,7 +71,8 @@ const splitWorkingMinutes = (cal, startInstant, minutes) => {
     cur = remaining > 0 ? cal.nextWorkingStart(end) : end;
   }
 
-  if (remaining > 0) throw new Error('Could not allocate manual stage duration');
+  if (remaining > 0)
+    throw new Error('Could not allocate manual stage duration');
   return { start: segments[0]?.start || cur, end: cur, segments };
 };
 
@@ -106,9 +107,7 @@ const allocateManualStageCapacity = async ({
   const totalUnits = Math.max(0, round2(quantity));
   let remainingUnits = totalUnits;
   const totalMinutes = segments.reduce((sum, s) => sum + s.minutes, 0) || 1;
-
-  for (let i = 0; i < segments.length; i += 1) {
-    const segment = segments[i];
+  const segmentAllocations = segments.map((segment, i) => {
     const allocatedHours = round2(segment.minutes / 60);
     const allocatedUnits =
       i === segments.length - 1
@@ -118,56 +117,63 @@ const allocateManualStageCapacity = async ({
             round2(totalUnits * (segment.minutes / totalMinutes)),
           );
     remainingUnits = round2(remainingUnits - allocatedUnits);
+    return { segment, allocatedHours, allocatedUnits };
+  });
 
-    const date = dailyCapacityDate(segment.dateKey);
-    const existing = await tx.dailyStageCapacity.findUnique({
-      where: { stage_date: { stage: stageName, date } },
-    });
-    const nextUsedCapacity = (existing?.usedCapacity || 0) + allocatedUnits;
-    const nextUsedHours = (existing?.usedHours || 0) + allocatedHours;
-    // Upsert rather than check-then-create: the findUnique above is a
-    // non-locking snapshot, so two manual stage edits touching the same
-    // previously-untouched day both saw "no row" and raced to create it,
-    // failing the stage_date unique key with P2002.
-    const daily = await tx.dailyStageCapacity.upsert({
-      where: { stage_date: { stage: stageName, date } },
-      create: {
-        stage: stageName,
-        date,
-        shift: DEFAULT_STAGE_SHIFT,
-        usedCapacity: allocatedUnits,
-        maxCapacity,
-        workingHours: workingHoursPerDay,
-        usedHours: allocatedHours,
-        maxHours: workingHoursPerDay,
-      },
-      update: {
-        usedCapacity: { increment: allocatedUnits },
-        usedHours: { increment: allocatedHours },
-        maxCapacity,
-        workingHours: workingHoursPerDay,
-        maxHours: workingHoursPerDay,
-        shift: DEFAULT_STAGE_SHIFT,
-      },
-    });
+  await Promise.all(
+    segmentAllocations.map(
+      async ({ segment, allocatedHours, allocatedUnits }) => {
+        const date = dailyCapacityDate(segment.dateKey);
+        const existing = await tx.dailyStageCapacity.findUnique({
+          where: { stage_date: { stage: stageName, date } },
+        });
+        const nextUsedCapacity = (existing?.usedCapacity || 0) + allocatedUnits;
+        const nextUsedHours = (existing?.usedHours || 0) + allocatedHours;
+        // Upsert rather than check-then-create: the findUnique above is a
+        // non-locking snapshot, so two manual stage edits touching the same
+        // previously-untouched day both saw "no row" and raced to create it,
+        // failing the stage_date unique key with P2002.
+        const daily = await tx.dailyStageCapacity.upsert({
+          where: { stage_date: { stage: stageName, date } },
+          create: {
+            stage: stageName,
+            date,
+            shift: DEFAULT_STAGE_SHIFT,
+            usedCapacity: allocatedUnits,
+            maxCapacity,
+            workingHours: workingHoursPerDay,
+            usedHours: allocatedHours,
+            maxHours: workingHoursPerDay,
+          },
+          update: {
+            usedCapacity: { increment: allocatedUnits },
+            usedHours: { increment: allocatedHours },
+            maxCapacity,
+            workingHours: workingHoursPerDay,
+            maxHours: workingHoursPerDay,
+          },
+        });
 
-    await tx.projectStageCapacityAllocation.create({
-      data: {
-        projectStageId: stageId,
-        dailyStageCapacityId: daily.id,
-        allocatedUnits,
-        allocatedHours,
-        shift: DEFAULT_STAGE_SHIFT,
-        startDateTime: segment.start,
-        endDateTime: segment.end,
-        customStartTime: segment.start,
-        customEndTime: segment.end,
-        allocationDate: date,
-        isOverCapacity:
-          nextUsedCapacity > maxCapacity || nextUsedHours > workingHoursPerDay,
+        await tx.projectStageCapacityAllocation.create({
+          data: {
+            projectStageId: stageId,
+            dailyStageCapacityId: daily.id,
+            allocatedUnits,
+            allocatedHours,
+            shift: DEFAULT_STAGE_SHIFT,
+            startDateTime: segment.start,
+            endDateTime: segment.end,
+            customStartTime: segment.start,
+            customEndTime: segment.end,
+            allocationDate: date,
+            isOverCapacity:
+              nextUsedCapacity > maxCapacity ||
+              nextUsedHours > workingHoursPerDay,
+          },
+        });
       },
-    });
-  }
+    ),
+  );
 };
 
 const createProject = async (projectData, userId) => {
@@ -304,17 +310,18 @@ const createProject = async (projectData, userId) => {
     // the number the customer holds — but the operator is told.
     const diverged = Object.keys(stageQuantities).filter(
       (s) =>
-        Math.abs(
-          (stageQuantities[s] || 0) - (invoiceStageQuantities[s] || 0),
-        ) > 0.001,
+        Math.abs((stageQuantities[s] || 0) - (invoiceStageQuantities[s] || 0)) >
+        0.001,
     );
     if (diverged.length) {
       warnings.push({
         code: 'ESTIMATE_INVOICE_MISMATCH',
         message:
-          `The estimate and the invoice materials disagree on: ${diverged.join(', ')}. `
-          + 'The project was scheduled from the QUOTED quantities so the promised '
-          + 'delivery date still holds.',
+          `The estimate and the invoice materials disagree on: ${diverged.join(
+            ', ',
+          )}. ` +
+          'The project was scheduled from the QUOTED quantities so the promised ' +
+          'delivery date still holds.',
         stages: diverged.map((s) => ({
           stage: s,
           quoted: stageQuantities[s] || 0,
@@ -336,7 +343,9 @@ const createProject = async (projectData, userId) => {
   // downstream. Honour a later manualStartDate; per-stage capacity usage decides
   // the actual start of each stage.
   const cal = await getCalendar();
-  const requestedStart = manualStartDate ? new Date(manualStartDate) : new Date();
+  const requestedStart = manualStartDate
+    ? new Date(manualStartDate)
+    : new Date();
   if (Number.isNaN(requestedStart.getTime())) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid start date');
   }
@@ -351,8 +360,8 @@ const createProject = async (projectData, userId) => {
     warnings.push({
       code: 'OUT_OF_WORKING_HOURS',
       message:
-        'The requested start falls outside working hours; the project was '
-        + 'scheduled from the next working period.',
+        'The requested start falls outside working hours; the project was ' +
+        'scheduled from the next working period.',
       requestedStart,
       scheduledStart: baseStart,
     });
@@ -374,7 +383,10 @@ const createProject = async (projectData, userId) => {
   if (requestedDelivery && requestedDelivery !== '') {
     const requested = new Date(requestedDelivery);
     if (Number.isNaN(requested.getTime())) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid requested delivery date');
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Invalid requested delivery date',
+      );
     }
     if (requested.getTime() > forwardPlan.deliveryDate.getTime()) {
       // Walk back the BUFFER only. The production span is re-derived by the
@@ -633,7 +645,9 @@ const updateProject = async (id, updateBody, userId) => {
     if (!VALID_PROJECT_STATUSES.includes(cleanedUpdateBody.status)) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        `Invalid project status. Must be one of: ${VALID_PROJECT_STATUSES.join(', ')}`,
+        `Invalid project status. Must be one of: ${VALID_PROJECT_STATUSES.join(
+          ', ',
+        )}`,
       );
     }
   }
@@ -644,7 +658,9 @@ const updateProject = async (id, updateBody, userId) => {
     if (!VALID_DIFFICULTIES.includes(cleanedUpdateBody.difficulty)) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        `Invalid difficulty level. Must be one of: ${VALID_DIFFICULTIES.join(', ')}`,
+        `Invalid difficulty level. Must be one of: ${VALID_DIFFICULTIES.join(
+          ', ',
+        )}`,
       );
     }
   }
@@ -775,7 +791,7 @@ const deleteProject = async (id) => {
         include: {
           projectStageWorkLogs: true,
           projectStageCapacityAllocations: true,
-        }
+        },
       },
     },
   });
@@ -791,7 +807,7 @@ const deleteProject = async (id) => {
       await reschedule.releaseProjectCapacity(id, tx);
 
       // Get all stage IDs for this project
-      const stageIds = existingProject.stages.map(stage => stage.id);
+      const stageIds = existingProject.stages.map((stage) => stage.id);
 
       if (stageIds.length > 0) {
         // 1. Delete ProjectStageWorkLogs for all stages
@@ -819,8 +835,6 @@ const deleteProject = async (id) => {
           },
         });
       }
-
-
 
       // Reverse the two status writes createProject makes (see the
       // 'APPROVED_CREATE_PROJECT' / 'PROJECT_CREATED' block in createProject).
@@ -861,7 +875,7 @@ const deleteProject = async (id) => {
     };
   } catch (error) {
     console.error('Error deleting project:', error);
-    
+
     // Enhanced error logging
     console.error('Error details:', {
       code: error.code,
@@ -869,11 +883,13 @@ const deleteProject = async (id) => {
       message: error.message,
       stack: error.stack,
     });
-    
+
     if (error.code === 'P2003') {
       throw new ApiError(
         httpStatus.CONFLICT,
-        `Cannot delete project: ${error.meta?.field_name || 'Related records exist'}`,
+        `Cannot delete project: ${
+          error.meta?.field_name || 'Related records exist'
+        }`,
       );
     }
     throw new ApiError(
@@ -909,85 +925,85 @@ const safeSort = (sortBy, sortOrder) => ({
 
 // Get all Projects with filtering, sorting, and pagination
 const getAllProjects = async (filters = {}) => {
-  const {
-    page = 1,
-    limit = 10,
-    sortBy = 'createdAt',
-    sortOrder = 'desc',
-    search,
-    status,
-    difficulty,
-    customerId,
-    createdById,
-    startDate,
-    endDate,
-  } = filters;
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
+      search,
+      status,
+      difficulty,
+      customerId,
+      createdById,
+      startDate,
+      endDate,
+    } = filters;
 
-  // Query-string values arrive as strings; normalise before doing arithmetic.
-  const pageNum = Math.max(1, parseInt(page, 10) || 1);
-  const take = Math.min(200, Math.max(1, parseInt(limit, 10) || 10));
-  const skip = (pageNum - 1) * take;
+    // Query-string values arrive as strings; normalise before doing arithmetic.
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const take = Math.min(200, Math.max(1, parseInt(limit, 10) || 10));
+    const skip = (pageNum - 1) * take;
 
-  const orderByField = PROJECT_SORTABLE_FIELDS.includes(sortBy)
-    ? sortBy
-    : 'createdAt';
-  const orderByDir = sortOrder === 'asc' ? 'asc' : 'desc';
+    const orderByField = PROJECT_SORTABLE_FIELDS.includes(sortBy)
+      ? sortBy
+      : 'createdAt';
+    const orderByDir = sortOrder === 'asc' ? 'asc' : 'desc';
 
-  // Build where clause
-  const where = {};
+    // Build where clause
+    const where = {};
 
-  if (search) {
-    where.OR = [
-      {
-        invoice: {
-          piNumber: {
-            // Changed from invoiceNumber to piNumber based on your model
-            contains: search,
-            mode: 'insensitive',
+    if (search) {
+      where.OR = [
+        {
+          invoice: {
+            piNumber: {
+              // Changed from invoiceNumber to piNumber based on your model
+              contains: search,
+              mode: 'insensitive',
+            },
           },
         },
-      },
-      {
-        customer: {
-          name: {
-            contains: search,
-            mode: 'insensitive',
+        {
+          customer: {
+            name: {
+              contains: search,
+              mode: 'insensitive',
+            },
           },
         },
-      },
-    ];
-  }
-
-  if (status) {
-    where.status = status;
-  }
-
-  if (difficulty) {
-    where.difficulty = difficulty;
-  }
-
-  if (customerId) {
-    where.customerId = customerId;
-  }
-
-  if (createdById) {
-    where.createdById = createdById;
-  }
-
-  if (startDate || endDate) {
-    where.createdAt = {};
-    if (startDate) {
-      const start = new Date(startDate);
-      where.createdAt.gte = start;
+      ];
     }
-    if (endDate) {
-      const end = new Date(endDate);
-      where.createdAt.lte = end;
-    }
-  }
 
-  const [projects, total] = await Promise.all([
-    prisma.project.findMany({
+    if (status) {
+      where.status = status;
+    }
+
+    if (difficulty) {
+      where.difficulty = difficulty;
+    }
+
+    if (customerId) {
+      where.customerId = customerId;
+    }
+
+    if (createdById) {
+      where.createdById = createdById;
+    }
+
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        where.createdAt.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        where.createdAt.lte = end;
+      }
+    }
+
+    const projects = await prisma.project.findMany({
       where,
       skip,
       take,
@@ -1071,70 +1087,71 @@ const getAllProjects = async (filters = {}) => {
   }
 };
 const getAllProjectBystatus = async (filters = {}) => {
-  const { status, sortBy = 'createdAt', sortOrder = 'desc' } = filters;
+  try {
+    const { status, sortBy = 'createdAt', sortOrder = 'desc' } = filters;
 
-  // 🔥 ONLY STATUS FILTER
-  const where = {};
+    // 🔥 ONLY STATUS FILTER
+    const where = {};
 
-  if (status) {
-    where.status = status;
-  }
+    if (status) {
+      where.status = status;
+    }
 
-  const orderByField = PROJECT_SORTABLE_FIELDS.includes(sortBy)
-    ? sortBy
-    : 'createdAt';
-  const orderByDir = sortOrder === 'asc' ? 'asc' : 'desc';
+    const orderByField = PROJECT_SORTABLE_FIELDS.includes(sortBy)
+      ? sortBy
+      : 'createdAt';
+    const orderByDir = sortOrder === 'asc' ? 'asc' : 'desc';
 
-  const [projects, total] = await Promise.all([
-    prisma.project.findMany({
-      where,
-      orderBy: safeSort(sortBy, sortOrder),
-      include: {
-        customer: {
-          select: {
-            id: true,
-            name: true,
+    const [projects, total] = await Promise.all([
+      prisma.project.findMany({
+        where,
+        orderBy: safeSort(sortBy, sortOrder),
+        include: {
+          customer: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          invoice: {
+            select: {
+              id: true,
+              piNumber: true,
+              total: true,
+              status: true,
+            },
+          },
+          stages: {
+            orderBy: {
+              stage: 'asc',
+            },
+            select: {
+              id: true,
+              stage: true,
+              capacityDays: true,
+              startDate: true,
+              endDate: true,
+              autoSchedule: true,
+            },
+          },
+          createdBy: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+          updatedBy: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
           },
         },
-        invoice: {
-          select: {
-            id: true,
-            piNumber: true,
-            total: true,
-            status: true,
-          },
-        },
-        stages: {
-          orderBy: {
-            stage: 'asc',
-          },
-          select: {
-            id: true,
-            stage: true,
-            capacityDays: true,
-            startDate: true,
-            endDate: true,
-            autoSchedule: true,
-          },
-        },
-        createdBy: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-        updatedBy: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
-    }),
-    prisma.project.count({ where }),
-  ]);
+      }),
+      prisma.project.count({ where }),
+    ]);
 
     return {
       projects,
@@ -2251,7 +2268,6 @@ const checkAndScheduleStage = async (
   }
 };
 
-
 // NEW SERVICE: Check capacity availability
 const checkStageCapacityAvailability = async (
   stage,
@@ -2284,7 +2300,10 @@ const checkStageCapacityAvailability = async (
   });
   const workingHoursPerDay = cal.workingHoursPerDay;
   const requiredHours = (requiredQuantity / dailyCapacity) * workingHoursPerDay;
-  const requiredDays = Math.max(1, Math.ceil(requiredHours / workingHoursPerDay));
+  const requiredDays = Math.max(
+    1,
+    Math.ceil(requiredHours / workingHoursPerDay),
+  );
 
   // Check each day in range
   const warnings = [];
@@ -2554,7 +2573,6 @@ const getCapacityAnalysisForDateRange = async (
   }
 };
 
-
 const updateProjectStage = async (
   projectId,
   stageName,
@@ -2697,9 +2715,7 @@ const updateProjectStage = async (
             endDateTime,
             endDate: endDateTime,
             capacityDays,
-            shift: sp
-              ? sp.shift
-              : DEFAULT_STAGE_SHIFT,
+            shift: sp ? sp.shift : DEFAULT_STAGE_SHIFT,
             timeTaken,
             autoSchedule: !manualOverride,
             status: 'ACTIVE',
@@ -2742,7 +2758,9 @@ const updateProjectStage = async (
         // that legitimately have no units. Honour the move here too: the
         // position comes from the (already calendar-normalized) chosenStart and
         // the span from the manual duration when one was supplied.
-        const startDateTime = manualTimeline ? manualTimeline.start : chosenStart;
+        const startDateTime = manualTimeline
+          ? manualTimeline.start
+          : chosenStart;
         const endDateTime = manualTimeline
           ? manualTimeline.end
           : manualOverride && customDates && customDates.endDate
