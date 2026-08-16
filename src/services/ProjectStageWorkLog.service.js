@@ -33,7 +33,6 @@ const createProjectStageWorkLog = async (workLogData) => {
     }
 
     if (doneUnits === undefined || doneUnits === null) {
-      console.error('❌ doneUnits is undefined or null');
       throw new ApiError(httpStatus.BAD_REQUEST, 'Done units are required');
     }
 
@@ -64,11 +63,17 @@ const createProjectStageWorkLog = async (workLogData) => {
             },
           },
         },
+        // Include work logs to check if this is the first one
+        projectStageWorkLogs: {
+          orderBy: {
+            createdAt: 'asc',
+          },
+          take: 1,
+        },
       },
     });
 
     if (!projectStage) {
-      console.error('❌ Project stage not found:', projectStageId);
       throw new ApiError(httpStatus.NOT_FOUND, 'Project stage not found');
     }
 
@@ -95,16 +100,17 @@ const createProjectStageWorkLog = async (workLogData) => {
 
     // Validate doneById if provided
     if (doneById) {
-      console.log('🔎 Validating user:', doneById);
       const user = await prisma.user.findUnique({
         where: { id: doneById },
       });
 
       if (!user) {
-        console.error('❌ User not found:', doneById);
         throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
       }
     }
+
+    // Check if this is the first work log for this stage
+    const isFirstWorkLog = projectStage.projectStageWorkLogs.length === 0;
 
     // Use transaction with proper locking
     const result = await prisma.$transaction(
@@ -119,11 +125,6 @@ const createProjectStageWorkLog = async (workLogData) => {
         let totalLoggedUnits = 0;
         for (let i = 0; i < currentWorkLogs.length; i++) {
           const logValue = parseFloat(currentWorkLogs[i].doneUnits);
-          console.log(
-            `  Log ${i + 1}: ${logValue} (from ${
-              currentWorkLogs[i].doneUnits
-            })`,
-          );
           totalLoggedUnits += logValue;
         }
 
@@ -178,6 +179,41 @@ const createProjectStageWorkLog = async (workLogData) => {
         let updatedProjectStage = null;
         let isFinished = false;
 
+        // ===== SET PROJECT START DATE ON FIRST WORK LOG =====
+        // If this is the first work log, set the project start date
+        if (isFirstWorkLog) {
+          const now = new Date();
+
+          // Update the project stage with start dates
+          updatedProjectStage = await tx.projectStage.update({
+            where: { id: projectStageId },
+            data: {
+              projectstartDate: now,
+            },
+          });
+
+          // Create a log entry for the project start
+          await tx.log.create({
+            data: {
+              action: `PROJECT_START: Stage "${
+                projectStage.stage
+              }" started for project "${
+                projectStage.project.name || projectStage.project.projectNumber
+              }"`,
+              userId: doneById || null,
+              details: {
+                stage: projectStage.stage,
+                projectId: projectStage.projectId,
+                projectName:
+                  projectStage.project.name ||
+                  projectStage.project.projectNumber,
+                startedAt: now.toISOString(),
+                startedBy: doneById || null,
+              },
+            },
+          });
+        }
+
         // Check if stage is finished (allow for floating point precision)
         const isComplete = newTotalActualUnits >= plannedWorkUnits - epsilon;
 
@@ -197,28 +233,18 @@ const createProjectStageWorkLog = async (workLogData) => {
             });
 
           // ===== STEP 2: RELEASE FUTURE CAPACITY ONLY =====
-          //
-          // This block used to decrement EVERY allocation — including days
-          // already worked — and then delete all the allocation rows, before
-          // `onStageCompleted` ran post-commit and found nothing left to
-          // release. Freeing past days is what drifted the ledger: a completed
-          // stage's consumed history vanished, so later projects rebooked days
-          // that had actually been worked, and the bare `{ decrement }` with no
-          // floor could push `usedCapacity` negative.
-          //
-          // `releaseStageCapacity` already implements the correct contract —
-          // past days stay consumed, planned future days are freed — so it owns
-          // this now. Running it inside the transaction (rather than after
-          // commit, where a failure was swallowed into console.error) keeps the
-          // ledger consistent with the work log that triggered it.
           const completionInstant = new Date();
           const releasedFrom = completionInstant;
 
           const totalFreedUnits = stageAllocations
-            .filter((a) => new Date(a.allocationDate) >= startOfDay(releasedFrom))
+            .filter(
+              (a) => new Date(a.allocationDate) >= startOfDay(releasedFrom),
+            )
             .reduce((sum, a) => sum + (a.allocatedUnits || 0), 0);
           const totalFreedHours = stageAllocations
-            .filter((a) => new Date(a.allocationDate) >= startOfDay(releasedFrom))
+            .filter(
+              (a) => new Date(a.allocationDate) >= startOfDay(releasedFrom),
+            )
             .reduce((sum, a) => sum + (a.allocatedHours || 0), 0);
           const allocationDetails = stageAllocations.map((a) => ({
             date: a.allocationDate.toISOString().split('T')[0],
@@ -263,7 +289,6 @@ const createProjectStageWorkLog = async (workLogData) => {
           };
 
           // Create main log entry
-          // Create main log entry with separate JSON field
           const mainLogAction = `STAGE_COMPLETED: ${
             projectStageInfo.stage
           } - Freed ${totalFreedUnits.toFixed(2)} units capacity from ${
@@ -273,7 +298,7 @@ const createProjectStageWorkLog = async (workLogData) => {
           const capacityLog = await tx.log.create({
             data: {
               action: mainLogAction,
-              details: logData, // Store full details as JSON
+              details: logData,
               userId: doneById || null,
             },
           });
@@ -295,22 +320,14 @@ const createProjectStageWorkLog = async (workLogData) => {
             },
           });
 
-          // ===== STEP 4: (removed) =====
-          // Allocation rows are no longer bulk-deleted here. Deleting them all
-          // erased the record of what the stage actually consumed, leaving the
-          // daily counters with nothing to reconcile against — the invariant
-          // "a day's usedCapacity equals the sum of its allocation rows" broke
-          // on every completion. `releaseStageCapacity` above deletes exactly
-          // the future rows it frees and leaves worked days intact.
-
-          // ===== STEP 6: UPDATE STAGE STATUS =====
+          // ===== UPDATE STAGE STATUS =====
           isFinished = true;
           updatedProjectStage = await tx.projectStage.update({
             where: { id: projectStageId },
             data: {
               finished: true,
               status: 'COMPLETED',
-              endDate: new Date(),
+              projectendDate: new Date(),
               actualWorkUnits: newTotalActualUnits,
             },
           });
@@ -318,20 +335,22 @@ const createProjectStageWorkLog = async (workLogData) => {
           // Stage not finished yet, just update actual work units
           const progressPercent =
             (newTotalActualUnits / plannedWorkUnits) * 100;
-          console.log(
-            `📝 Updating actual work units only... Progress: ${progressPercent.toFixed(
-              6,
-            )}%`,
-          );
-          console.log(`   New actual units: ${newTotalActualUnits.toFixed(6)}`);
+
+          // If the stage hasn't started yet, set the start date
+          const stageUpdateData = {
+            actualWorkUnits: newTotalActualUnits,
+          };
+
+          // Add start date if this is the first work log and it wasn't set above
+          if (isFirstWorkLog && !updatedProjectStage) {
+            stageUpdateData.projectstartDate = new Date();
+            stageUpdateData.startDateTime = new Date();
+          }
 
           await tx.projectStage.update({
             where: { id: projectStageId },
-            data: {
-              actualWorkUnits: newTotalActualUnits,
-            },
+            data: stageUpdateData,
           });
-          console.log('✅ Actual work units updated successfully');
         }
 
         // ===== UPDATE PROJECT STATUS IF STAGE IS FINISHED =====
@@ -345,9 +364,6 @@ const createProjectStageWorkLog = async (workLogData) => {
             const proformaInvoice = projectStage.project.invoice;
 
             if (proformaInvoice && proformaInvoice.store === true) {
-              // ✅ Get the store from the invoice (assuming storeId is linked)
-              // You need to add storeId to ProformaInvoice model or get store from somewhere
-              // For now, let's find the main store
               const mainStore = await tx.store.findFirst({
                 where: { isMain: true },
               });
@@ -356,12 +372,7 @@ const createProjectStageWorkLog = async (workLogData) => {
                 console.log(
                   '⚠️ No main store found! Cannot update stock without main store.',
                 );
-                console.log('  💡 Please configure a main store first.');
               } else {
-                console.log(
-                  `🏪 Found main store: ${mainStore.name} (ID: ${mainStore.id})`,
-                );
-
                 const invoiceItems = proformaInvoice.items;
 
                 const piNumber = proformaInvoice.piNumber || 'N/A';
@@ -374,13 +385,9 @@ const createProjectStageWorkLog = async (workLogData) => {
 
                 const stockUpdatePromises = invoiceItems.map(
                   async (invoiceItem) => {
-                    // ✅ Use the item relation directly since we have itemId in ProformaInvoiceItem
                     const { item } = invoiceItem;
 
                     if (!item) {
-                      console.error(
-                        `  ❌ No item linked to invoice item ${invoiceItem.id}`,
-                      );
                       console.log(
                         `  💡 Make sure to select an item when creating the proforma invoice`,
                       );
@@ -391,7 +398,7 @@ const createProjectStageWorkLog = async (workLogData) => {
                     let itemStock = await tx.itemStock.findFirst({
                       where: {
                         itemId: item.id,
-                        storeId: mainStore.id, // ✅ Only update stock for main store
+                        storeId: mainStore.id,
                       },
                     });
 
@@ -401,7 +408,7 @@ const createProjectStageWorkLog = async (workLogData) => {
                       itemStock = await tx.itemStock.create({
                         data: {
                           itemId: item.id,
-                          storeId: mainStore.id, // ✅ Link to main store
+                          storeId: mainStore.id,
                           quantity: quantityToAdd,
                         },
                       });
@@ -420,7 +427,7 @@ const createProjectStageWorkLog = async (workLogData) => {
                     const stockLedger = await tx.itemStockLedger.create({
                       data: {
                         itemId: item.id,
-                        storeId: mainStore.id, // ✅ Link to main store
+                        storeId: mainStore.id,
                         movementType: 'IN',
                         quantity: quantityToAdd,
                         reference: `Stock added from proforma invoice ${piNumber} - Customer: ${customerName}  `,
@@ -443,10 +450,6 @@ const createProjectStageWorkLog = async (workLogData) => {
                   await Promise.all(stockUpdatePromises)
                 ).filter(Boolean);
                 stockUpdateResults.push(...stockUpdateResultsFromInvoice);
-
-                console.log(
-                  `\n✅ Item stock update completed for main store! Updated ${stockUpdateResults.length} item records`,
-                );
               }
             } else {
               console.log(
@@ -459,6 +462,7 @@ const createProjectStageWorkLog = async (workLogData) => {
               }
             }
           }
+
           // Get all stages for this project
           const allStages = await tx.projectStage.findMany({
             where: { projectId: projectStage.projectId },
@@ -511,14 +515,12 @@ const createProjectStageWorkLog = async (workLogData) => {
           if (isLastStageInProject && isFinished) {
             // This is the final stage for this project
             newProjectStatus = 'COMPLETED';
-            console.log('🏁 PROJECT COMPLETED! Final stage finished.');
           } else if (nextStage) {
             // Move to next stage
             newProjectStatus = nextStage.stage;
           } else {
             // Fallback: no next stage found
             newProjectStatus = 'COMPLETED';
-            console.log('🏁 PROJECT COMPLETED! No more stages.');
           }
 
           // Update the project
@@ -544,7 +546,6 @@ const createProjectStageWorkLog = async (workLogData) => {
                 designFinished: new Date(),
               },
             });
-            console.log('✅ Design status updated to FINISHED');
           }
         }
 
@@ -558,6 +559,7 @@ const createProjectStageWorkLog = async (workLogData) => {
           projectUpdated: updatedProject,
           nextStage,
           stockUpdateResults,
+          isFirstWorkLog,
         };
       },
       {
@@ -567,7 +569,6 @@ const createProjectStageWorkLog = async (workLogData) => {
     );
 
     if (result.stockUpdateResults && result.stockUpdateResults.length > 0) {
-      console.log('📦 Item stock update details:');
       result.stockUpdateResults.forEach((update, idx) => {
         console.log(
           `  ${idx + 1}. Item ${update.itemName}: +${
@@ -579,6 +580,12 @@ const createProjectStageWorkLog = async (workLogData) => {
 
     // Build success message with proper formatting
     let successMessage = 'Work log added successfully';
+
+    // Add note about project start if this is the first work log
+    if (result.isFirstWorkLog) {
+      successMessage += ' - Project started';
+    }
+
     if (result.stageFinished) {
       if (result.nextStage) {
         successMessage = `✅ Stage "${
@@ -612,14 +619,7 @@ const createProjectStageWorkLog = async (workLogData) => {
     }
 
     // Post-commit cascade: reschedule downstream stages from the real completion
-    // moment and refresh the project's delivery date. The capacity RELEASE now
-    // happens inside the transaction above, so the ledger is already consistent
-    // by this point; what remains here is the downstream date cascade, which is
-    // too heavy to hold a transaction open for.
-    //
-    // A failure must not undo the committed work log — but it must not vanish
-    // into console.error either, which is how downstream dates were left
-    // permanently stale with the UI reporting success. Surface it to the caller.
+    // moment and refresh the project's delivery date.
     let cascadeWarning = null;
     if (result.stageFinished) {
       try {
@@ -628,10 +628,6 @@ const createProjectStageWorkLog = async (workLogData) => {
           projectStage.stage,
         );
       } catch (cascadeErr) {
-        console.error(
-          '⚠️ reschedule cascade failed (work log still saved):',
-          cascadeErr.message,
-        );
         cascadeWarning = `The stage was saved, but downstream stages could not be rescheduled: ${cascadeErr.message}. The project's delivery date may be out of date — re-run scheduling for this project.`;
       }
     }
@@ -646,21 +642,15 @@ const createProjectStageWorkLog = async (workLogData) => {
       projectStatus: result.projectUpdated?.status,
       stockUpdates: result.stockUpdateResults || [],
       cascadeWarning,
+      isFirstWorkLog: result.isFirstWorkLog,
       message: successMessage,
     };
   } catch (error) {
-    console.error('❌ ===== ERROR in createProjectStageWorkLog =====');
-    console.error('❌ Error details:', {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-      code: error.code,
-      meta: error.meta,
-    });
     console.error(
       '❌ Original workLogData that caused error:',
       JSON.stringify(workLogData, null, 2),
     );
+    console.error(error);
     throw error;
   }
 };
@@ -668,8 +658,6 @@ const createProjectStageWorkLog = async (workLogData) => {
 // Delete Project Stage Work Log
 // Delete Project Stage Work Log
 const deleteProjectStageWorkLog = async (id) => {
-  console.log('🔍 deleteProjectStageWorkLog called with ID:', id);
-
   try {
     // Check if work log exists and get project stage details
     const existingWorkLog = await prisma.projectStageWorkLog.findUnique({
@@ -695,24 +683,13 @@ const deleteProjectStageWorkLog = async (id) => {
     const { projectStage } = existingWorkLog;
     const deletedUnits = existingWorkLog.doneUnits;
 
-    console.log('📊 Found work log to delete:', {
-      id: existingWorkLog.id,
-      doneUnits: deletedUnits,
-      projectStageId: projectStage.id,
-      currentActualWorkUnits: projectStage.actualWorkUnits,
-      currentStatus: projectStage.status,
-      finished: projectStage.finished,
-    });
-
     // Use transaction to ensure data consistency
     const result = await prisma.$transaction(
       async (tx) => {
         // Delete the work log
-        console.log('🗑️ Deleting work log...');
         await tx.projectStageWorkLog.delete({
           where: { id },
         });
-        console.log('✅ Work log deleted');
 
         // Get all remaining work logs for this stage
         const remainingWorkLogs = await tx.projectStageWorkLog.findMany({
@@ -720,37 +697,24 @@ const deleteProjectStageWorkLog = async (id) => {
           select: { doneUnits: true },
         });
 
-        console.log('📊 Remaining work logs count:', remainingWorkLogs.length);
-
         // Recalculate total actual work units
         const newTotalActualUnits = remainingWorkLogs.reduce(
           (sum, log) => sum + log.doneUnits,
           0,
         );
-        console.log('🧮 New total actual units:', newTotalActualUnits);
 
         const plannedWorkUnits = projectStage.workUnits || 0;
-        console.log('📊 Planned work units:', plannedWorkUnits);
 
         // Determine if stage should still be marked as finished
         const isFinished = newTotalActualUnits >= plannedWorkUnits;
         const isExactMatch = newTotalActualUnits === plannedWorkUnits;
-
-        console.log('🏁 Stage status check:', {
-          isFinished,
-          isExactMatch,
-          newTotalActualUnits,
-          plannedWorkUnits,
-        });
 
         // Update project stage with recalculated actual work units
         let updatedProjectStage;
 
         if (isFinished) {
           // Stage still completed after deletion
-          console.log(
-            '📝 Stage remains completed, updating actual units only...',
-          );
+
           updatedProjectStage = await tx.projectStage.update({
             where: { id: projectStage.id },
             data: {
@@ -760,25 +724,15 @@ const deleteProjectStageWorkLog = async (id) => {
           });
         } else {
           // Stage is no longer completed - revert to ACTIVE/IN_PROGRESS
-          console.log('🔄 Stage no longer completed, reverting status...');
           updatedProjectStage = await tx.projectStage.update({
             where: { id: projectStage.id },
             data: {
               actualWorkUnits: newTotalActualUnits,
               finished: false, // Remove finished flag
               status: 'ACTIVE', // Revert to ACTIVE or IN_PROGRESS based on your logic
-              endDate: null, // Remove end date since stage is not completed
             },
           });
         }
-
-        console.log('✅ Project stage updated:', {
-          id: updatedProjectStage.id,
-          actualWorkUnits: updatedProjectStage.actualWorkUnits,
-          finished: updatedProjectStage.finished,
-          status: updatedProjectStage.status,
-          endDate: updatedProjectStage.endDate,
-        });
 
         return {
           updatedStage: updatedProjectStage,
@@ -792,13 +746,6 @@ const deleteProjectStageWorkLog = async (id) => {
         isolationLevel: 'Serializable',
       },
     );
-
-    console.log('🎉 Work log deletion completed successfully:', {
-      deletedUnits,
-      newTotalActualUnits: result.newTotalActualUnits,
-      wasFinishedBeforeDeletion: result.wasFinishedBeforeDeletion,
-      isStillFinished: result.isStillFinished,
-    });
 
     return {
       message:

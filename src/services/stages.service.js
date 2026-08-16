@@ -2860,6 +2860,43 @@ const getStageLeftWork = async () => {
       },
     });
 
+    // ✅ FETCH SELLS WAITING FOR DELIVERY
+    // Based on Sell model: saleStatus and items with itemSaleStatus
+    const sellsWaitingForDelivery = await prisma.sell.findMany({
+      where: {
+        // Include sells that are approved or partially delivered
+        saleStatus: {
+          in: ['APPROVED', 'PARTIALLY_DELIVERED'],
+        },
+        // Ensure they have items that are not fully delivered
+        items: {
+          some: {
+            itemSaleStatus: {
+              in: ['PENDING', 'PARTIALLY_DELIVERED'],
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+        saleStatus: true,
+        // Also fetch delivery date for sorting if needed
+        deliveryDate: true,
+        // Count items to understand delivery progress
+        _count: {
+          select: {
+            items: {
+              where: {
+                itemSaleStatus: {
+                  in: ['PENDING', 'PARTIALLY_DELIVERED'],
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
     // Group stages by project
     const projectStagesMap = {};
     projectStages.forEach((stage) => {
@@ -2872,6 +2909,7 @@ const getStageLeftWork = async () => {
     // Calculate stage data
     const stageData = {};
 
+    // Process project stages
     Object.values(projectStagesMap).forEach((stages) => {
       const projectName = stages[0]?.project?.name || 'Unknown Project';
 
@@ -2903,17 +2941,58 @@ const getStageLeftWork = async () => {
       });
     });
 
+    // ✅ ADD SELLS TO DELIVERY STAGE COUNT
+    const deliveryStageName = 'DELIVERY';
+
+    // Initialize DELIVERY stage if it doesn't exist
+    if (!stageData[deliveryStageName]) {
+      stageData[deliveryStageName] = {
+        stage: deliveryStageName,
+        projectCount: 0,
+        projects: new Set(),
+      };
+    }
+
+    // Add sells waiting for delivery to the DELIVERY stage count
+    sellsWaitingForDelivery.forEach((sell) => {
+      // Use a special ID for sells to avoid conflicts with project IDs
+      const sellId = `sell_${sell.id}`;
+      if (!stageData[deliveryStageName].projects.has(sellId)) {
+        stageData[deliveryStageName].projects.add(sellId);
+
+        // Optional: Log sell details for debugging
+        console.log(
+          `📦 Sell ${sell.id} (${sell.saleStatus}) added to DELIVERY stage`,
+        );
+      }
+    });
+
     // Convert to array with project count only
     const result = Object.values(stageData).map((data) => ({
       stage: data.stage,
       projectCount: data.projects.size,
+      // Optional: Add details about what's included
+      details: {
+        projectIds: Array.from(data.projects).filter(
+          (id) => !id.startsWith('sell_'),
+        ),
+        sellIds: Array.from(data.projects)
+          .filter((id) => id.startsWith('sell_'))
+          .map((id) => id.replace('sell_', '')),
+      },
     }));
 
     // Sort by projectCount descending
     result.sort((a, b) => b.projectCount - a.projectCount);
 
     console.log(`✅ Found ${result.length} stages with unfinished work`);
-    console.log('📊 Stage project counts:', result);
+    console.log(
+      '📊 Stage counts:',
+      result.map((r) => ({
+        stage: r.stage,
+        count: r.projectCount,
+      })),
+    );
 
     return result;
   } catch (error) {

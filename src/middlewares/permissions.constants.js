@@ -320,6 +320,9 @@ module.exports = {
     VIEW: {
       name: 'VIEW_PRODUCT',
     },
+    INITIAL: {
+      name: 'Initial Product',
+    },
   },
   MATERIAL: {
     CREATE: {
@@ -342,6 +345,9 @@ module.exports = {
     },
     MATERIAL_INITIAL_STOCK: {
       name: 'CREATE_MATERIAL_INITIAL_STOCK',
+    },
+    INITIAL: {
+      name: 'Initial MATERIAL',
     },
   },
   MATERIAL_CATEGORY: {

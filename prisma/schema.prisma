@@ -1352,7 +1352,9 @@ model ProjectStage {
   // the end date. These were NOT NULL, so that path threw P2011.
   startDate DateTime?
   endDate   DateTime?
+  projectstartDate  DateTime?
 
+projectendDate  DateTime?
   // MORNING   => 2:30 - 6:30
   // AFTERNOON => 7:30 - 11:00
   // FULL_DAY  => both shifts

@@ -1609,6 +1609,42 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
   // Set default status to DESIGN
   updateData.status = 'DESIGN';
 
+  // ===== SET PROJECT START DATE WHEN DESIGN STATUS IS INITIATED =====
+  // Check if the design status is being set to INITIATED
+  const isNowInitiated = designStatus === 'INITIATED';
+
+  if (isNowInitiated) {
+    const now = new Date();
+
+    // Find the DESIGN stage for this project
+    const designStage = project.stages.find(
+      (stage) => stage.stage === 'DESIGN',
+    );
+
+    if (designStage) {
+      // Set the project start date on the DESIGN stage
+      designStageUpdate = {
+        update: prisma.projectStage.update({
+          where: { id: designStage.id },
+          data: {
+            projectstartDate: now,
+          },
+        }),
+        capacityUpdates: [],
+        deleteAllocations: null,
+        workUnitsChanged: false,
+        workUnits: designStage.workUnits || 0,
+        actualWorkUnitsBefore: designStage.actualWorkUnits || 0,
+        actualWorkUnitsAfter: designStage.actualWorkUnits || 0,
+      };
+
+      // Log the project start
+      console.log(
+        `✅ Project started: Design phase initiated at ${now.toISOString()}`,
+      );
+    }
+  }
+
   if (isNowFinished) {
     // Set designFinished timestamp
     updateData.designFinished = new Date();
@@ -1704,8 +1740,12 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
             finished: true,
             workUnits: currentWorkUnits,
             actualWorkUnits: syncedActualWorkUnits,
-            endDate: new Date(),
+            projectendDate: new Date(),
             status: 'COMPLETED',
+            // Only set projectstartDate if it doesn't already exist
+            ...(!designStage.projectstartDate && {
+              projectstartDate: new Date(),
+            }),
           },
         }),
         capacityUpdates: capacityUpdateOperations,
@@ -1718,9 +1758,6 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
 
       // Update project status to the next appropriate stage based on metal works
       updateData.status = getNextStatusAfterDesign(hasMetalWorks);
-
-      // Also update the project's status in the database
-      // Note: We're not setting this explicitly here as it will be handled in the transaction
     }
   }
 
@@ -1738,6 +1775,19 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
         data: {
           projectId: id,
           note: designStatusMessage,
+          createdById: userId,
+        },
+      }),
+    );
+  }
+
+  // Log for project start when design status is INITIATED
+  if (isNowInitiated) {
+    logs.push(
+      prisma.projectLog.create({
+        data: {
+          projectId: id,
+          note: `Project started - Design phase initiated at ${new Date().toISOString()}`,
           createdById: userId,
         },
       }),

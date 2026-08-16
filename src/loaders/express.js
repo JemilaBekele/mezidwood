@@ -42,11 +42,7 @@ const { errorHandler, errorConverter } = require('../middlewares/error');
 const ApiError = require('../utils/ApiError');
 const morgan = require('../config/morgan');
 const { jwtStrategy } = require('../config/passport');
-const {
-  cspOptions,
-  env,
-  cors: corsConfig,
-} = require('../config/config');
+const { cspOptions, env, cors: corsConfig } = require('../config/config');
 
 module.exports = async (app) => {
   app.use(morgan.successHandler);
@@ -68,14 +64,19 @@ module.exports = async (app) => {
   );
   app.use(mongoSanitize());
   if (env === 'production') {
-    // NOTE: an Origin header never carries a trailing slash, so entries must be
-    // normalised or every preflight fails. Driven by CORS_ALLOWED_ORIGINS.
-    const allowedOrigins = corsConfig.allowedOrigins.map((origin) =>
-      origin.replace(/\/+$/, ''),
+    app.use(
+      cors({
+        origin: ['https://rcf.ordere.net/', 'http://localhost:3030'],
+        credentials: true,
+      }),
     );
-    const corsOptions = { origin: allowedOrigins, credentials: true };
-    app.use(cors(corsOptions));
-    app.options('*', cors(corsOptions));
+    app.options(
+      '*',
+      cors({
+        origin: ['https://rcf.ordere.net/', 'http://localhost:3030'],
+        credentials: true,
+      }),
+    );
   } else {
     // enabling all cors
     app.use(cors());
