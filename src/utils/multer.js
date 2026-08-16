@@ -6,43 +6,24 @@ const fs = require('fs');
 const ApiError = require('./ApiError');
 // Create a wrapped version of the multer middleware
 const debugUploadProformaInvoice = function (req, res, next) {
-  console.log('=== MULTER MIDDLEWARE ENTERING ===');
-  console.log('1. Time:', new Date().toISOString());
-  console.log('2. Content-Type:', req.headers['content-type']);
-  console.log('3. Content-Length:', req.headers['content-length']);
-  console.log('4. Request headers:', JSON.stringify(req.headers, null, 2));
-
-  // Check if bodyParser might have already parsed the request
-  console.log('5. Is request already parsed?');
-  console.log('   - req.body exists:', !!req.body);
-  console.log('   - req.body keys:', Object.keys(req.body || {}));
-
   // Count the number of times fileFilter is called
   let fileFilterCallCount = 0;
 
   // Configure different storage strategies for different file types
   const storage = multer.diskStorage({
     destination(req, file, cb) {
-      console.log(`\n=== DESTINATION FUNCTION CALLED ===`);
-      console.log('File fieldname:', file.fieldname);
-      console.log('File originalname:', file.originalname);
-      console.log('File mimetype:', file.mimetype);
-
       // Save attachments to proforma/attachments folder
       if (file.fieldname === 'attachments') {
         const destPath = path.join(
           __dirname,
           '../../uploads/proforma/attachments',
         );
-        console.log('Destination path for attachment:', destPath);
 
         // Ensure directory exists
         fs.mkdir(destPath, { recursive: true }, (err) => {
           if (err) {
-            console.error('Error creating directory:', err);
             return cb(err);
           }
-          console.log('Directory ensured:', destPath);
           cb(null, destPath);
         });
       } else if (
@@ -51,25 +32,20 @@ const debugUploadProformaInvoice = function (req, res, next) {
       ) {
         // Save item images to proforma/images folder
         const destPath = path.join(__dirname, '../../uploads/proforma/images');
-        console.log('Destination path for item image:', destPath);
 
         // Ensure directory exists
         fs.mkdir(destPath, { recursive: true }, (err) => {
           if (err) {
-            console.error('Error creating directory:', err);
             return cb(err);
           }
-          console.log('Directory ensured:', destPath);
           cb(null, destPath);
         });
       } else {
         // For any other files, use temporary location
         const tempPath = path.join(__dirname, '../../uploads/temp');
-        console.log('Destination path for other files:', tempPath);
 
         fs.mkdir(tempPath, { recursive: true }, (err) => {
           if (err) {
-            console.error('Error creating directory:', err);
             return cb(err);
           }
           cb(null, tempPath);
@@ -77,9 +53,7 @@ const debugUploadProformaInvoice = function (req, res, next) {
       }
     },
     filename(req, file, cb) {
-      console.log(`\n=== FILENAME FUNCTION CALLED ===`);
-      console.log('Original filename:', file.originalname);
-
+     
       // Generate unique filename
       const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
       const ext = path.extname(file.originalname);
@@ -89,13 +63,7 @@ const debugUploadProformaInvoice = function (req, res, next) {
       const cleanBasename = basename.replace(/[^a-zA-Z0-9-_]/g, '');
       const filename = `${cleanBasename}-${uniqueSuffix}${ext}`;
 
-      console.log('Generated filename:', filename);
-      console.log(
-        'Full path will be:',
-        file.fieldname === 'attachments'
-          ? `/uploads/proforma/attachments/${filename}`
-          : `/uploads/proforma/images/${filename}`,
-      );
+  
 
       cb(null, filename);
     },
@@ -106,16 +74,8 @@ const debugUploadProformaInvoice = function (req, res, next) {
     storage, // Use diskStorage instead of memoryStorage
     fileFilter: (req, file, cb) => {
       fileFilterCallCount++;
-      console.log(`\n=== FILE FILTER CALL #${fileFilterCallCount} ===`);
-      console.log('File details:');
-      console.log('  - fieldname:', file.fieldname);
-      console.log('  - originalname:', file.originalname);
-      console.log('  - mimetype:', file.mimetype);
-      console.log('  - size:', file.size, 'bytes');
-      console.log('  - encoding:', file.encoding);
-
+     
       // Log all file properties
-      console.log('  - All file properties:');
       Object.keys(file).forEach((key) => {
         console.log(`    ${key}:`, file[key]);
       });
@@ -125,9 +85,7 @@ const debugUploadProformaInvoice = function (req, res, next) {
         file.fieldname.startsWith('items[') &&
         file.fieldname.includes('].image')
       ) {
-        console.log('  - Processing as item image');
         if (!file.mimetype.startsWith('image/')) {
-          console.log('  ❌ Rejected: not an image');
           return cb(
             new ApiError(
               httpStatus.BAD_REQUEST,
@@ -136,12 +94,10 @@ const debugUploadProformaInvoice = function (req, res, next) {
             false,
           );
         }
-        console.log('  ✅ Accepted as item image');
         return cb(null, true);
       }
 
       if (['attachments'].includes(file.fieldname)) {
-        console.log('  - Processing as attachment');
         const allowedTypes = [
           'image/jpeg',
           'image/png',
@@ -154,14 +110,8 @@ const debugUploadProformaInvoice = function (req, res, next) {
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ];
 
-        console.log('  - Checking mimetype:', file.mimetype);
-        console.log(
-          '  - Allowed types include?',
-          allowedTypes.includes(file.mimetype),
-        );
-
+      
         if (!allowedTypes.includes(file.mimetype)) {
-          console.log('  ❌ Rejected: unsupported type');
           return cb(
             new ApiError(
               httpStatus.BAD_REQUEST,
@@ -170,49 +120,20 @@ const debugUploadProformaInvoice = function (req, res, next) {
             false,
           );
         }
-        console.log('  ✅ Accepted as attachment');
         return cb(null, true);
       }
 
-      console.log('  ⚠️ Ignoring field:', file.fieldname);
       return cb(null, false);
     },
-    limits: { fileSize: 40 * 1024 * 1024 },
+    limits: {
+      fileSize: 100 * 1024 * 1024, // 100 MB per file
+    },
   }).any();
 
   // Call the multer middleware
   enhancedMulter(req, res, (err) => {
-    console.log('\n=== MULTER MIDDLEWARE COMPLETED ===');
-    console.log('File filter was called', fileFilterCallCount, 'times');
-
-    if (err) {
-      console.error('❌ Multer error:', err);
-      console.error('Error details:', {
-        message: err.message,
-        name: err.name,
-        stack: err.stack,
-      });
-    } else {
-      console.log('✅ Multer completed successfully');
-      console.log('Request now has:');
-      console.log(
-        '  - req.files:',
-        req.files ? `Array with ${req.files.length} items` : 'undefined',
-      );
-      console.log('  - req.body keys:', Object.keys(req.body || {}));
-
-      if (req.files && req.files.length > 0) {
-        console.log('  Files details:');
-        req.files.forEach((file, index) => {
-          console.log(
-            `  [${index}] ${file.fieldname}: ${file.originalname} (${file.mimetype}, ${file.size} bytes)`,
-          );
-          console.log(`      Saved to: ${file.path}`);
-          console.log(`      Destination: ${file.destination}`);
-          console.log(`      Filename: ${file.filename}`);
-        });
-      }
-    }
+   
+   
 
     next(err);
   });
@@ -390,9 +311,9 @@ const uploadImageitem = multer({
     // Ignore other fields
     return cb(null, false);
   },
-  limits: { 
+  limits: {
     fileSize: 40 * 1024 * 1024, // 40MB limit
-    files: 11 // Max files
+    files: 11, // Max files
   },
 }).any();
 const uploadProformaInvoice = multer({
