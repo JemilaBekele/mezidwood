@@ -806,213 +806,125 @@ const updateItem = async (id, updateBody, files) => {
  * Delete Item
  */
 const deleteItem = async (id) => {
-  try {
-    console.log(`Starting item deletion process for item ID: ${id}`);
-
-    // Check if item exists with all dependencies
-    const existingItem = await prisma.items.findUnique({
-      where: { id },
-      include: {
-        itemMaterials: {
-          include: {
-            material: {
-              select: {
-                id: true,
-                name: true,
-              },
+  // Check if item exists with all dependencies
+  const existingItem = await prisma.items.findUnique({
+    where: { id },
+    include: {
+      itemMaterials: {
+        include: {
+          material: {
+            select: {
+              id: true,
+              name: true,
             },
           },
         },
-        itemStocks: true,
-        proformaInvoiceItems: {
-          include: {
-            invoice: {
-              select: {
-                id: true,
-                piNumber: true,
-              },
-            },
-          },
-        },
-        sellItems: true,
-        transferItems: true,
-        itemStockLedgers: true,
-        stockCorrectionItems: true,
-        itemImages: true,
-        category: true,
-        type: true,
-        size: true,
       },
-    });
-
-    if (!existingItem) {
-      console.error(`Item not found with ID: ${id}`);
-      throw new ApiError(httpStatus.NOT_FOUND, 'Item not found');
-    }
-
-    // Log item details
-    console.log('Item found:', {
-      id: existingItem.id,
-      name: existingItem.name,
-      typeId: existingItem.typeId,
-      categoryId: existingItem.categoryId,
-      sizeId: existingItem.sizeId,
-      createdAt: existingItem.createdAt,
-      timestamp: new Date().toISOString(),
-    });
-
-    // Check for other dependencies (excluding itemMaterials)
-    if (existingItem.itemStocks?.length > 0) {
-      console.error(
-        `Cannot delete item ${id}: Has ${existingItem.itemStocks.length} associated stock records:`,
-        {
-          stocks: existingItem.itemStocks,
-          timestamp: new Date().toISOString(),
+      itemStocks: true,
+      proformaInvoiceItems: {
+        include: {
+          invoice: {
+            select: {
+              id: true,
+              piNumber: true,
+            },
+          },
         },
-      );
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        `Cannot delete item because it has ${existingItem.itemStocks.length} associated stock records`,
-      );
-    }
+      },
+      sellItems: true,
+      transferItems: true,
+      itemStockLedgers: true,
+      stockCorrectionItems: true,
+      itemImages: true,
+      category: true,
+      type: true,
+      size: true,
+    },
+  });
 
-    if (existingItem.itemStockLedgers?.length > 0) {
-      console.error(
-        `Cannot delete item ${id}: Has ${existingItem.itemStockLedgers.length} associated stock ledger records`,
-      );
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        `Cannot delete item because it has ${existingItem.itemStockLedgers.length} associated stock ledger records`,
-      );
-    }
-
-    if (existingItem.proformaInvoiceItems?.length > 0) {
-      console.error(
-        `Cannot delete item ${id}: Referenced in ${existingItem.proformaInvoiceItems.length} proforma invoices:`,
-        {
-          invoices: existingItem.proformaInvoiceItems.map((pii) => ({
-            invoiceId: pii.invoice?.id,
-            invoiceNumber: pii.invoice?.piNumber,
-            itemId: pii.itemId,
-            quantity: pii.quantity,
-            price: pii.unitPrice,
-            amount: pii.amount,
-          })),
-          timestamp: new Date().toISOString(),
-        },
-      );
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        `Cannot delete item because it is referenced in ${existingItem.proformaInvoiceItems.length} proforma invoices`,
-      );
-    }
-
-    if (existingItem.sellItems?.length > 0) {
-      console.error(
-        `Cannot delete item ${id}: Referenced in ${existingItem.sellItems.length} sales`,
-      );
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        `Cannot delete item because it is referenced in ${existingItem.sellItems.length} sales`,
-      );
-    }
-
-    if (existingItem.transferItems?.length > 0) {
-      console.error(
-        `Cannot delete item ${id}: Referenced in ${existingItem.transferItems.length} transfers`,
-      );
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        `Cannot delete item because it is referenced in ${existingItem.transferItems.length} transfers`,
-      );
-    }
-
-    if (existingItem.stockCorrectionItems?.length > 0) {
-      console.error(
-        `Cannot delete item ${id}: Referenced in ${existingItem.stockCorrectionItems.length} stock corrections`,
-      );
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        `Cannot delete item because it is referenced in ${existingItem.stockCorrectionItems.length} stock corrections`,
-      );
-    }
-
-    if (existingItem.itemImages?.length > 0) {
-      console.error(
-        `Cannot delete item ${id}: Has ${existingItem.itemImages.length} associated images`,
-      );
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        `Cannot delete item because it has ${existingItem.itemImages.length} associated images`,
-      );
-    }
-
-    // Delete associated item materials first
-    if (existingItem.itemMaterials?.length > 0) {
-      console.log(
-        `Deleting ${existingItem.itemMaterials.length} associated materials for item ${id}:`,
-        {
-          materials: existingItem.itemMaterials.map((im) => ({
-            materialId: im.materialId,
-            materialName: im.material?.name,
-            quantity: im.quantity,
-            note: im.note,
-            createdAt: im.createdAt,
-          })),
-          timestamp: new Date().toISOString(),
-        },
-      );
-      
-      await prisma.itemMaterial.deleteMany({
-        where: { itemId: id },
-      });
-      
-      console.log(`Successfully deleted ${existingItem.itemMaterials.length} associated materials for item ${id}`);
-    }
-
-    // Delete associated item images from database
-    if (existingItem.itemImages?.length > 0) {
-      console.log(`Deleting ${existingItem.itemImages.length} item images from database for item ${id}`);
-      await prisma.itemImage.deleteMany({
-        where: { itemId: id },
-      });
-    }
-
-    // Delete the image file if it exists
-    if (existingItem.imageUrl) {
-      try {
-        await deleteImage(existingItem.imageUrl);
-        console.log(
-          `Successfully deleted image file for item ${id}: ${existingItem.imageUrl}`,
-        );
-      } catch (err) {
-        console.error('Failed to delete item image file:', {
-          error: err,
-          itemId: id,
-          imageUrl: existingItem.imageUrl,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    }
-
-    // Finally delete the item
-    await prisma.items.delete({
-      where: { id },
-    });
-
-    console.log(`Successfully deleted item with ID: ${id}`);
-    return { message: 'Item deleted successfully' };
-  } catch (error) {
-    console.error('Error in deleteItem function:', {
-      error,
-      itemId: id,
-      errorMessage: error.message,
-      errorStack: error.stack,
-      statusCode: error.statusCode || 500,
-      timestamp: new Date().toISOString(),
-    });
-    throw error;
+  if (!existingItem) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Item not found');
   }
+
+  // Check for other dependencies (excluding itemMaterials)
+  if (existingItem.itemStocks?.length > 0) {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      `Cannot delete item because it has ${existingItem.itemStocks.length} associated stock records`,
+    );
+  }
+
+  if (existingItem.itemStockLedgers?.length > 0) {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      `Cannot delete item because it has ${existingItem.itemStockLedgers.length} associated stock ledger records`,
+    );
+  }
+
+  if (existingItem.proformaInvoiceItems?.length > 0) {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      `Cannot delete item because it is referenced in ${existingItem.proformaInvoiceItems.length} proforma invoices`,
+    );
+  }
+
+  if (existingItem.sellItems?.length > 0) {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      `Cannot delete item because it is referenced in ${existingItem.sellItems.length} sales`,
+    );
+  }
+
+  if (existingItem.transferItems?.length > 0) {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      `Cannot delete item because it is referenced in ${existingItem.transferItems.length} transfers`,
+    );
+  }
+
+  if (existingItem.stockCorrectionItems?.length > 0) {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      `Cannot delete item because it is referenced in ${existingItem.stockCorrectionItems.length} stock corrections`,
+    );
+  }
+
+  if (existingItem.itemImages?.length > 0) {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      `Cannot delete item because it has ${existingItem.itemImages.length} associated images`,
+    );
+  }
+
+  // Delete associated item materials first
+  if (existingItem.itemMaterials?.length > 0) {
+    await prisma.itemMaterial.deleteMany({
+      where: { itemId: id },
+    });
+  }
+
+  // Delete associated item images from database
+  if (existingItem.itemImages?.length > 0) {
+    await prisma.itemImage.deleteMany({
+      where: { itemId: id },
+    });
+  }
+
+  // Delete the image file if it exists
+  if (existingItem.imageUrl) {
+    try {
+      await deleteImage(existingItem.imageUrl);
+    } catch (err) {
+      // Silently handle image deletion failure
+    }
+  }
+
+  // Finally delete the item
+  await prisma.items.delete({
+    where: { id },
+  });
+
+  return { message: 'Item deleted successfully' };
 };
 /**
  * Get All Items with Relations
