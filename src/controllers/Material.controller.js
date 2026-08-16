@@ -105,6 +105,8 @@ const getMaterials = catchAsync(async (req, res) => {
 
 // Delete Material
 const deleteMaterial = catchAsync(async (req, res) => {
+    console.log("jemu")
+  
   await materialService.deleteMaterial(req.params.id);
   res.status(httpStatus.OK).send({
     success: true,
