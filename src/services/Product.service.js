@@ -785,26 +785,37 @@ const updateProduct = async (id, updateBody, files) => {
   return result;
 };
 const deleteProduct = async (id) => {
-  const existingProduct = await getProductById(id);
-  if (!existingProduct) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Product not found');
+  try {
+    const existingProduct = await getProductById(id);
+    if (!existingProduct) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Product not found');
+    }
+
+    // First delete related records
+    await prisma.additionalPrice.deleteMany({
+      where: { productId: id },
+    });
+
+    await prisma.productBatch.deleteMany({
+      where: { productId: id },
+    });
+
+    // Then delete the product
+    await prisma.product.delete({
+      where: { id },
+    });
+
+    return { message: 'Product deleted successfully' };
+  } catch (error) {
+    console.error('Error in deleteProduct function:', {
+      error: error,
+      productId: id,
+      errorMessage: error.message,
+      errorStack: error.stack,
+      timestamp: new Date().toISOString()
+    });
+    throw error; // Re-throw the error after logging
   }
-
-  // First delete related records
-  await prisma.additionalPrice.deleteMany({
-    where: { productId: id },
-  });
-
-  await prisma.productBatch.deleteMany({
-    where: { productId: id },
-  });
-
-  // Then delete the product
-  await prisma.product.delete({
-    where: { id },
-  });
-
-  return { message: 'Product deleted successfully' };
 };
 const getProductBatchByBatchNumber = async (batchNumber) => {
   const batch = await prisma.productBatch.findFirst({
