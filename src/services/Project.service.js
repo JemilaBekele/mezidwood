@@ -1199,6 +1199,8 @@ const getProjectById = async (id) => {
               include: {
                 item: true, // Include item details (like name) if it's a relation to a product/item table
                 images: true,
+                          category: true,
+
                 proformaItemMaterials: {
                   include: {
                     material: true,
