@@ -191,28 +191,37 @@ const updateProjectStatus = catchAsync(async (req, res) => {
 });
 
 const updateProjectDesignStatus = catchAsync(async (req, res) => {
-  const { id } = req.params;
-  const { designStatus } = req.body;
-  const userId = req.user.id;
+  try {
+    const { id } = req.params;
+    const { designStatus } = req.body;
+    const userId = req.user.id;
 
-  if (!designStatus) {
-    return res.status(httpStatus.BAD_REQUEST).send({
+    if (!designStatus) {
+      return res.status(httpStatus.BAD_REQUEST).send({
+        success: false,
+        error: 'Design status is required',
+      });
+    }
+
+    const project = await projectService.updateProjectDesignStatus(
+      id,
+      designStatus,
+      userId,
+    );
+
+    res.status(httpStatus.OK).send({
+      success: true,
+      message: 'Project design status updated successfully',
+      project,
+    });
+  } catch (error) {
+    console.error('❌ Error updating project design status:', error);
+
+    res.status(httpStatus.INTERNAL_SERVER_ERROR).send({
       success: false,
-      error: 'Design status is required',
+      error: error?.message || 'Failed to update project design status',
     });
   }
-
-  const project = await projectService.updateProjectDesignStatus(
-    id,
-    designStatus,
-    userId,
-  );
-
-  res.status(httpStatus.OK).send({
-    success: true,
-    message: 'Project design status updated successfully',
-    project,
-  });
 });
 // Calculate Project Delivery
 const calculateDelivery = catchAsync(async (req, res) => {
