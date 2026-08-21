@@ -33,10 +33,6 @@ const generatePINumber = async () => {
 
 const VAT_RATE = 0.15;
 
-// Calculate invoice totals.
-// Goes through the money helpers because `items` may come either from the
-// request payload (plain numbers) or from the database, where `unitPrice` is a
-// Decimal — and `+` on a Decimal concatenates strings.
 const calculateTotals = (items) => {
   const subtotal = money.sum(
     items.map((item) => money.multiply(item.unitPrice, item.quantity)),
@@ -1160,14 +1156,43 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
   }
 
   // Calculate totals if items are being updated
+  // Calculate totals - use frontend values directly
   let subtotal;
   let vat;
   let total;
+
   if (itemsToUpdate) {
-    const calculated = calculateTotals(itemsToUpdate);
-    subtotal = calculated.subtotal;
-    vat = calculated.vat;
-    total = calculated.total;
+    // ✅ Use values directly from frontend
+    subtotal =
+      updateData.subtotal !== undefined && updateData.subtotal !== null
+        ? money.round(Number(updateData.subtotal))
+        : money.round(
+            itemsToUpdate.reduce((sum, item) => {
+              const quantity =
+                typeof item.quantity === 'string'
+                  ? parseInt(item.quantity, 10)
+                  : item.quantity;
+              const unitPrice =
+                typeof item.unitPrice === 'string'
+                  ? parseFloat(item.unitPrice)
+                  : item.unitPrice;
+              return sum + quantity * unitPrice;
+            }, 0),
+          );
+
+    vat =
+      updateData.vat !== undefined && updateData.vat !== null
+        ? money.round(Number(updateData.vat))
+        : money.round(0);
+
+    total =
+      updateData.total !== undefined && updateData.total !== null
+        ? money.round(Number(updateData.total))
+        : money.round(money.add(subtotal, vat));
+
+    console.log(
+      `📊 Totals from frontend: Subtotal=${subtotal}, VAT=${vat}, Total=${total}`,
+    );
   } else {
     // Use existing values
     subtotal = existingInvoice.subtotal;
@@ -2097,14 +2122,43 @@ const updateProformaInvoiceseco = async (
   }
 
   // Calculate totals if items are being updated
+  // Calculate totals - use frontend values directly
   let subtotal;
   let vat;
   let total;
+
   if (itemsToUpdate) {
-    const calculated = calculateTotals(itemsToUpdate);
-    subtotal = calculated.subtotal;
-    vat = calculated.vat;
-    total = calculated.total;
+    // ✅ Use values directly from frontend
+    subtotal =
+      updateData.subtotal !== undefined && updateData.subtotal !== null
+        ? money.round(Number(updateData.subtotal))
+        : money.round(
+            itemsToUpdate.reduce((sum, item) => {
+              const quantity =
+                typeof item.quantity === 'string'
+                  ? parseInt(item.quantity, 10)
+                  : item.quantity;
+              const unitPrice =
+                typeof item.unitPrice === 'string'
+                  ? parseFloat(item.unitPrice)
+                  : item.unitPrice;
+              return sum + quantity * unitPrice;
+            }, 0),
+          );
+
+    vat =
+      updateData.vat !== undefined && updateData.vat !== null
+        ? money.round(Number(updateData.vat))
+        : money.round(0);
+
+    total =
+      updateData.total !== undefined && updateData.total !== null
+        ? money.round(Number(updateData.total))
+        : money.round(money.add(subtotal, vat));
+
+    console.log(
+      `📊 Totals from frontend: Subtotal=${subtotal}, VAT=${vat}, Total=${total}`,
+    );
   } else {
     // Use existing values
     subtotal = existingInvoice.subtotal;
@@ -3486,7 +3540,10 @@ const addPayment = async (
         if (money.greaterThan(newTotalPaid, invoiceTotal)) {
           throw new ApiError(
             httpStatus.BAD_REQUEST,
-            `Payment of ${paymentAmount} exceeds the outstanding balance of ${money.subtract(invoiceTotal, alreadyPaid)}`,
+            `Payment of ${paymentAmount} exceeds the outstanding balance of ${money.subtract(
+              invoiceTotal,
+              alreadyPaid,
+            )}`,
           );
         }
 
