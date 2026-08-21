@@ -6,6 +6,9 @@ const money = require('../utils/money');
 
 // Create Proforma Invoice
 const createProformaInvoice = catchAsync(async (req, res) => {
+  // 🔍 LOG 1: Check what files were received
+
+
   // Structure files by field name with detailed logging
   const structuredFiles = {};
 
@@ -15,6 +18,8 @@ const createProformaInvoice = catchAsync(async (req, res) => {
         structuredFiles[file.fieldname] = [];
       }
       structuredFiles[file.fieldname].push(file);
+      
+      // 🔍 LOG 2: Log each file's fieldname
     });
   } else if (req.files) {
     for (const [fieldname, files] of Object.entries(req.files)) {
@@ -36,6 +41,8 @@ const createProformaInvoice = catchAsync(async (req, res) => {
     }
   }
 
+
+
   // Add item index for file matching and initialize images array
   if (Array.isArray(req.body.items)) {
     req.body.items = req.body.items.map((item, index) => ({
@@ -51,11 +58,13 @@ const createProformaInvoice = catchAsync(async (req, res) => {
     Array.isArray(req.body.items) &&
     Object.keys(structuredFiles).length > 0
   ) {
+    
     req.body.items.forEach((item, index) => {
       // Check for multiple images using the pattern "items[0].images"
       const itemImageField = `items[${item.itemIndex}].images`;
       const itemFiles = structuredFiles[itemImageField];
-
+      
+    
       if (itemFiles && Array.isArray(itemFiles) && itemFiles.length > 0) {
         // Store the files in the item for processing by the service
         item.uploadedImages = itemFiles;
@@ -70,10 +79,18 @@ const createProformaInvoice = catchAsync(async (req, res) => {
           legacyFiles.length > 0
         ) {
           item.uploadedImages = legacyFiles;
+        } else {
+          console.log(`⚠️ Item ${item.itemIndex} - No matching files found`);
         }
       }
+      
+    
     });
+  } else {
+    console.log('⚠️ No items or no structured files to process');
   }
+
+
 
   try {
     const proformaInvoice = await proformaInvoiceService.createProformaInvoice(
@@ -81,6 +98,7 @@ const createProformaInvoice = catchAsync(async (req, res) => {
       req.user.id,
       structuredFiles,
     );
+
 
     res.status(httpStatus.CREATED).send({
       success: true,
@@ -103,6 +121,9 @@ const createProformaInvoice = catchAsync(async (req, res) => {
 
 // Update Proforma Invoice updateProformaInvoiceseco
 const updateProformaInvoice = catchAsync(async (req, res) => {
+  // 🔍 LOG 1: Check what files were received
+
+
   // Structure files by field name with detailed logging
   const structuredFiles = {};
 
@@ -112,12 +133,16 @@ const updateProformaInvoice = catchAsync(async (req, res) => {
         structuredFiles[file.fieldname] = [];
       }
       structuredFiles[file.fieldname].push(file);
+      
+      // 🔍 LOG 2: Log each file's fieldname
     });
   } else if (req.files) {
     for (const [fieldname, files] of Object.entries(req.files)) {
       structuredFiles[fieldname] = Array.isArray(files) ? files : [files];
     }
   }
+
+  // 🔍 LOG 3: Check structured files
 
   // Parse items if it's a string (from form-data)
   if (req.body.items) {
@@ -132,6 +157,8 @@ const updateProformaInvoice = catchAsync(async (req, res) => {
       }
     }
   }
+
+
 
   // Add item index for file matching and preserve existing images
   if (Array.isArray(req.body.items)) {
@@ -153,11 +180,13 @@ const updateProformaInvoice = catchAsync(async (req, res) => {
     Array.isArray(req.body.items) &&
     Object.keys(structuredFiles).length > 0
   ) {
+    
     req.body.items.forEach((item, index) => {
       // Check for multiple images using the pattern "items[0].images"
       const itemImageField = `items[${item.itemIndex}].images`;
       const itemFiles = structuredFiles[itemImageField];
-
+      
+   
       if (itemFiles && Array.isArray(itemFiles) && itemFiles.length > 0) {
         // Store the files in the item for processing by the service
         item.newImages = itemFiles;
@@ -172,9 +201,15 @@ const updateProformaInvoice = catchAsync(async (req, res) => {
           legacyFiles.length > 0
         ) {
           item.newImages = legacyFiles;
+        } else {
+          console.log(`⚠️ Update - Item ${item.itemIndex} - No matching files found`);
         }
       }
+      
+   
     });
+  } else {
+    console.log('⚠️ Update - No items or no structured files to process');
   }
 
   try {
@@ -184,12 +219,14 @@ const updateProformaInvoice = catchAsync(async (req, res) => {
       structuredFiles,
     );
 
+
     res.status(httpStatus.OK).send({
       success: true,
       message: 'Proforma invoice updated successfully',
       invoice,
     });
   } catch (error) {
+    console.error('❌ Update error:', error);
     // Check if it's already an ApiError
     if (error instanceof ApiError) {
       throw error;

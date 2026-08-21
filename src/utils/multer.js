@@ -28,7 +28,7 @@ const debugUploadProformaInvoice = function (req, res, next) {
         });
       } else if (
         file.fieldname.startsWith('items[') &&
-        file.fieldname.includes('].image')
+        (file.fieldname.includes('].image') || file.fieldname.includes('].images['))
       ) {
         // Save item images to proforma/images folder
         const destPath = path.join(__dirname, '../../uploads/proforma/images');
@@ -71,17 +71,48 @@ const debugUploadProformaInvoice = function (req, res, next) {
     storage, // Use diskStorage instead of memoryStorage
     fileFilter: (req, file, cb) => {
       fileFilterCallCount++;
-
-      return cb(null, false);
+      console.log(`📄 File filter called for: ${file.fieldname} (${file.originalname})`);
+      
+      // ✅ ACCEPT all files (or add validation)
+      // Check if it's an image or attachment
+      const isImage = file.mimetype.startsWith('image/');
+      const isAttachment = file.fieldname === 'attachments';
+      
+      if (isImage || isAttachment) {
+        console.log(`✅ Accepted: ${file.originalname}`);
+        cb(null, true);
+      } else {
+        console.log(`⚠️ Rejected: ${file.originalname} (not image or attachment)`);
+        cb(null, false);
+      }
+      
+      // Or simply accept everything:
+      // cb(null, true);
     },
     limits: {
-      fileSize: 1024 * 1024 * 1024, // 100 MB per file
+      fileSize: 1024 * 1024 * 1024, // 1 GB per file
+      files: 50, // Max number of files
     },
   }).any();
 
   // Call the multer middleware
   enhancedMulter(req, res, (err) => {
-    next(err);
+    if (err) {
+      console.error('❌ Multer error:', err);
+      return next(err);
+    }
+    
+    // Log how many files were received
+    if (req.files) {
+      console.log(`📁 Received ${req.files.length} files`);
+      req.files.forEach((file, i) => {
+        console.log(`  File ${i}: fieldname="${file.fieldname}", filename="${file.filename}"`);
+      });
+    } else {
+      console.log('⚠️ No files received');
+    }
+    
+    next();
   });
 };
 const debugUploadSellFiles = function (req, res, next) {
