@@ -499,6 +499,13 @@ const updateProjectStage = catchAsync(async (req, res) => {
         );
       }
     }
+    if (startDate) {
+      await projectService.validateStageChronology(
+        projectId,
+        stageName,
+        startDate,
+      );
+    }
   }
 
   // ===============================
@@ -777,6 +784,7 @@ const rescheduleFromCalendar = catchAsync(async (req, res) => {
       );
     }
   }
+  await projectService.validateStageChronology(id, stageName, parsedDate);
 
   const result = await rescheduleStageAndDownstream(id, stageName, parsedDate, {
     byUserId: userId,

@@ -1199,7 +1199,7 @@ const getProjectById = async (id) => {
               include: {
                 item: true, // Include item details (like name) if it's a relation to a product/item table
                 images: true,
-                          category: true,
+                category: true,
 
                 proformaItemMaterials: {
                   include: {
@@ -2350,7 +2350,7 @@ const checkStageCapacityAvailability = async (
     capacity: capacityInfo.capacity || 1,
     parallelSlots: capacityInfo.parallelSlots || 1,
   });
-  const workingHoursPerDay = cal.workingHoursPerDay;
+  const { workingHoursPerDay } = cal;
   const requiredHours = (requiredQuantity / dailyCapacity) * workingHoursPerDay;
   const requiredDays = Math.max(
     1,
@@ -2663,7 +2663,7 @@ const updateProjectStage = async (
   // Working hours per day is DERIVED from the configured shift and lunch
   // windows and lives on the calendar — it is no longer an independent setting
   // that could contradict the window the scheduler actually works.
-  const workingHoursPerDay = cal.workingHoursPerDay;
+  const { workingHoursPerDay } = cal;
   const hasManualDuration =
     timeTakenMinutes !== null && timeTakenMinutes !== undefined;
 
@@ -3152,7 +3152,68 @@ const allowDeliveryWithBalance = async (projectId) => {
 const disallowDeliveryWithBalance = async (projectId) => {
   return updateDeliveryWithBalance(projectId, false);
 };
+// Define the correct order of stages
+const STAGE_ORDER = [
+  'DESIGN',
+  'METAL_WORKS',
+  'CNC',
+  'CUTTING',
+  'EDGE_BANDING',
+  'ASSEMBLY',
+  'PAINTING',
+  'FINISHING',
+  'DELIVERY',
+  'INSTALLATION',
+];
+const validateStageChronology = async (projectId, stageName, newStartDate) => {
+  const currentStageIndex = STAGE_ORDER.indexOf(stageName);
+
+  // 1. Validate stage name exists in our order list
+  if (currentStageIndex === -1) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Invalid stage name: ${stageName}`,
+    );
+  }
+
+  // 2. If it's the very first stage (DESIGN), there are no preceding stages to check
+  if (currentStageIndex === 0) {
+    return true;
+  }
+
+  // 3. Identify all stages that come BEFORE the current stage
+  const precedingStageNames = STAGE_ORDER.slice(0, currentStageIndex);
+
+  // 4. Fetch the existing preceding stages from the database for this project
+  const precedingStages = await prisma.projectStage.findMany({
+    where: {
+      projectId,
+      stage: { in: precedingStageNames },
+    },
+  });
+
+  const parsedNewDate = new Date(newStartDate);
+
+  // 5. Check each preceding stage
+  for (const stage of precedingStages) {
+    // We only care about stages that are NOT completely finished yet.
+    if (!stage.finished && stage.startDate) {
+      const precedingStartDate = new Date(stage.startDate);
+
+      // If the user tries to schedule this stage before an unfinished previous stage starts
+      if (parsedNewDate < precedingStartDate) {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          `Cannot schedule ${stageName} before ${stage.stage}. You must finish ${stage.stage} first or pick a valid date.`,
+        );
+      }
+    }
+  }
+
+  return true;
+};
 module.exports = {
+  validateStageChronology,
   allowDeliveryWithBalance,
   disallowDeliveryWithBalance,
   updateProjectStage,
