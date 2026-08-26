@@ -1224,22 +1224,40 @@ const getMonthlyBreakdown = async (year = null) => {
         return sDate >= monthStart && sDate <= monthEnd;
       });
 
-      const proformaGain = monthProformas.reduce(
-        (sum, p) => sum + (p.total || 0),
+      // Use Number() to ensure proper numeric values
+      const proformaGain = Number(monthProformas.reduce(
+        (sum, p) => sum + (Number(p.total) || 0),
         0,
-      );
-      const proformaPaid = monthProformas.reduce(
-        (sum, p) => sum + (p.amountPaid || 0),
+      ));
+      
+      const proformaPaid = Number(monthProformas.reduce(
+        (sum, p) => sum + (Number(p.amountPaid) || 0),
         0,
-      );
-      const salesGain = monthSales.reduce(
-        (sum, s) => sum + (s.grandTotal || 0),
+      ));
+      
+      const salesGain = Number(monthSales.reduce(
+        (sum, s) => sum + (Number(s.grandTotal) || 0),
         0,
-      );
-      const salesPaid = monthSales.reduce(
-        (sum, s) => sum + (s.totalPaid || 0),
+      ));
+      
+      const salesPaid = Number(monthSales.reduce(
+        (sum, s) => sum + (Number(s.totalPaid) || 0),
         0,
-      );
+      ));
+
+      // Round to 2 decimal places to remove long decimals
+      const roundToTwo = (num) => Number(num.toFixed(2));
+
+      const proformaGainRounded = roundToTwo(proformaGain);
+      const proformaPaidRounded = roundToTwo(proformaPaid);
+      const salesGainRounded = roundToTwo(salesGain);
+      const salesPaidRounded = roundToTwo(salesPaid);
+
+      const proformaOutstanding = proformaGainRounded - proformaPaidRounded;
+      const salesOutstanding = salesGainRounded - salesPaidRounded;
+      const combinedGain = proformaGainRounded + salesGainRounded;
+      const combinedPaid = proformaPaidRounded + salesPaidRounded;
+      const combinedOutstanding = combinedGain - combinedPaid;
 
       monthlyBreakdown.push({
         month,
@@ -1247,31 +1265,30 @@ const getMonthlyBreakdown = async (year = null) => {
           month: 'long',
         }),
         proforma: {
-          gain: proformaGain,
-          paid: proformaPaid,
-          outstanding: proformaGain - proformaPaid,
+          gain: proformaGainRounded,
+          paid: proformaPaidRounded,
+          outstanding: proformaOutstanding,
           collectionRate:
-            proformaGain > 0
-              ? ((proformaPaid / proformaGain) * 100).toFixed(2)
+            proformaGainRounded > 0
+              ? Number(((proformaPaidRounded / proformaGainRounded) * 100).toFixed(2))
               : 0,
         },
         sales: {
-          gain: salesGain,
-          paid: salesPaid,
-          outstanding: salesGain - salesPaid,
+          gain: salesGainRounded,
+          paid: salesPaidRounded,
+          outstanding: salesOutstanding,
           collectionRate:
-            salesGain > 0 ? ((salesPaid / salesGain) * 100).toFixed(2) : 0,
+            salesGainRounded > 0
+              ? Number(((salesPaidRounded / salesGainRounded) * 100).toFixed(2))
+              : 0,
         },
         combined: {
-          gain: proformaGain + salesGain,
-          paid: proformaPaid + salesPaid,
-          outstanding: proformaGain + salesGain - (proformaPaid + salesPaid),
+          gain: combinedGain,
+          paid: combinedPaid,
+          outstanding: combinedOutstanding,
           collectionRate:
-            proformaGain + salesGain > 0
-              ? (
-                  ((proformaPaid + salesPaid) / (proformaGain + salesGain)) *
-                  100
-                ).toFixed(2)
+            combinedGain > 0
+              ? Number(((combinedPaid / combinedGain) * 100).toFixed(2))
               : 0,
         },
       });
