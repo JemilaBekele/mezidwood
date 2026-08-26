@@ -1185,21 +1185,27 @@ const getMonthlyBreakdown = async (year = null) => {
     const startDate = new Date(targetYear, 0, 1);
     const endDate = new Date(targetYear, 11, 31, 23, 59, 59);
 
-    // Get Proforma data (store = false)
-    const proformas = await prisma.proformaInvoice.findMany({
+    // Get all Proforma Invoice payments for the year
+    const proformaPayments = await prisma.proformaInvoiceBank.findMany({
       where: {
-        store: false,
         createdAt: {
           gte: startDate,
           lte: endDate,
         },
       },
+      include: {
+        proformaInvoice: {
+          select: {
+            store: true,
+          },
+        },
+      },
     });
 
-    // Get Sales data
-    const sales = await prisma.sell.findMany({
+    // Get all Sell payments for the year
+    const sellPayments = await prisma.sellPayment.findMany({
       where: {
-        saleDate: {
+        createdAt: {
           gte: startDate,
           lte: endDate,
         },
@@ -1212,51 +1218,80 @@ const getMonthlyBreakdown = async (year = null) => {
       const monthStart = new Date(targetYear, month, 1);
       const monthEnd = new Date(targetYear, month + 1, 0, 23, 59, 59);
 
-      // Filter proformas for this month
-      const monthProformas = proformas.filter((p) => {
+      // Filter proforma payments for this month (store = false)
+      const monthProformaPayments = proformaPayments.filter((p) => {
         const pDate = new Date(p.createdAt);
-        return pDate >= monthStart && pDate <= monthEnd;
+        return (
+          pDate >= monthStart &&
+          pDate <= monthEnd &&
+          p.proformaInvoice.store === false
+        );
       });
 
-      // Filter sales for this month
-      const monthSales = sales.filter((s) => {
-        const sDate = new Date(s.saleDate);
+      // Filter sell payments for this month
+      const monthSellPayments = sellPayments.filter((s) => {
+        const sDate = new Date(s.createdAt);
         return sDate >= monthStart && sDate <= monthEnd;
       });
 
-      // Use Number() to ensure proper numeric values
-      const proformaGain = Number(monthProformas.reduce(
-        (sum, p) => sum + (Number(p.total) || 0),
-        0,
-      ));
-      
-      const proformaPaid = Number(monthProformas.reduce(
-        (sum, p) => sum + (Number(p.amountPaid) || 0),
-        0,
-      ));
-      
-      const salesGain = Number(monthSales.reduce(
-        (sum, s) => sum + (Number(s.grandTotal) || 0),
-        0,
-      ));
-      
-      const salesPaid = Number(monthSales.reduce(
-        (sum, s) => sum + (Number(s.totalPaid) || 0),
-        0,
-      ));
+      // Calculate totals from payments
+      const proformaPaid = Number(
+        monthProformaPayments.reduce(
+          (sum, p) => sum + (Number(p.amount) || 0),
+          0,
+        ),
+      );
 
-      // Round to 2 decimal places to remove long decimals
+      const sellPaid = Number(
+        monthSellPayments.reduce((sum, s) => sum + (Number(s.amount) || 0), 0),
+      );
+
+      // Get total gains for the month (from invoices)
+      const monthProformas = await prisma.proformaInvoice.findMany({
+        where: {
+          store: false,
+          createdAt: {
+            gte: monthStart,
+            lte: monthEnd,
+          },
+        },
+        select: {
+          total: true,
+        },
+      });
+
+      const monthSales = await prisma.sell.findMany({
+        where: {
+          saleDate: {
+            gte: monthStart,
+            lte: monthEnd,
+          },
+        },
+        select: {
+          grandTotal: true,
+        },
+      });
+
+      const proformaGain = Number(
+        monthProformas.reduce((sum, p) => sum + (Number(p.total) || 0), 0),
+      );
+
+      const sellGain = Number(
+        monthSales.reduce((sum, s) => sum + (Number(s.grandTotal) || 0), 0),
+      );
+
+      // Round to 2 decimal places
       const roundToTwo = (num) => Number(num.toFixed(2));
 
       const proformaGainRounded = roundToTwo(proformaGain);
       const proformaPaidRounded = roundToTwo(proformaPaid);
-      const salesGainRounded = roundToTwo(salesGain);
-      const salesPaidRounded = roundToTwo(salesPaid);
+      const sellGainRounded = roundToTwo(sellGain);
+      const sellPaidRounded = roundToTwo(sellPaid);
 
       const proformaOutstanding = proformaGainRounded - proformaPaidRounded;
-      const salesOutstanding = salesGainRounded - salesPaidRounded;
-      const combinedGain = proformaGainRounded + salesGainRounded;
-      const combinedPaid = proformaPaidRounded + salesPaidRounded;
+      const sellOutstanding = sellGainRounded - sellPaidRounded;
+      const combinedGain = proformaGainRounded + sellGainRounded;
+      const combinedPaid = proformaPaidRounded + sellPaidRounded;
       const combinedOutstanding = combinedGain - combinedPaid;
 
       monthlyBreakdown.push({
@@ -1270,16 +1305,20 @@ const getMonthlyBreakdown = async (year = null) => {
           outstanding: proformaOutstanding,
           collectionRate:
             proformaGainRounded > 0
-              ? Number(((proformaPaidRounded / proformaGainRounded) * 100).toFixed(2))
+              ? Number(
+                  ((proformaPaidRounded / proformaGainRounded) * 100).toFixed(
+                    2,
+                  ),
+                )
               : 0,
         },
         sales: {
-          gain: salesGainRounded,
-          paid: salesPaidRounded,
-          outstanding: salesOutstanding,
+          gain: sellGainRounded,
+          paid: sellPaidRounded,
+          outstanding: sellOutstanding,
           collectionRate:
-            salesGainRounded > 0
-              ? Number(((salesPaidRounded / salesGainRounded) * 100).toFixed(2))
+            sellGainRounded > 0
+              ? Number(((sellPaidRounded / sellGainRounded) * 100).toFixed(2))
               : 0,
         },
         combined: {
