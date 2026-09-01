@@ -2997,8 +2997,7 @@ const getAllProformaInvoices = async (filters = {}) => {
     customerId,
     startDate,
     endDate,
-    page = 1,
-    limit = 10,
+ 
     sortBy = 'createdAt',
     sortOrder = 'desc',
   } = filters;
@@ -3044,7 +3043,6 @@ const getAllProformaInvoices = async (filters = {}) => {
   }
 
   // Calculate pagination
-  const skip = (page - 1) * limit;
 
   // Get invoices with pagination
   const [invoices, total] = await Promise.all([
@@ -3144,8 +3142,6 @@ const getAllProformaInvoices = async (filters = {}) => {
       orderBy: {
         [sortBy]: sortOrder,
       },
-      skip,
-      take: parseInt(limit, 10),
     }),
     prisma.proformaInvoice.count({ where }),
   ]);
@@ -3153,10 +3149,7 @@ const getAllProformaInvoices = async (filters = {}) => {
     invoices,
     count: invoices.length,
     pagination: {
-      total,
-      page: parseInt(page, 10),
-      limit: parseInt(limit, 10),
-      totalPages: Math.ceil(total / limit),
+      total
     },
   };
 };

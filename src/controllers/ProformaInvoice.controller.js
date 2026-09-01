@@ -358,8 +358,7 @@ const getProformaInvoices = catchAsync(async (req, res) => {
     customerId: req.query.customerId,
     startDate: req.query.startDate,
     endDate: req.query.endDate,
-    page: parseInt(req.query.page, 10) || 1,
-    limit: parseInt(req.query.limit, 10) || 10,
+ 
     sortBy: req.query.sortBy || 'createdAt',
     sortOrder: req.query.sortOrder || 'desc',
   };
