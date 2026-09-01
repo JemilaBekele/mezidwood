@@ -808,7 +808,7 @@ model ProformaInvoiceItem {
 
     itemId      String?  // Add this field
   item        Items?   @relation(fields: [itemId], references: [id]) // Add this relation
-  
+  itemname String? // Add this field to store the item name
   categoryId String?
   category   ProductCategory? @relation(fields: [categoryId], references: [id])
 

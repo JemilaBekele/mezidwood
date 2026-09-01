@@ -33,13 +33,21 @@ const generatePINumber = async () => {
 
 const VAT_RATE = 0.15;
 
-const calculateTotals = (items) => {
+
+const calculateTotals = (items, vatApplied = false, vatPercent = 15) => {
   const subtotal = money.sum(
     items.map((item) => money.multiply(item.unitPrice, item.quantity)),
   );
 
-  const vat = money.multiply(subtotal, VAT_RATE);
-  const total = money.sum(subtotal, vat);
+  let vat = 0;
+  let total = subtotal;
+
+  // Only calculate VAT if vatApplied is true
+  if (vatApplied === true || vatApplied === 'true' || vatApplied === '1' || vatApplied === 1) {
+    const rate = parseFloat(vatPercent) / 100 || VAT_RATE;
+    vat = money.multiply(subtotal, rate);
+    total = money.sum(subtotal, vat);
+  }
 
   return { subtotal, vat, total };
 };
@@ -126,6 +134,8 @@ const createProformaInvoice = async (
       approvedById,
       amountDate,
       store = false,
+         vatApplied = false,    // ← Add this
+      vatPercent = 15,  
       ...otherData
     } = invoiceData;
 
@@ -320,7 +330,7 @@ const createProformaInvoice = async (
     }
 
     // Calculate totals
-    const { subtotal, vat, total } = calculateTotals(items);
+    const { subtotal, vat, total } = calculateTotals(items, vatApplied, vatPercent);
 
     // ✅ amountPaid is always 0 for new proforma invoices
     const amountPaid = 0;
@@ -426,6 +436,7 @@ const createProformaInvoice = async (
                   size: sizeValue, // ✅ Use the extracted size value
                   quantity,
                   unitPrice,
+                  itemname: item.itemname?.trim() || null,
                   amount: unitPrice * quantity,
                   additionalDescription: item.additionalDescription?.trim(),
                 },
@@ -865,6 +876,7 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         size: item.size,
+        itemname: item.itemname,
         additionalDescription: item.additionalDescription,
         itemId: item.itemId,
         categoryId: item.categoryId,
@@ -880,6 +892,7 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
     const newItemsStr = JSON.stringify(
       updateData.items.map((item) => ({
         description: item.description,
+        itemname: item.itemname?.trim() || null,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         size: item.size,
@@ -1382,6 +1395,7 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
                     categoryId:
                       item.categoryId || existingItem.categoryId || null,
                     description: item.description.trim(),
+                    itemname: item.itemname?.trim() || null,
                     size: item.size?.trim(),
                     quantity,
                     unitPrice,
@@ -1410,6 +1424,7 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
                     unitPrice,
                     amount: unitPrice * quantity,
                     additionalDescription: item.additionalDescription?.trim(),
+                    itemname: item.itemname?.trim() || null,
                   },
                 });
               }
@@ -2334,6 +2349,7 @@ const updateProformaInvoiceseco = async (
                     categoryId:
                       item.categoryId || existingItem.categoryId || null,
                     description: item.description.trim(),
+                    itemname: item.itemname?.trim(),
                     size: item.size?.trim(),
                     quantity,
                     unitPrice,
@@ -2357,6 +2373,7 @@ const updateProformaInvoiceseco = async (
                     itemId: item.itemId || null, // ✅ Link to Items table if provided (optional)
                     categoryId: item.categoryId || null, // ✅ Link to Category if provided (optional)
                     description: item.description.trim(),
+                    itemname: item.itemname?.trim() || null,
                     size: item.size?.trim(),
                     quantity,
                     unitPrice,
@@ -3435,6 +3452,7 @@ const getProformaInvoiceByPInumber = async (piNumber) => {
         select: {
           id: true,
           description: true,
+          itemname: true,
           quantity: true,
           unitPrice: true,
           amount: true,

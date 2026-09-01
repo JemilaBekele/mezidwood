@@ -94,6 +94,7 @@ const getProjects = catchAsync(async (req, res) => {
     difficulty: req.query.difficulty,
     customerId: req.query.customerId,
     createdById: req.query.createdById,
+    designById: req.query.designById,
     startDate: req.query.startDate,
     endDate: req.query.endDate,
   };

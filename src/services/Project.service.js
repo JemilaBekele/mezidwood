@@ -923,32 +923,19 @@ const safeSort = (sortBy, sortOrder) => ({
     sortOrder === 'asc' ? 'asc' : 'desc',
 });
 
-// Get all Projects with filtering, sorting, and pagination
+// Get all Projects with filtering and sorting
 const getAllProjects = async (filters = {}) => {
   try {
     const {
-      page = 1,
-      limit = 10,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
       search,
       status,
       difficulty,
       customerId,
+      designById,
       createdById,
       startDate,
       endDate,
     } = filters;
-
-    // Query-string values arrive as strings; normalise before doing arithmetic.
-    const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const take = Math.min(200, Math.max(1, parseInt(limit, 10) || 10));
-    const skip = (pageNum - 1) * take;
-
-    const orderByField = PROJECT_SORTABLE_FIELDS.includes(sortBy)
-      ? sortBy
-      : 'createdAt';
-    const orderByDir = sortOrder === 'asc' ? 'asc' : 'desc';
 
     // Build where clause
     const where = {};
@@ -958,7 +945,6 @@ const getAllProjects = async (filters = {}) => {
         {
           invoice: {
             piNumber: {
-              // Changed from invoiceNumber to piNumber based on your model
               contains: search,
               mode: 'insensitive',
             },
@@ -986,6 +972,9 @@ const getAllProjects = async (filters = {}) => {
     if (customerId) {
       where.customerId = customerId;
     }
+    if (designById) {
+      where.designById = designById;
+    }
 
     if (createdById) {
       where.createdById = createdById;
@@ -1005,11 +994,20 @@ const getAllProjects = async (filters = {}) => {
 
     const projects = await prisma.project.findMany({
       where,
-      skip,
-      take,
-      orderBy: safeSort(sortBy, sortOrder),
+      orderBy: {
+        requestedDelivery: {
+          sort: 'asc',
+          nulls: 'last',
+        },
+      },
       include: {
         customer: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        designBy: {
           select: {
             id: true,
             name: true,
@@ -1018,9 +1016,9 @@ const getAllProjects = async (filters = {}) => {
         invoice: {
           select: {
             id: true,
-            piNumber: true, // Changed from invoiceNumber to piNumber
-            total: true, // Changed from totalAmount to total based on your model
-            status: true, // Added status from PIStatus enum
+            piNumber: true,
+            total: true,
+            status: true,
           },
         },
         stages: {
@@ -1028,10 +1026,9 @@ const getAllProjects = async (filters = {}) => {
             stage: 'asc',
           },
           include: {
-            // Include work logs for each stage
             projectStageWorkLogs: {
               orderBy: {
-                createdAt: 'desc', // Most recent first
+                createdAt: 'desc',
               },
               include: {
                 doneBy: {
@@ -1062,24 +1059,13 @@ const getAllProjects = async (filters = {}) => {
       },
     });
 
-    // `total` used to report `projects.length`, which can never exceed `limit`,
-    // while `totalPages` in the same object was computed from the real DB count
-    // — the two contradicted each other and no client could paginate. Count once
-    // and derive both from it.
     const total = await prisma.project.count({ where });
 
     return {
       projects,
-      count: projects.length,
       total,
-      page,
-      limit,
-      totalPages: Math.max(1, Math.ceil(total / limit)),
     };
   } catch (findError) {
-    // This used to swallow every failure into an empty 200 with an `error` field
-    // no caller reads — so a bad `sortBy`, a dropped connection and "genuinely
-    // no projects" were indistinguishable, all rendering as an empty table.
     throw new ApiError(
       httpStatus.INTERNAL_SERVER_ERROR,
       `Failed to fetch projects: ${findError.message}`,
