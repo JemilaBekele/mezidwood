@@ -3149,7 +3149,7 @@ const getAllProformaInvoices = async (filters = {}) => {
     invoices,
     count: invoices.length,
     pagination: {
-      total
+      total,
     },
   };
 };
