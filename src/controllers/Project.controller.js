@@ -450,8 +450,6 @@ const updateProjectStage = catchAsync(async (req, res) => {
   }
 
   // newQuantity is only required when creating a stage — on an edit of an
-  // existing stage (date/time move, manual override, etc.) it may be omitted
-  // entirely, in which case the stage's current workUnits is preserved.
   if (newQuantity !== undefined) {
     if (typeof newQuantity !== 'number' || newQuantity < 0) {
       throw new ApiError(
