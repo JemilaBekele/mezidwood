@@ -901,6 +901,11 @@ const getTopPIByCreator = async (startDate, endDate) => {
 
 const getCompleteStaticReport = async (startDate, endDate) => {
   try {
+    // Helper function to format numbers to 3 decimal places
+    const formatNumber = (value) => {
+      return Number(Number(value).toFixed(3));
+    };
+
     // Run all analyses in parallel
     const [itemSales, topSalesCreators, topPICreators, topItemsPI] =
       await Promise.all([
@@ -914,36 +919,39 @@ const getCompleteStaticReport = async (startDate, endDate) => {
     const conversionRate =
       itemSales.summary.totalItemsSold > 0 &&
       topItemsPI.summary.totalRequestedQuantity > 0
-        ? (
-            (itemSales.summary.totalItemsSold /
-              topItemsPI.summary.totalRequestedQuantity) *
-            100
-          ).toFixed(2)
+        ? Number(
+            (
+              (itemSales.summary.totalItemsSold /
+                topItemsPI.summary.totalRequestedQuantity) *
+              100
+            ).toFixed(3)
+          )
         : 0;
 
     const revenueConversionRate =
       itemSales.summary.totalRevenue > 0 &&
       topItemsPI.summary.totalRequestedValue > 0
-        ? (
-            (itemSales.summary.totalRevenue /
-              topItemsPI.summary.totalRequestedValue) *
-            100
-          ).toFixed(2)
+        ? Number(
+            (
+              (itemSales.summary.totalRevenue /
+                topItemsPI.summary.totalRequestedValue) *
+              100
+            ).toFixed(3)
+          )
         : 0;
 
     // FIX: Ensure consistency between total PI value from items and creators
     // Calculate total PI value from creators to ensure consistency
-    const totalPIValueFromCreators = topPICreators.summary.totalProformaValue;
-    const totalPIValueFromItems = topItemsPI.summary.totalRequestedValue;
+    const totalPIValueFromCreators = formatNumber(topPICreators.summary.totalProformaValue);
+    const totalPIValueFromItems = formatNumber(topItemsPI.summary.totalRequestedValue);
 
     // Use the maximum or average to ensure consistency (or log warning)
-    const consistentTotalPIValue = Math.max(
-      totalPIValueFromCreators,
-      totalPIValueFromItems,
+    const consistentTotalPIValue = formatNumber(
+      Math.max(totalPIValueFromCreators, totalPIValueFromItems)
     );
 
     // Log warning if there's a discrepancy
-    if (Math.abs(totalPIValueFromCreators - totalPIValueFromItems) > 0.01) {
+    if (Math.abs(totalPIValueFromCreators - totalPIValueFromItems) > 0.001) {
       console.warn(
         `PI Value mismatch: Creators report ${totalPIValueFromCreators}, Items report ${totalPIValueFromItems}`,
       );
@@ -960,17 +968,74 @@ const getCompleteStaticReport = async (startDate, endDate) => {
       );
       topItemsComparison.push({
         itemName: piItem.itemName,
-        requestedQuantity: piItem.totalRequestedQuantity,
-        soldQuantity: soldItem?.totalQuantity || 0,
-        conversionRate:
+        requestedQuantity: formatNumber(piItem.totalRequestedQuantity),
+        soldQuantity: formatNumber(soldItem?.totalQuantity || 0),
+        conversionRate: formatNumber(
           soldItem?.totalQuantity && piItem.totalRequestedQuantity
-            ? (
-                (soldItem.totalQuantity / piItem.totalRequestedQuantity) *
-                100
-              ).toFixed(2)
-            : 0,
-        gap: piItem.totalRequestedQuantity - (soldItem?.totalQuantity || 0),
+            ? (soldItem.totalQuantity / piItem.totalRequestedQuantity) * 100
+            : 0
+        ),
+        gap: formatNumber(
+          piItem.totalRequestedQuantity - (soldItem?.totalQuantity || 0)
+        ),
       });
+    });
+
+    // Format all numeric values in the response
+    const formatExecutiveSummary = (summary) => ({
+      totalRevenueFromSales: formatNumber(summary.totalRevenueFromSales),
+      totalProformaValue: formatNumber(summary.totalProformaValue),
+      revenueConversionRate: `${formatNumber(parseFloat(summary.revenueConversionRate))}%`,
+      totalItemsSold: formatNumber(summary.totalItemsSold),
+      totalItemsRequested: formatNumber(summary.totalItemsRequested),
+      quantityConversionRate: `${formatNumber(parseFloat(summary.quantityConversionRate))}%`,
+      topSellingItemByQuantity: summary.topSellingItemByQuantity
+        ? {
+            ...summary.topSellingItemByQuantity,
+            quantity: formatNumber(summary.topSellingItemByQuantity.quantity),
+            revenue: formatNumber(summary.topSellingItemByQuantity.revenue),
+          }
+        : null,
+      topRequestedItemByQuantity: summary.topRequestedItemByQuantity
+        ? {
+            ...summary.topRequestedItemByQuantity,
+            quantity: formatNumber(summary.topRequestedItemByQuantity.quantity),
+            value: formatNumber(summary.topRequestedItemByQuantity.value),
+          }
+        : null,
+      topSellingItemByRevenue: summary.topSellingItemByRevenue
+        ? {
+            ...summary.topSellingItemByRevenue,
+            revenue: formatNumber(summary.topSellingItemByRevenue.revenue),
+            quantity: formatNumber(summary.topSellingItemByRevenue.quantity),
+          }
+        : null,
+      topRequestedItemByValue: summary.topRequestedItemByValue
+        ? {
+            ...summary.topRequestedItemByValue,
+            value: formatNumber(summary.topRequestedItemByValue.value),
+            quantity: formatNumber(summary.topRequestedItemByValue.quantity),
+          }
+        : null,
+      topSalesPerson: summary.topSalesPerson
+        ? {
+            ...summary.topSalesPerson,
+            revenue: formatNumber(summary.topSalesPerson.revenue),
+            salesCount: formatNumber(summary.topSalesPerson.salesCount),
+            percentageOfTotal: formatNumber(summary.topSalesPerson.percentageOfTotal),
+          }
+        : null,
+      topPIPreparer: summary.topPIPreparer
+        ? {
+            ...summary.topPIPreparer,
+            value: formatNumber(summary.topPIPreparer.value),
+            piCount: formatNumber(summary.topPIPreparer.piCount),
+            percentageOfTotal: formatNumber(summary.topPIPreparer.percentageOfTotal),
+          }
+        : null,
+      averageOrderValue: formatNumber(summary.averageOrderValue),
+      averageProformaValue: formatNumber(summary.averageProformaValue),
+      uniqueCustomers: formatNumber(summary.uniqueCustomers),
     });
 
     return {
@@ -981,22 +1046,144 @@ const getCompleteStaticReport = async (startDate, endDate) => {
       },
 
       // Individual Reports
-      itemSalesAnalysis: itemSales,
-      salesByCreatorAnalysis: topSalesCreators,
-      proformaByCreatorAnalysis: topPICreators,
-      proformaItemsAnalysis: topItemsPI,
+      itemSalesAnalysis: {
+        ...itemSales,
+        summary: {
+          ...itemSales.summary,
+          totalRevenue: formatNumber(itemSales.summary.totalRevenue),
+          totalItemsSold: formatNumber(itemSales.summary.totalItemsSold),
+          totalOrders: formatNumber(itemSales.summary.totalOrders),
+          uniqueItems: formatNumber(itemSales.summary.uniqueItems),
+          averagePrice: formatNumber(itemSales.summary.averagePrice),
+        },
+        topByQuantity: itemSales.topByQuantity.map((item) => ({
+          ...item,
+          totalQuantity: formatNumber(item.totalQuantity),
+          totalRevenue: formatNumber(item.totalRevenue),
+          uniqueCustomers: formatNumber(item.uniqueCustomers),
+        })),
+        topByRevenue: itemSales.topByRevenue.map((item) => ({
+          ...item,
+          totalQuantity: formatNumber(item.totalQuantity),
+          totalRevenue: formatNumber(item.totalRevenue),
+          uniqueCustomers: formatNumber(item.uniqueCustomers),
+        })),
+        allItems: itemSales.allItems.map((item) => ({
+          ...item,
+          totalQuantity: formatNumber(item.totalQuantity),
+          totalRevenue: formatNumber(item.totalRevenue),
+          uniqueCustomers: formatNumber(item.uniqueCustomers),
+        })),
+        categoryAnalysis: itemSales.categoryAnalysis.map((cat) => ({
+          ...cat,
+          totalQuantity: formatNumber(cat.totalQuantity),
+          totalRevenue: formatNumber(cat.totalRevenue),
+          uniqueItems: formatNumber(cat.uniqueItems),
+        })),
+      },
+      salesByCreatorAnalysis: {
+        ...topSalesCreators,
+        summary: {
+          ...topSalesCreators.summary,
+          totalRevenue: formatNumber(topSalesCreators.summary.totalRevenue),
+          totalSales: formatNumber(topSalesCreators.summary.totalSales),
+          uniqueCreators: formatNumber(topSalesCreators.summary.uniqueCreators),
+        },
+        topByQuantity: topSalesCreators.topByQuantity.map((creator) => ({
+          ...creator,
+          totalQuantity: formatNumber(creator.totalQuantity),
+          totalRevenue: formatNumber(creator.totalRevenue),
+          totalSales: formatNumber(creator.totalSales),
+          percentageOfTotal: formatNumber(creator.percentageOfTotal),
+        })),
+        topByRevenue: topSalesCreators.topByRevenue.map((creator) => ({
+          ...creator,
+          totalQuantity: formatNumber(creator.totalQuantity),
+          totalRevenue: formatNumber(creator.totalRevenue),
+          totalSales: formatNumber(creator.totalSales),
+          percentageOfTotal: formatNumber(creator.percentageOfTotal),
+        })),
+        allCreators: topSalesCreators.allCreators.map((creator) => ({
+          ...creator,
+          totalQuantity: formatNumber(creator.totalQuantity),
+          totalRevenue: formatNumber(creator.totalRevenue),
+          totalSales: formatNumber(creator.totalSales),
+          percentageOfTotal: formatNumber(creator.percentageOfTotal),
+        })),
+      },
+      proformaByCreatorAnalysis: {
+        ...topPICreators,
+        summary: {
+          ...topPICreators.summary,
+          totalProformaValue: formatNumber(topPICreators.summary.totalProformaValue),
+          totalPI: formatNumber(topPICreators.summary.totalPI),
+          uniqueCreators: formatNumber(topPICreators.summary.uniqueCreators),
+        },
+        topByValue: topPICreators.topByValue.map((creator) => ({
+          ...creator,
+          totalValue: formatNumber(creator.totalValue),
+          totalPI: formatNumber(creator.totalPI),
+          percentageOfTotal: formatNumber(creator.percentageOfTotal),
+        })),
+        topByQuantity: topPICreators.topByQuantity.map((creator) => ({
+          ...creator,
+          totalQuantity: formatNumber(creator.totalQuantity),
+          totalValue: formatNumber(creator.totalValue),
+          totalPI: formatNumber(creator.totalPI),
+          percentageOfTotal: formatNumber(creator.percentageOfTotal),
+        })),
+        allCreators: topPICreators.allCreators.map((creator) => ({
+          ...creator,
+          totalQuantity: formatNumber(creator.totalQuantity),
+          totalValue: formatNumber(creator.totalValue),
+          totalPI: formatNumber(creator.totalPI),
+          percentageOfTotal: formatNumber(creator.percentageOfTotal),
+        })),
+      },
+      proformaItemsAnalysis: {
+        ...topItemsPI,
+        summary: {
+          ...topItemsPI.summary,
+          totalRequestedQuantity: formatNumber(topItemsPI.summary.totalRequestedQuantity),
+          totalRequestedValue: formatNumber(topItemsPI.summary.totalRequestedValue),
+          totalOrders: formatNumber(topItemsPI.summary.totalOrders),
+          uniqueItems: formatNumber(topItemsPI.summary.uniqueItems),
+          averageValue: formatNumber(topItemsPI.summary.averageValue),
+        },
+        topByQuantity: topItemsPI.topByQuantity.map((item) => ({
+          ...item,
+          totalRequestedQuantity: formatNumber(item.totalRequestedQuantity),
+          totalValue: formatNumber(item.totalValue),
+        })),
+        topByRevenue: topItemsPI.topByRevenue.map((item) => ({
+          ...item,
+          totalRequestedQuantity: formatNumber(item.totalRequestedQuantity),
+          totalValue: formatNumber(item.totalValue),
+        })),
+        allItems: topItemsPI.allItems.map((item) => ({
+          ...item,
+          totalRequestedQuantity: formatNumber(item.totalRequestedQuantity),
+          totalValue: formatNumber(item.totalValue),
+        })),
+        categoryAnalysis: topItemsPI.categoryAnalysis.map((cat) => ({
+          ...cat,
+          totalRequestedQuantity: formatNumber(cat.totalRequestedQuantity),
+          totalValue: formatNumber(cat.totalValue),
+          uniqueItems: formatNumber(cat.uniqueItems),
+        })),
+      },
 
       // Executive Summary - FIXED to use consistent values
-      executiveSummary: {
+      executiveSummary: formatExecutiveSummary({
         // Revenue Metrics - Use consistent total
         totalRevenueFromSales: itemSales.summary.totalRevenue,
-        totalProformaValue: consistentTotalPIValue, // FIXED: Use consistent value
-        revenueConversionRate: `${revenueConversionRate}%`,
+        totalProformaValue: consistentTotalPIValue,
+        revenueConversionRate: revenueConversionRate,
 
         // Quantity Metrics
         totalItemsSold: itemSales.summary.totalItemsSold,
         totalItemsRequested: topItemsPI.summary.totalRequestedQuantity,
-        quantityConversionRate: `${conversionRate}%`,
+        quantityConversionRate: conversionRate,
 
         // Top Performers - Quantity
         topSellingItemByQuantity: itemSales.topByQuantity[0]
@@ -1066,22 +1253,21 @@ const getCompleteStaticReport = async (startDate, endDate) => {
           (sum, item) => sum + item.uniqueCustomers,
           0,
         ),
-      },
+      }),
 
       // Comparison Analysis
       comparisonAnalysis: {
         top5ItemsComparison: topItemsComparison,
         summary: {
-          totalGapQuantity: topItemsComparison.reduce(
-            (sum, item) => sum + item.gap,
-            0,
+          totalGapQuantity: formatNumber(
+            topItemsComparison.reduce((sum, item) => sum + item.gap, 0)
           ),
-          averageConversionRate: (
+          averageConversionRate: formatNumber(
             topItemsComparison.reduce(
               (sum, item) => sum + parseFloat(item.conversionRate),
               0,
             ) / topItemsComparison.length
-          ).toFixed(2),
+          ),
         },
       },
 
