@@ -1183,13 +1183,34 @@ const getProjectById = async (id) => {
             amountDate: true,
             items: {
               include: {
-                item: true, // Include item details (like name) if it's a relation to a product/item table
+                item: true,
                 images: true,
                 category: true,
-
                 proformaItemMaterials: {
                   include: {
                     material: true,
+                    // Include materialIssues to get givenTo information
+                    materialIssues: {
+                      orderBy: {
+                        issuedAt: 'desc', // Most recent first
+                      },
+                      include: {
+                        issuedBy: {
+                          select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                          },
+                        },
+                        givenTo: {
+                          select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                          },
+                        },
+                      },
+                    },
                   },
                 },
               },
@@ -1225,10 +1246,9 @@ const getProjectById = async (id) => {
             stage: 'asc',
           },
           include: {
-            // Include work logs for each stage
             projectStageWorkLogs: {
               orderBy: {
-                createdAt: 'desc', // Most recent first
+                createdAt: 'desc',
               },
               include: {
                 doneBy: {
@@ -1283,12 +1303,6 @@ const getProjectById = async (id) => {
 
     return project;
   } catch (error) {
-    console.error('❌ Error in getProjectById:');
-    console.error('Error name:', error.name);
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-
-    // Log Prisma-specific errors
     if (error.code) {
       console.error('Prisma error code:', error.code);
     }
@@ -1296,7 +1310,6 @@ const getProjectById = async (id) => {
       console.error('Prisma error meta:', JSON.stringify(error.meta, null, 2));
     }
 
-    // Re-throw the error if it's an ApiError, otherwise wrap it
     if (error instanceof ApiError) {
       throw error;
     }
@@ -1592,6 +1605,7 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
   // 6️⃣ Handle FINISHED status logic
   const isNowFinished = designStatus === 'FINISHED';
   let designStageUpdate = null;
+  let purchasingStageUpdate = null;
   let capacityFreedData = null;
 
   // Set default status to DESIGN
@@ -1744,6 +1758,91 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
         actualWorkUnitsAfter: syncedActualWorkUnits,
       };
 
+      // ===== FIND AND UPDATE PURCHASING STAGE =====
+      const purchasingStage = project.stages.find(
+        (stage) => stage.stage === 'PURCHASING',
+      );
+
+      if (purchasingStage) {
+        // Get the current values for purchasing stage
+        const purchasingWorkUnits = purchasingStage.workUnits || 0;
+        const purchasingActualWorkUnits = purchasingStage.actualWorkUnits || 0;
+
+        // Sync actualWorkUnits to match workUnits for purchasing stage
+        const syncedPurchasingActualWorkUnits = purchasingWorkUnits;
+        const purchasingWorkUnitsChanged = purchasingWorkUnits !== purchasingActualWorkUnits;
+
+        if (purchasingWorkUnitsChanged) {
+          console.log(
+            `✅ Syncing Purchasing: Actual Work Units ${purchasingActualWorkUnits} → ${syncedPurchasingActualWorkUnits} (matches Planned Work Units)`,
+          );
+        }
+
+        // Get all capacity allocations for PURCHASING stage
+        const purchasingAllocations =
+          purchasingStage.projectStageCapacityAllocations || [];
+
+        // Create capacity update operations for purchasing stage allocations
+        const purchasingCapacityUpdateOperations = [];
+        let purchasingTotalFreedUnits = 0;
+        let purchasingTotalFreedHours = 0;
+
+        for (const allocation of purchasingAllocations) {
+          purchasingCapacityUpdateOperations.push(
+            prisma.dailyStageCapacity.update({
+              where: { id: allocation.dailyStageCapacityId },
+              data: {
+                usedCapacity: {
+                  decrement: allocation.allocatedUnits,
+                },
+                usedHours: {
+                  decrement: allocation.allocatedHours,
+                },
+              },
+            }),
+          );
+          purchasingTotalFreedUnits += allocation.allocatedUnits;
+          purchasingTotalFreedHours += allocation.allocatedHours;
+        }
+
+        // Create delete operation for purchasing allocations
+        const purchasingDeleteAllocationsOperation =
+          prisma.projectStageCapacityAllocation.deleteMany({
+            where: { projectStageId: purchasingStage.id },
+          });
+
+        // Log purchasing stage completion
+        console.log(
+          `✅ Purchasing stage completed: Freed ${purchasingTotalFreedUnits} units, ${purchasingTotalFreedHours} hours from ${purchasingAllocations.length} allocations`,
+        );
+
+        purchasingStageUpdate = {
+          update: prisma.projectStage.update({
+            where: { id: purchasingStage.id },
+            data: {
+              finished: true,
+              workUnits: purchasingWorkUnits,
+              actualWorkUnits: syncedPurchasingActualWorkUnits,
+              projectendDate: new Date(),
+              status: 'COMPLETED',
+              // Only set projectstartDate if it doesn't already exist
+              ...(!purchasingStage.projectstartDate && {
+                projectstartDate: new Date(),
+              }),
+            },
+          }),
+          capacityUpdates: purchasingCapacityUpdateOperations,
+          deleteAllocations: purchasingDeleteAllocationsOperation,
+          workUnitsChanged: purchasingWorkUnitsChanged,
+          workUnits: purchasingWorkUnits,
+          actualWorkUnitsBefore: purchasingActualWorkUnits,
+          actualWorkUnitsAfter: syncedPurchasingActualWorkUnits,
+          totalFreedUnits: purchasingTotalFreedUnits,
+          totalFreedHours: purchasingTotalFreedHours,
+          allocationsCount: purchasingAllocations.length,
+        };
+      }
+
       // Update project status to the next appropriate stage based on metal works
       updateData.status = getNextStatusAfterDesign(hasMetalWorks);
     }
@@ -1838,6 +1937,19 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
     }
   }
 
+  // Log for purchasing stage completion (if applicable)
+  if (isNowFinished && purchasingStageUpdate) {
+    logs.push(
+      prisma.projectLog.create({
+        data: {
+          projectId: id,
+          note: `Purchasing phase completed automatically (design finished). Freed ${purchasingStageUpdate.totalFreedUnits.toFixed(2)} units (${purchasingStageUpdate.totalFreedHours.toFixed(2)} hours) from ${purchasingStageUpdate.allocationsCount} allocation(s).`,
+          createdById: userId,
+        },
+      }),
+    );
+  }
+
   // Log for design completion timestamp
   if (isNowFinished) {
     logs.push(
@@ -1884,6 +1996,25 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
       // Add delete allocations operation
       if (designStageUpdate.deleteAllocations) {
         operations.push(designStageUpdate.deleteAllocations);
+      }
+    }
+
+    // Add purchasing stage update and capacity operations if they exist
+    if (purchasingStageUpdate) {
+      // Add the stage update
+      operations.push(purchasingStageUpdate.update);
+
+      // Add all daily capacity updates
+      if (
+        purchasingStageUpdate.capacityUpdates &&
+        purchasingStageUpdate.capacityUpdates.length > 0
+      ) {
+        operations.push(...purchasingStageUpdate.capacityUpdates);
+      }
+
+      // Add delete allocations operation
+      if (purchasingStageUpdate.deleteAllocations) {
+        operations.push(purchasingStageUpdate.deleteAllocations);
       }
     }
 

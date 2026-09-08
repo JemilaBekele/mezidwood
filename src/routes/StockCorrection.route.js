@@ -88,5 +88,11 @@ router.get(
   // checkPermission('VIEW_MATERIAL_STOCK'),
   stockCorrectionController.getMaterialStockQuantityreserve,
 );
+router.get(
+  '/api/Material/Stock/all/avilable/know/:materialId',
+  auth,
+  // checkPermission('VIEW_MATERIAL_STOCK'),
+  stockCorrectionController.getMaterialStockQuantitywithproject,
+);
 
 module.exports = router;

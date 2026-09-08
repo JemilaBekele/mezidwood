@@ -898,12 +898,35 @@ const getTopPIByCreator = async (startDate, endDate) => {
     throw error;
   }
 };
-
 const getCompleteStaticReport = async (startDate, endDate) => {
   try {
-    // Helper function to format numbers to 3 decimal places
+    // Helper function to format numbers with 3 decimal places
     const formatNumber = (value) => {
-      return Number(Number(value).toFixed(3));
+      if (value === null || value === undefined || value === '') {
+        return '0.000';
+      }
+
+      const num = Number(value);
+      if (isNaN(num) || !isFinite(num)) {
+        return '0.000';
+      }
+      return num.toFixed(3).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    };
+
+    // Helper function to safely get numeric value
+    const getNumericValue = (value) => {
+      if (value === null || value === undefined || value === '') return 0;
+      const num = Number(value);
+      return isNaN(num) || !isFinite(num) ? 0 : num;
+    };
+
+    // Helper function to calculate total from proformas array
+    const calculateTotalFromProformas = (proformas) => {
+      if (!proformas || !Array.isArray(proformas)) return 0;
+      return proformas.reduce((sum, p) => {
+        const val = getNumericValue(p.totalValue);
+        return sum + val;
+      }, 0);
     };
 
     // Run all analyses in parallel
@@ -915,130 +938,298 @@ const getCompleteStaticReport = async (startDate, endDate) => {
         getTopItemsFromPI(startDate, endDate),
       ]);
 
+    // Validate that all responses have the expected structure
+    const validateResponse = (response, defaultStructure) => {
+      if (!response || typeof response !== 'object') {
+        console.warn('Invalid response, using default structure');
+        return defaultStructure;
+      }
+      return response;
+    };
+
+    const defaultItemSales = {
+      summary: {
+        totalItemsSold: 0,
+        totalRevenue: 0,
+        totalOrders: 0,
+        uniqueItems: 0,
+        averagePrice: 0,
+      },
+      topByQuantity: [],
+      topByRevenue: [],
+      allItems: [],
+      categoryAnalysis: [],
+    };
+
+    const defaultTopSalesCreators = {
+      summary: { totalRevenue: 0, totalSales: 0, uniqueCreators: 0 },
+      topByQuantity: [],
+      topByRevenue: [],
+      allCreators: [],
+    };
+
+    const defaultTopPICreators = {
+      summary: { totalProformaValue: 0, totalPI: 0, uniqueCreators: 0 },
+      topByValue: [],
+      topByQuantity: [],
+      topByPICount: [],
+      allPreparers: [],
+    };
+
+    const defaultTopItemsPI = {
+      summary: {
+        totalRequestedQuantity: 0,
+        totalRequestedValue: 0,
+        totalOrders: 0,
+        uniqueItems: 0,
+        averageValue: 0,
+      },
+      topByQuantity: [],
+      topByRevenue: [],
+      allItems: [],
+      categoryAnalysis: [],
+    };
+
+    const validatedItemSales = validateResponse(itemSales, defaultItemSales);
+    const validatedTopSalesCreators = validateResponse(
+      topSalesCreators,
+      defaultTopSalesCreators,
+    );
+    const validatedTopPICreators = validateResponse(
+      topPICreators,
+      defaultTopPICreators,
+    );
+    const validatedTopItemsPI = validateResponse(topItemsPI, defaultTopItemsPI);
+
+    // CALCULATE TOTAL PI VALUE FROM PROFORMAS
+    let calculatedTotalValue = 0;
+    let creatorData = null;
+
+    // Method 1: From topByValue (most reliable)
+    if (
+      validatedTopPICreators.topByValue &&
+      Array.isArray(validatedTopPICreators.topByValue) &&
+      validatedTopPICreators.topByValue.length > 0
+    ) {
+      creatorData = validatedTopPICreators.topByValue[0];
+      if (creatorData.proformas && Array.isArray(creatorData.proformas)) {
+        calculatedTotalValue = calculateTotalFromProformas(
+          creatorData.proformas,
+        );
+      }
+    }
+
+    // Method 2: From allPreparers
+    if (
+      calculatedTotalValue === 0 &&
+      validatedTopPICreators.allPreparers &&
+      Array.isArray(validatedTopPICreators.allPreparers) &&
+      validatedTopPICreators.allPreparers.length > 0
+    ) {
+      creatorData = validatedTopPICreators.allPreparers[0];
+      if (creatorData.proformas && Array.isArray(creatorData.proformas)) {
+        calculatedTotalValue = calculateTotalFromProformas(
+          creatorData.proformas,
+        );
+      }
+    }
+
+    // Method 3: From topByPICount
+    if (
+      calculatedTotalValue === 0 &&
+      validatedTopPICreators.topByPICount &&
+      Array.isArray(validatedTopPICreators.topByPICount) &&
+      validatedTopPICreators.topByPICount.length > 0
+    ) {
+      const piCountData = validatedTopPICreators.topByPICount[0];
+      if (piCountData.proformas && Array.isArray(piCountData.proformas)) {
+        calculatedTotalValue = calculateTotalFromProformas(
+          piCountData.proformas,
+        );
+        if (!creatorData) creatorData = piCountData;
+      }
+    }
+
+    // Calculate total from items using totalRevenue
+    let calculatedItemsTotalValue = 0;
+    if (
+      validatedTopItemsPI.allItems &&
+      Array.isArray(validatedTopItemsPI.allItems)
+    ) {
+      validatedTopItemsPI.allItems.forEach((item) => {
+        const revenue = getNumericValue(item.totalRevenue);
+        calculatedItemsTotalValue += revenue;
+      });
+    }
+
+    // Use the calculated values
+    const totalPIValueFromCreators = calculatedTotalValue;
+    const totalPIValueFromItems =
+      calculatedItemsTotalValue > 0
+        ? calculatedItemsTotalValue
+        : calculatedTotalValue;
+    const consistentTotalPIValue = Math.max(
+      totalPIValueFromCreators,
+      totalPIValueFromItems,
+    );
+
     // Calculate additional metrics
+    const totalRevenue = getNumericValue(
+      validatedItemSales.summary.totalRevenue,
+    );
+    const totalItemsSold = getNumericValue(
+      validatedItemSales.summary.totalItemsSold,
+    );
+    const totalRequestedQuantity = getNumericValue(
+      validatedTopItemsPI.summary.totalRequestedQuantity,
+    );
+
     const conversionRate =
-      itemSales.summary.totalItemsSold > 0 &&
-      topItemsPI.summary.totalRequestedQuantity > 0
-        ? Number(
-            (
-              (itemSales.summary.totalItemsSold /
-                topItemsPI.summary.totalRequestedQuantity) *
-              100
-            ).toFixed(3)
-          )
+      totalItemsSold > 0 && totalRequestedQuantity > 0
+        ? (totalItemsSold / totalRequestedQuantity) * 100
         : 0;
 
     const revenueConversionRate =
-      itemSales.summary.totalRevenue > 0 &&
-      topItemsPI.summary.totalRequestedValue > 0
-        ? Number(
-            (
-              (itemSales.summary.totalRevenue /
-                topItemsPI.summary.totalRequestedValue) *
-              100
-            ).toFixed(3)
-          )
+      totalRevenue > 0 && consistentTotalPIValue > 0
+        ? (totalRevenue / consistentTotalPIValue) * 100
         : 0;
-
-    // FIX: Ensure consistency between total PI value from items and creators
-    // Calculate total PI value from creators to ensure consistency
-    const totalPIValueFromCreators = formatNumber(topPICreators.summary.totalProformaValue);
-    const totalPIValueFromItems = formatNumber(topItemsPI.summary.totalRequestedValue);
-
-    // Use the maximum or average to ensure consistency (or log warning)
-    const consistentTotalPIValue = formatNumber(
-      Math.max(totalPIValueFromCreators, totalPIValueFromItems)
-    );
-
-    // Log warning if there's a discrepancy
-    if (Math.abs(totalPIValueFromCreators - totalPIValueFromItems) > 0.001) {
-      console.warn(
-        `PI Value mismatch: Creators report ${totalPIValueFromCreators}, Items report ${totalPIValueFromItems}`,
-      );
-    }
 
     // Find matching items between PI and Sales for comparison
     const topItemsComparison = [];
-    const topPIItems = topItemsPI.topByQuantity.slice(0, 5);
-    const topSoldItems = itemSales.topByQuantity.slice(0, 5);
+    const topPIItems = (validatedTopItemsPI.topByQuantity || []).slice(0, 5);
 
     topPIItems.forEach((piItem) => {
-      const soldItem = itemSales.allItems.find(
-        (sale) => sale.itemId === piItem.itemId,
+      const soldItem = (validatedItemSales.allItems || []).find(
+        (sale) => sale && sale.itemId === piItem.itemId,
       );
+      const requestedQty = getNumericValue(piItem.totalRequestedQuantity);
+      const soldQty = soldItem ? getNumericValue(soldItem.totalQuantity) : 0;
+      const itemValue = getNumericValue(piItem.totalRevenue);
+
       topItemsComparison.push({
-        itemName: piItem.itemName,
-        requestedQuantity: formatNumber(piItem.totalRequestedQuantity),
-        soldQuantity: formatNumber(soldItem?.totalQuantity || 0),
-        conversionRate: formatNumber(
-          soldItem?.totalQuantity && piItem.totalRequestedQuantity
-            ? (soldItem.totalQuantity / piItem.totalRequestedQuantity) * 100
-            : 0
-        ),
-        gap: formatNumber(
-          piItem.totalRequestedQuantity - (soldItem?.totalQuantity || 0)
-        ),
+        itemName: piItem.itemName || 'Unknown Item',
+        requestedQuantity: requestedQty,
+        soldQuantity: soldQty,
+        conversionRate:
+          soldQty && requestedQty ? (soldQty / requestedQty) * 100 : 0,
+        gap: requestedQty - soldQty,
+        requestedValue: itemValue,
       });
     });
 
-    // Format all numeric values in the response
+    // Format executive summary
     const formatExecutiveSummary = (summary) => ({
-      totalRevenueFromSales: formatNumber(summary.totalRevenueFromSales),
-      totalProformaValue: formatNumber(summary.totalProformaValue),
-      revenueConversionRate: `${formatNumber(parseFloat(summary.revenueConversionRate))}%`,
-      totalItemsSold: formatNumber(summary.totalItemsSold),
-      totalItemsRequested: formatNumber(summary.totalItemsRequested),
-      quantityConversionRate: `${formatNumber(parseFloat(summary.quantityConversionRate))}%`,
+      totalRevenueFromSales: formatNumber(summary.totalRevenueFromSales || 0),
+      totalProformaValue: formatNumber(summary.totalProformaValue || 0),
+      revenueConversionRate: `${formatNumber(
+        parseFloat(summary.revenueConversionRate || 0),
+      )}%`,
+      totalItemsSold: formatNumber(summary.totalItemsSold || 0),
+      totalItemsRequested: formatNumber(summary.totalItemsRequested || 0),
+      quantityConversionRate: `${formatNumber(
+        parseFloat(summary.quantityConversionRate || 0),
+      )}%`,
       topSellingItemByQuantity: summary.topSellingItemByQuantity
         ? {
             ...summary.topSellingItemByQuantity,
-            quantity: formatNumber(summary.topSellingItemByQuantity.quantity),
-            revenue: formatNumber(summary.topSellingItemByQuantity.revenue),
+            quantity: formatNumber(
+              summary.topSellingItemByQuantity.quantity || 0,
+            ),
+            revenue: formatNumber(
+              summary.topSellingItemByQuantity.revenue || 0,
+            ),
           }
         : null,
       topRequestedItemByQuantity: summary.topRequestedItemByQuantity
         ? {
             ...summary.topRequestedItemByQuantity,
-            quantity: formatNumber(summary.topRequestedItemByQuantity.quantity),
-            value: formatNumber(summary.topRequestedItemByQuantity.value),
+            quantity: formatNumber(
+              summary.topRequestedItemByQuantity.quantity || 0,
+            ),
+            value: formatNumber(summary.topRequestedItemByQuantity.value || 0),
           }
         : null,
       topSellingItemByRevenue: summary.topSellingItemByRevenue
         ? {
             ...summary.topSellingItemByRevenue,
-            revenue: formatNumber(summary.topSellingItemByRevenue.revenue),
-            quantity: formatNumber(summary.topSellingItemByRevenue.quantity),
+            revenue: formatNumber(summary.topSellingItemByRevenue.revenue || 0),
+            quantity: formatNumber(
+              summary.topSellingItemByRevenue.quantity || 0,
+            ),
           }
         : null,
       topRequestedItemByValue: summary.topRequestedItemByValue
         ? {
             ...summary.topRequestedItemByValue,
-            value: formatNumber(summary.topRequestedItemByValue.value),
-            quantity: formatNumber(summary.topRequestedItemByValue.quantity),
+            value: formatNumber(summary.topRequestedItemByValue.value || 0),
+            quantity: formatNumber(
+              summary.topRequestedItemByValue.quantity || 0,
+            ),
           }
         : null,
       topSalesPerson: summary.topSalesPerson
         ? {
             ...summary.topSalesPerson,
-            revenue: formatNumber(summary.topSalesPerson.revenue),
-            salesCount: formatNumber(summary.topSalesPerson.salesCount),
-            percentageOfTotal: formatNumber(summary.topSalesPerson.percentageOfTotal),
+            revenue: formatNumber(summary.topSalesPerson.revenue || 0),
+            salesCount: formatNumber(summary.topSalesPerson.salesCount || 0),
+            percentageOfTotal: formatNumber(
+              summary.topSalesPerson.percentageOfTotal || 0,
+            ),
           }
         : null,
       topPIPreparer: summary.topPIPreparer
         ? {
             ...summary.topPIPreparer,
-            value: formatNumber(summary.topPIPreparer.value),
-            piCount: formatNumber(summary.topPIPreparer.piCount),
-            percentageOfTotal: formatNumber(summary.topPIPreparer.percentageOfTotal),
+            value: formatNumber(summary.topPIPreparer.value || 0),
+            piCount: formatNumber(summary.topPIPreparer.piCount || 0),
+            percentageOfTotal: formatNumber(
+              summary.topPIPreparer.percentageOfTotal || 0,
+            ),
           }
         : null,
-      averageOrderValue: formatNumber(summary.averageOrderValue),
-      averageProformaValue: formatNumber(summary.averageProformaValue),
-      uniqueCustomers: formatNumber(summary.uniqueCustomers),
+      averageOrderValue: formatNumber(summary.averageOrderValue || 0),
+      averageProformaValue: formatNumber(summary.averageProformaValue || 0),
+      uniqueCustomers: formatNumber(summary.uniqueCustomers || 0),
     });
 
-    return {
+    // Get top PI preparer with properly calculated values
+    let topPIPreparerData = null;
+    if (creatorData) {
+      const creatorTotal = creatorData.proformas
+        ? calculateTotalFromProformas(creatorData.proformas)
+        : 0;
+      const piCount = creatorData.totalPI || creatorData.totalProformas || 0;
+      topPIPreparerData = {
+        name: creatorData.creatorName || 'Unknown',
+        value: creatorTotal,
+        piCount,
+        percentageOfTotal: 100,
+      };
+    }
+
+    // Get top requested items with proper values
+    const topRequestedItem = (validatedTopItemsPI.topByQuantity || [])[0];
+    const topRequestedItemData = topRequestedItem
+      ? {
+          name: topRequestedItem.itemName || 'Unknown',
+          quantity: getNumericValue(topRequestedItem.totalRequestedQuantity),
+          value: getNumericValue(topRequestedItem.totalRevenue),
+        }
+      : null;
+
+    const topRequestedItemByValue = (validatedTopItemsPI.topByRevenue || [])[0];
+    const topRequestedItemByValueData = topRequestedItemByValue
+      ? {
+          name: topRequestedItemByValue.itemName || 'Unknown',
+          value: getNumericValue(topRequestedItemByValue.totalRevenue),
+          quantity: getNumericValue(
+            topRequestedItemByValue.totalRequestedQuantity,
+          ),
+        }
+      : null;
+
+    // Build the response
+    const response = {
       reportDate: new Date(),
       period: {
         startDate: startDate || 'All time',
@@ -1047,232 +1238,313 @@ const getCompleteStaticReport = async (startDate, endDate) => {
 
       // Individual Reports
       itemSalesAnalysis: {
-        ...itemSales,
+        ...validatedItemSales,
         summary: {
-          ...itemSales.summary,
-          totalRevenue: formatNumber(itemSales.summary.totalRevenue),
-          totalItemsSold: formatNumber(itemSales.summary.totalItemsSold),
-          totalOrders: formatNumber(itemSales.summary.totalOrders),
-          uniqueItems: formatNumber(itemSales.summary.uniqueItems),
-          averagePrice: formatNumber(itemSales.summary.averagePrice),
+          ...validatedItemSales.summary,
+          totalRevenue: formatNumber(
+            validatedItemSales.summary.totalRevenue || 0,
+          ),
+          totalItemsSold: formatNumber(
+            validatedItemSales.summary.totalItemsSold || 0,
+          ),
+          totalOrders: formatNumber(
+            validatedItemSales.summary.totalOrders || 0,
+          ),
+          uniqueItems: formatNumber(
+            validatedItemSales.summary.uniqueItems || 0,
+          ),
+          averagePrice: formatNumber(
+            validatedItemSales.summary.averagePrice || 0,
+          ),
         },
-        topByQuantity: itemSales.topByQuantity.map((item) => ({
+        topByQuantity: (validatedItemSales.topByQuantity || []).map((item) => ({
           ...item,
-          totalQuantity: formatNumber(item.totalQuantity),
-          totalRevenue: formatNumber(item.totalRevenue),
-          uniqueCustomers: formatNumber(item.uniqueCustomers),
+          totalQuantity: formatNumber(item.totalQuantity || 0),
+          totalRevenue: formatNumber(item.totalRevenue || 0),
+          uniqueCustomers: formatNumber(item.uniqueCustomers || 0),
         })),
-        topByRevenue: itemSales.topByRevenue.map((item) => ({
+        topByRevenue: (validatedItemSales.topByRevenue || []).map((item) => ({
           ...item,
-          totalQuantity: formatNumber(item.totalQuantity),
-          totalRevenue: formatNumber(item.totalRevenue),
-          uniqueCustomers: formatNumber(item.uniqueCustomers),
+          totalQuantity: formatNumber(item.totalQuantity || 0),
+          totalRevenue: formatNumber(item.totalRevenue || 0),
+          uniqueCustomers: formatNumber(item.uniqueCustomers || 0),
         })),
-        allItems: itemSales.allItems.map((item) => ({
+        allItems: (validatedItemSales.allItems || []).map((item) => ({
           ...item,
-          totalQuantity: formatNumber(item.totalQuantity),
-          totalRevenue: formatNumber(item.totalRevenue),
-          uniqueCustomers: formatNumber(item.uniqueCustomers),
+          totalQuantity: formatNumber(item.totalQuantity || 0),
+          totalRevenue: formatNumber(item.totalRevenue || 0),
+          uniqueCustomers: formatNumber(item.uniqueCustomers || 0),
         })),
-        categoryAnalysis: itemSales.categoryAnalysis.map((cat) => ({
-          ...cat,
-          totalQuantity: formatNumber(cat.totalQuantity),
-          totalRevenue: formatNumber(cat.totalRevenue),
-          uniqueItems: formatNumber(cat.uniqueItems),
-        })),
+        categoryAnalysis: (validatedItemSales.categoryAnalysis || []).map(
+          (cat) => ({
+            ...cat,
+            totalQuantity: formatNumber(cat.totalQuantity || 0),
+            totalRevenue: formatNumber(cat.totalRevenue || 0),
+            uniqueItems: formatNumber(cat.uniqueItems || 0),
+          }),
+        ),
       },
       salesByCreatorAnalysis: {
-        ...topSalesCreators,
+        ...validatedTopSalesCreators,
         summary: {
-          ...topSalesCreators.summary,
-          totalRevenue: formatNumber(topSalesCreators.summary.totalRevenue),
-          totalSales: formatNumber(topSalesCreators.summary.totalSales),
-          uniqueCreators: formatNumber(topSalesCreators.summary.uniqueCreators),
+          ...validatedTopSalesCreators.summary,
+          totalRevenue: formatNumber(
+            validatedTopSalesCreators.summary.totalRevenue || 0,
+          ),
+          totalSales: formatNumber(
+            validatedTopSalesCreators.summary.totalSales || 0,
+          ),
+          uniqueCreators: formatNumber(
+            validatedTopSalesCreators.summary.uniqueCreators || 0,
+          ),
         },
-        topByQuantity: topSalesCreators.topByQuantity.map((creator) => ({
-          ...creator,
-          totalQuantity: formatNumber(creator.totalQuantity),
-          totalRevenue: formatNumber(creator.totalRevenue),
-          totalSales: formatNumber(creator.totalSales),
-          percentageOfTotal: formatNumber(creator.percentageOfTotal),
-        })),
-        topByRevenue: topSalesCreators.topByRevenue.map((creator) => ({
-          ...creator,
-          totalQuantity: formatNumber(creator.totalQuantity),
-          totalRevenue: formatNumber(creator.totalRevenue),
-          totalSales: formatNumber(creator.totalSales),
-          percentageOfTotal: formatNumber(creator.percentageOfTotal),
-        })),
-        allCreators: topSalesCreators.allCreators.map((creator) => ({
-          ...creator,
-          totalQuantity: formatNumber(creator.totalQuantity),
-          totalRevenue: formatNumber(creator.totalRevenue),
-          totalSales: formatNumber(creator.totalSales),
-          percentageOfTotal: formatNumber(creator.percentageOfTotal),
-        })),
+        topByQuantity: (validatedTopSalesCreators.topByQuantity || []).map(
+          (creator) => ({
+            ...creator,
+            totalQuantity: formatNumber(creator.totalQuantity || 0),
+            totalRevenue: formatNumber(creator.totalRevenue || 0),
+            totalSales: formatNumber(creator.totalSales || 0),
+            percentageOfTotal: formatNumber(creator.percentageOfTotal || 0),
+          }),
+        ),
+        topByRevenue: (validatedTopSalesCreators.topByRevenue || []).map(
+          (creator) => ({
+            ...creator,
+            totalQuantity: formatNumber(creator.totalQuantity || 0),
+            totalRevenue: formatNumber(creator.totalRevenue || 0),
+            totalSales: formatNumber(creator.totalSales || 0),
+            percentageOfTotal: formatNumber(creator.percentageOfTotal || 0),
+          }),
+        ),
+        allCreators: (validatedTopSalesCreators.allCreators || []).map(
+          (creator) => ({
+            ...creator,
+            totalQuantity: formatNumber(creator.totalQuantity || 0),
+            totalRevenue: formatNumber(creator.totalRevenue || 0),
+            totalSales: formatNumber(creator.totalSales || 0),
+            percentageOfTotal: formatNumber(creator.percentageOfTotal || 0),
+          }),
+        ),
       },
       proformaByCreatorAnalysis: {
-        ...topPICreators,
+        ...validatedTopPICreators,
         summary: {
-          ...topPICreators.summary,
-          totalProformaValue: formatNumber(topPICreators.summary.totalProformaValue),
-          totalPI: formatNumber(topPICreators.summary.totalPI),
-          uniqueCreators: formatNumber(topPICreators.summary.uniqueCreators),
+          ...validatedTopPICreators.summary,
+          totalProformaValue: formatNumber(calculatedTotalValue || 0),
+          totalPI: formatNumber(
+            validatedTopPICreators.summary.totalProformas || 0,
+          ),
+          uniqueCreators: formatNumber(
+            validatedTopPICreators.summary.activePreparers || 0,
+          ),
         },
-        topByValue: topPICreators.topByValue.map((creator) => ({
-          ...creator,
-          totalValue: formatNumber(creator.totalValue),
-          totalPI: formatNumber(creator.totalPI),
-          percentageOfTotal: formatNumber(creator.percentageOfTotal),
-        })),
-        topByQuantity: topPICreators.topByQuantity.map((creator) => ({
-          ...creator,
-          totalQuantity: formatNumber(creator.totalQuantity),
-          totalValue: formatNumber(creator.totalValue),
-          totalPI: formatNumber(creator.totalPI),
-          percentageOfTotal: formatNumber(creator.percentageOfTotal),
-        })),
-        allCreators: topPICreators.allCreators.map((creator) => ({
-          ...creator,
-          totalQuantity: formatNumber(creator.totalQuantity),
-          totalValue: formatNumber(creator.totalValue),
-          totalPI: formatNumber(creator.totalPI),
-          percentageOfTotal: formatNumber(creator.percentageOfTotal),
-        })),
+        topByValue: (validatedTopPICreators.topByValue || []).map((creator) => {
+          const totalValue = creator.proformas
+            ? calculateTotalFromProformas(creator.proformas)
+            : 0;
+          return {
+            ...creator,
+            totalValue: formatNumber(totalValue),
+            totalPI: formatNumber(creator.totalPI || 0),
+            percentageOfTotal: formatNumber(creator.percentageOfTotal || 0),
+          };
+        }),
+        // FIX: This is the section used by "Sales & Proforma Performance by Person"
+        topByPICount: (validatedTopPICreators.topByPICount || []).map(
+          (creator) => {
+            const totalValue = creator.proformas
+              ? calculateTotalFromProformas(creator.proformas)
+              : 0;
+            return {
+              ...creator,
+              totalValue: formatNumber(totalValue),
+              totalPI: formatNumber(creator.totalPI || 0),
+              percentageOfTotal: formatNumber(creator.percentageOfTotal || 0),
+            };
+          },
+        ),
+        allPreparers: (validatedTopPICreators.allPreparers || []).map(
+          (creator) => {
+            const totalValue = creator.proformas
+              ? calculateTotalFromProformas(creator.proformas)
+              : 0;
+            return {
+              ...creator,
+              totalQuantity: formatNumber(creator.totalItemsRequested || 0),
+              totalValue: formatNumber(totalValue),
+              totalPI: formatNumber(creator.totalPI || 0),
+              percentageOfTotal: formatNumber(creator.percentageOfTotal || 0),
+            };
+          },
+        ),
+        // Add allCreators alias for compatibility with UI that expects this field
+        allCreators: (validatedTopPICreators.allPreparers || []).map(
+          (creator) => {
+            const totalValue = creator.proformas
+              ? calculateTotalFromProformas(creator.proformas)
+              : 0;
+            return {
+              ...creator,
+              totalQuantity: formatNumber(creator.totalItemsRequested || 0),
+              totalValue: formatNumber(totalValue),
+              totalPI: formatNumber(creator.totalPI || 0),
+              percentageOfTotal: formatNumber(creator.percentageOfTotal || 0),
+            };
+          },
+        ),
       },
       proformaItemsAnalysis: {
-        ...topItemsPI,
+        ...validatedTopItemsPI,
         summary: {
-          ...topItemsPI.summary,
-          totalRequestedQuantity: formatNumber(topItemsPI.summary.totalRequestedQuantity),
-          totalRequestedValue: formatNumber(topItemsPI.summary.totalRequestedValue),
-          totalOrders: formatNumber(topItemsPI.summary.totalOrders),
-          uniqueItems: formatNumber(topItemsPI.summary.uniqueItems),
-          averageValue: formatNumber(topItemsPI.summary.averageValue),
+          ...validatedTopItemsPI.summary,
+          totalRequestedQuantity: formatNumber(
+            validatedTopItemsPI.summary.totalRequestedQuantity || 0,
+          ),
+          totalRequestedValue: formatNumber(
+            calculatedItemsTotalValue > 0
+              ? calculatedItemsTotalValue
+              : calculatedTotalValue,
+          ),
+          totalOrders: formatNumber(
+            validatedTopItemsPI.summary.totalOrders || 0,
+          ),
+          uniqueItems: formatNumber(
+            validatedTopItemsPI.summary.uniqueItemsRequested ||
+              validatedTopItemsPI.summary.uniqueItems ||
+              0,
+          ),
+          averageValue: formatNumber(
+            validatedTopItemsPI.summary.totalRequestedQuantity > 0
+              ? (calculatedItemsTotalValue > 0
+                  ? calculatedItemsTotalValue
+                  : calculatedTotalValue) /
+                  validatedTopItemsPI.summary.totalRequestedQuantity
+              : 0,
+          ),
         },
-        topByQuantity: topItemsPI.topByQuantity.map((item) => ({
+        topByQuantity: (validatedTopItemsPI.topByQuantity || []).map(
+          (item) => ({
+            ...item,
+            totalRequestedQuantity: formatNumber(
+              item.totalRequestedQuantity || 0,
+            ),
+            totalValue: formatNumber(getNumericValue(item.totalRevenue)),
+          }),
+        ),
+        topByRevenue: (validatedTopItemsPI.topByRevenue || []).map((item) => ({
           ...item,
-          totalRequestedQuantity: formatNumber(item.totalRequestedQuantity),
-          totalValue: formatNumber(item.totalValue),
+          totalRequestedQuantity: formatNumber(
+            item.totalRequestedQuantity || 0,
+          ),
+          totalValue: formatNumber(getNumericValue(item.totalRevenue)),
         })),
-        topByRevenue: topItemsPI.topByRevenue.map((item) => ({
+        allItems: (validatedTopItemsPI.allItems || []).map((item) => ({
           ...item,
-          totalRequestedQuantity: formatNumber(item.totalRequestedQuantity),
-          totalValue: formatNumber(item.totalValue),
+          totalRequestedQuantity: formatNumber(
+            item.totalRequestedQuantity || 0,
+          ),
+          totalValue: formatNumber(getNumericValue(item.totalRevenue)),
         })),
-        allItems: topItemsPI.allItems.map((item) => ({
-          ...item,
-          totalRequestedQuantity: formatNumber(item.totalRequestedQuantity),
-          totalValue: formatNumber(item.totalValue),
-        })),
-        categoryAnalysis: topItemsPI.categoryAnalysis.map((cat) => ({
-          ...cat,
-          totalRequestedQuantity: formatNumber(cat.totalRequestedQuantity),
-          totalValue: formatNumber(cat.totalValue),
-          uniqueItems: formatNumber(cat.uniqueItems),
-        })),
+        categoryAnalysis: (validatedTopItemsPI.categoryAnalysis || []).map(
+          (cat) => ({
+            ...cat,
+            totalRequestedQuantity: formatNumber(
+              cat.totalRequestedQuantity || 0,
+            ),
+            totalValue: formatNumber(getNumericValue(cat.totalValue)),
+            uniqueItems: formatNumber(cat.uniqueItems || 0),
+          }),
+        ),
       },
 
-      // Executive Summary - FIXED to use consistent values
+      // Executive Summary
       executiveSummary: formatExecutiveSummary({
-        // Revenue Metrics - Use consistent total
-        totalRevenueFromSales: itemSales.summary.totalRevenue,
+        totalRevenueFromSales: totalRevenue,
         totalProformaValue: consistentTotalPIValue,
-        revenueConversionRate: revenueConversionRate,
+        revenueConversionRate,
 
-        // Quantity Metrics
-        totalItemsSold: itemSales.summary.totalItemsSold,
-        totalItemsRequested: topItemsPI.summary.totalRequestedQuantity,
+        totalItemsSold,
+        totalItemsRequested: totalRequestedQuantity,
         quantityConversionRate: conversionRate,
 
-        // Top Performers - Quantity
-        topSellingItemByQuantity: itemSales.topByQuantity[0]
+        topSellingItemByQuantity: (validatedItemSales.topByQuantity || [])[0]
           ? {
-              name: itemSales.topByQuantity[0].itemName,
-              quantity: itemSales.topByQuantity[0].totalQuantity,
-              revenue: itemSales.topByQuantity[0].totalRevenue,
+              name: validatedItemSales.topByQuantity[0].itemName || 'Unknown',
+              quantity: validatedItemSales.topByQuantity[0].totalQuantity || 0,
+              revenue: validatedItemSales.topByQuantity[0].totalRevenue || 0,
             }
           : null,
 
-        topRequestedItemByQuantity: topItemsPI.topByQuantity[0]
+        topRequestedItemByQuantity: topRequestedItemData,
+
+        topSellingItemByRevenue: (validatedItemSales.topByRevenue || [])[0]
           ? {
-              name: topItemsPI.topByQuantity[0].itemName,
-              quantity: topItemsPI.topByQuantity[0].totalRequestedQuantity,
-              value: topItemsPI.topByQuantity[0].totalValue,
+              name: validatedItemSales.topByRevenue[0].itemName || 'Unknown',
+              revenue: validatedItemSales.topByRevenue[0].totalRevenue || 0,
+              quantity: validatedItemSales.topByRevenue[0].totalQuantity || 0,
             }
           : null,
 
-        // Top Performers - Revenue
-        topSellingItemByRevenue: itemSales.topByRevenue[0]
-          ? {
-              name: itemSales.topByRevenue[0].itemName,
-              revenue: itemSales.topByRevenue[0].totalRevenue,
-              quantity: itemSales.topByRevenue[0].totalQuantity,
-            }
-          : null,
+        topRequestedItemByValue: topRequestedItemByValueData,
 
-        topRequestedItemByValue: topItemsPI.topByRevenue[0]
+        topSalesPerson: (validatedTopSalesCreators.topByRevenue || [])[0]
           ? {
-              name: topItemsPI.topByRevenue[0].itemName,
-              value: topItemsPI.topByRevenue[0].totalValue,
-              quantity: topItemsPI.topByRevenue[0].totalRequestedQuantity,
-            }
-          : null,
-
-        // Creator Performance
-        topSalesPerson: topSalesCreators.topByRevenue[0]
-          ? {
-              name: topSalesCreators.topByRevenue[0].creatorName,
-              revenue: topSalesCreators.topByRevenue[0].totalRevenue,
-              salesCount: topSalesCreators.topByRevenue[0].totalSales,
+              name:
+                validatedTopSalesCreators.topByRevenue[0].creatorName ||
+                'Unknown',
+              revenue:
+                validatedTopSalesCreators.topByRevenue[0].totalRevenue || 0,
+              salesCount:
+                validatedTopSalesCreators.topByRevenue[0].totalSales || 0,
               percentageOfTotal:
-                topSalesCreators.topByRevenue[0].percentageOfTotal,
+                validatedTopSalesCreators.topByRevenue[0].percentageOfTotal ||
+                0,
             }
           : null,
 
-        topPIPreparer: topPICreators.topByValue[0]
-          ? {
-              name: topPICreators.topByValue[0].creatorName,
-              value: topPICreators.topByValue[0].totalValue,
-              piCount: topPICreators.topByValue[0].totalPI,
-              percentageOfTotal: topPICreators.topByValue[0].percentageOfTotal,
-            }
-          : null,
+        topPIPreparer: topPIPreparerData,
 
-        // Performance Indicators
         averageOrderValue:
-          itemSales.summary.totalOrders > 0
-            ? itemSales.summary.totalRevenue / itemSales.summary.totalOrders
+          (validatedItemSales.summary.totalOrders || 0) > 0
+            ? totalRevenue / validatedItemSales.summary.totalOrders
             : 0,
         averageProformaValue:
-          topItemsPI.summary.totalOrders > 0
-            ? topItemsPI.summary.totalRequestedValue /
-              topItemsPI.summary.totalOrders
+          (validatedTopItemsPI.summary.totalOrders || 0) > 0
+            ? consistentTotalPIValue / validatedTopItemsPI.summary.totalOrders
             : 0,
-        uniqueCustomers: itemSales.allItems.reduce(
-          (sum, item) => sum + item.uniqueCustomers,
+        uniqueCustomers: (validatedItemSales.allItems || []).reduce(
+          (sum, item) => sum + (item.uniqueCustomers || 0),
           0,
         ),
       }),
 
       // Comparison Analysis
       comparisonAnalysis: {
-        top5ItemsComparison: topItemsComparison,
+        top5ItemsComparison: topItemsComparison.map((item) => ({
+          ...item,
+          requestedQuantity: formatNumber(item.requestedQuantity),
+          soldQuantity: formatNumber(item.soldQuantity),
+          conversionRate: formatNumber(item.conversionRate),
+          gap: formatNumber(item.gap),
+          requestedValue: formatNumber(item.requestedValue),
+        })),
         summary: {
           totalGapQuantity: formatNumber(
-            topItemsComparison.reduce((sum, item) => sum + item.gap, 0)
+            topItemsComparison.reduce((sum, item) => sum + (item.gap || 0), 0),
           ),
           averageConversionRate: formatNumber(
             topItemsComparison.reduce(
-              (sum, item) => sum + parseFloat(item.conversionRate),
+              (sum, item) => sum + (item.conversionRate || 0),
               0,
-            ) / topItemsComparison.length
+            ) / (topItemsComparison.length || 1),
           ),
         },
       },
 
       generatedAt: new Date(),
     };
+console.log(response);
+    return response;
   } catch (error) {
     console.error('Error in getCompleteStaticReport:', error);
     throw error;
@@ -1829,24 +2101,138 @@ const getDeliveryDateComparisonReportFunctional = async () => {
         return acc;
       }
 
-      const projectDeliveryDate =
-        project.manualDelivery || project.calculatedDelivery;
       const stageDeliveryDate = deliveryStage.endDate;
+      const { requestedDelivery } = project;
+      const { newRequestedDelivery } = project;
 
-      // Skip projects with missing dates
-      if (!projectDeliveryDate || !stageDeliveryDate) {
+      // Check if we have at least one requested date to compare
+      const hasRequestedDate = requestedDelivery || newRequestedDelivery;
+
+      // Skip if no stage date or no requested date
+      if (!stageDeliveryDate || !hasRequestedDate) {
         return acc;
       }
 
-      const projectDate = new Date(projectDeliveryDate);
       const stageDate = new Date(stageDeliveryDate);
+      let mismatched = false;
+      const dateComparisons = {};
 
-      if (projectDate.toDateString() !== stageDate.toDateString()) {
-        const diffDays = Math.ceil(
-          Math.abs(projectDate.getTime() - stageDate.getTime()) /
-            (1000 * 60 * 60 * 24),
-        );
+      // Helper function to calculate date status
+      const getDateStatus = (date) => {
+        if (!date) return null;
 
+        try {
+          const dateObj = new Date(date);
+          if (isNaN(dateObj.getTime())) return null;
+
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const compareDate = new Date(date);
+          compareDate.setHours(0, 0, 0, 0);
+
+          // Calculate days difference
+          const diffDays = Math.ceil(
+            (compareDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+          );
+
+          // Compare stage date with requested date
+          if (stageDate > dateObj) {
+            return {
+              status: 'delayed',
+              color: 'bg-red-100 text-red-800 border-red-300',
+              label: '❌ Delayed',
+              badgeVariant: 'destructive',
+            };
+          }
+
+          // Check if requested date is approaching or overdue
+          if (diffDays < 0) {
+            return {
+              status: 'delayed',
+              color: 'bg-red-100 text-red-800 border-red-300',
+              label: '⚠️ Overdue!',
+              badgeVariant: 'destructive',
+            };
+          }
+          if (diffDays <= 7) {
+            return {
+              status: 'warning',
+              color: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+              label: '⚠️ Approaching Deadline',
+              badgeVariant: 'secondary',
+            };
+          }
+          return {
+            status: 'in-time',
+            color: 'bg-green-100 text-green-800 border-green-300',
+            label: '✅ In Time',
+            badgeVariant: 'default',
+          };
+        } catch (error) {
+          return null;
+        }
+      };
+
+      // Compare stage with requestedDelivery
+      if (requestedDelivery) {
+        const requestedDate = new Date(requestedDelivery);
+        if (stageDate.toDateString() !== requestedDate.toDateString()) {
+          mismatched = true;
+          const diffDays = Math.ceil(
+            Math.abs(stageDate.getTime() - requestedDate.getTime()) /
+              (1000 * 60 * 60 * 24),
+          );
+          dateComparisons.requestedDelivery = {
+            differenceInDays: diffDays,
+            whichIsEarlier:
+              requestedDate < stageDate
+                ? 'Requested Delivery Date'
+                : 'Stage Delivery Date',
+            suggestion:
+              requestedDate < stageDate
+                ? 'Consider updating stage delivery date or recalculating schedule'
+                : 'Consider updating requested delivery date or checking stage delays',
+          };
+        } else {
+          dateComparisons.requestedDelivery = {
+            differenceInDays: 0,
+            whichIsEarlier: 'Same Date',
+            suggestion: 'Dates are aligned',
+          };
+        }
+      }
+
+      // Compare stage with newRequestedDelivery
+      if (newRequestedDelivery) {
+        const newRequestedDate = new Date(newRequestedDelivery);
+        if (stageDate.toDateString() !== newRequestedDate.toDateString()) {
+          mismatched = true;
+          const diffDays = Math.ceil(
+            Math.abs(stageDate.getTime() - newRequestedDate.getTime()) /
+              (1000 * 60 * 60 * 24),
+          );
+          dateComparisons.newRequestedDelivery = {
+            differenceInDays: diffDays,
+            whichIsEarlier:
+              newRequestedDate < stageDate
+                ? 'New Requested Delivery Date'
+                : 'Stage Delivery Date',
+            suggestion:
+              newRequestedDate < stageDate
+                ? 'Consider updating stage delivery date or recalculating schedule'
+                : 'Consider updating new requested delivery date or checking stage delays',
+          };
+        } else {
+          dateComparisons.newRequestedDelivery = {
+            differenceInDays: 0,
+            whichIsEarlier: 'Same Date',
+            suggestion: 'Dates are aligned',
+          };
+        }
+      }
+
+      // Only include in report if there's a mismatch
+      if (mismatched) {
         return {
           ...acc,
           summary: {
@@ -1865,19 +2251,17 @@ const getDeliveryDateComparisonReportFunctional = async () => {
                 calculatedDelivery: project.calculatedDelivery,
                 manualDelivery: project.manualDelivery,
                 requestedDelivery: project.requestedDelivery,
-                projectFinalDelivery: projectDeliveryDate,
+                newRequestedDelivery: project.newRequestedDelivery,
                 stageDeliveryDate,
               },
-              comparison: {
-                differenceInDays: diffDays,
-                whichIsEarlier:
-                  projectDate < stageDate
-                    ? 'Project Delivery Date'
-                    : 'Stage Delivery Date',
-                suggestion:
-                  projectDate < stageDate
-                    ? 'Consider updating stage delivery date or recalculating schedule'
-                    : 'Consider updating project delivery date or checking stage delays',
+              dateComparisons,
+              statuses: {
+                requestedDeliveryStatus: requestedDelivery
+                  ? getDateStatus(requestedDelivery)
+                  : null,
+                newRequestedDeliveryStatus: newRequestedDelivery
+                  ? getDateStatus(newRequestedDelivery)
+                  : null,
               },
               scheduleMode: project.scheduleMode,
               difficulty: project.difficulty,
@@ -1949,6 +2333,7 @@ const getCompletedProjectsReport = async () => {
       const projectDeliveryDate =
         project.manualDelivery || project.calculatedDelivery;
       const stageDeliveryDate = deliveryStage.endDate;
+      const { projectEndDate } = project;
 
       // Skip projects with missing dates
       if (!projectDeliveryDate || !stageDeliveryDate) {
@@ -1957,13 +2342,77 @@ const getCompletedProjectsReport = async () => {
 
       const projectDate = new Date(projectDeliveryDate);
       const stageDate = new Date(stageDeliveryDate);
+      let mismatched = false;
+      const dateComparisons = {};
 
+      // Compare project delivery date with stage delivery date
       if (projectDate.toDateString() !== stageDate.toDateString()) {
+        mismatched = true;
         const diffDays = Math.ceil(
           Math.abs(projectDate.getTime() - stageDate.getTime()) /
             (1000 * 60 * 60 * 24),
         );
+        dateComparisons.projectVsStage = {
+          differenceInDays: diffDays,
+          whichIsEarlier:
+            projectDate < stageDate
+              ? 'Project Delivery Date'
+              : 'Stage Delivery Date',
+          suggestion:
+            projectDate < stageDate
+              ? 'Consider updating stage delivery date or recalculating schedule'
+              : 'Consider updating project delivery date or checking stage delays',
+        };
+      }
 
+      // Compare requested delivery with stage delivery (if requested exists)
+      if (project.requestedDelivery) {
+        const requestedDate = new Date(project.requestedDelivery);
+        if (requestedDate.toDateString() !== stageDate.toDateString()) {
+          mismatched = true;
+          const diffDays = Math.ceil(
+            Math.abs(requestedDate.getTime() - stageDate.getTime()) /
+              (1000 * 60 * 60 * 24),
+          );
+          dateComparisons.requestedVsStage = {
+            differenceInDays: diffDays,
+            whichIsEarlier:
+              requestedDate < stageDate
+                ? 'Requested Delivery Date'
+                : 'Stage Delivery Date',
+            suggestion:
+              requestedDate < stageDate
+                ? 'Consider updating stage delivery date or recalculating schedule'
+                : 'Consider updating requested delivery date or checking stage delays',
+          };
+        }
+      }
+
+      // Compare new requested delivery with stage delivery (if new requested exists)
+      if (project.newRequestedDelivery) {
+        const newRequestedDate = new Date(project.newRequestedDelivery);
+        if (newRequestedDate.toDateString() !== stageDate.toDateString()) {
+          mismatched = true;
+          const diffDays = Math.ceil(
+            Math.abs(newRequestedDate.getTime() - stageDate.getTime()) /
+              (1000 * 60 * 60 * 24),
+          );
+          dateComparisons.newRequestedVsStage = {
+            differenceInDays: diffDays,
+            whichIsEarlier:
+              newRequestedDate < stageDate
+                ? 'New Requested Delivery Date'
+                : 'Stage Delivery Date',
+            suggestion:
+              newRequestedDate < stageDate
+                ? 'Consider updating stage delivery date or recalculating schedule'
+                : 'Consider updating new requested delivery date or checking stage delays',
+          };
+        }
+      }
+
+      // Only include in report if there's a mismatch
+      if (mismatched) {
         return {
           ...acc,
           summary: {
@@ -1982,20 +2431,12 @@ const getCompletedProjectsReport = async () => {
                 calculatedDelivery: project.calculatedDelivery,
                 manualDelivery: project.manualDelivery,
                 requestedDelivery: project.requestedDelivery,
+                newRequestedDelivery: project.newRequestedDelivery,
                 projectFinalDelivery: projectDeliveryDate,
                 stageDeliveryDate,
+                projectEndDate,
               },
-              comparison: {
-                differenceInDays: diffDays,
-                whichIsEarlier:
-                  projectDate < stageDate
-                    ? 'Project Delivery Date'
-                    : 'Stage Delivery Date',
-                suggestion:
-                  projectDate < stageDate
-                    ? 'Consider updating stage delivery date or recalculating schedule'
-                    : 'Consider updating project delivery date or checking stage delays',
-              },
+              dateComparisons,
               scheduleMode: project.scheduleMode,
               difficulty: project.difficulty,
             },

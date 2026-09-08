@@ -133,6 +133,23 @@ const getMaterialStock = catchAsync(async (req, res) => {
     data: stockInfo,
   });
 });
+const getMaterialStockQuantitywithproject = catchAsync(async (req, res) => {
+  const { materialId } = req.params;
+
+  const stockInfo =
+    await stockCorrectionService.getMaterialStockQuantitywithproject(
+      materialId,
+    );
+
+  if (!stockInfo) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Material not found');
+  }
+
+  res.status(httpStatus.OK).send({
+    success: true,
+    data: stockInfo,
+  });
+});
 const getMaterialStockQuantityreserve = catchAsync(async (req, res) => {
   const { materialId } = req.params;
 
@@ -150,6 +167,7 @@ const getMaterialStockQuantityreserve = catchAsync(async (req, res) => {
 });
 
 module.exports = {
+  getMaterialStockQuantitywithproject,
   getMaterialStockQuantityreserve,
   getMaterialStock,
   createStockCorrection,

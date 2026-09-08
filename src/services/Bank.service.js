@@ -152,11 +152,70 @@ const getBankById = async (id) => {
 
   return bank;
 };
+// Update Project with new requested delivery date
+const addNewRequestedDeliveryDate = async (
+  projectId,
+  newDeliveryDate,
+  userId = null,
+) => {
+  
+  // Validate the date input
+  if (!newDeliveryDate) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'New requested delivery date is required',
+    );
+  }
 
+  // Parse and validate the date
+  const parsedDate = new Date(newDeliveryDate);
+  if (isNaN(parsedDate.getTime())) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format');
+  }
+
+  // Check if project exists
+  const existingProject = await prisma.project.findUnique({
+    where: { id: projectId },
+  });
+
+  if (!existingProject) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Project not found');
+  }
+
+  // Update project with new requested delivery date
+  const updatedProject = await prisma.project.update({
+    where: { id: projectId },
+    data: {
+      newRequestedDelivery: parsedDate,
+      updatedAt: new Date(),
+    },
+    include: {
+      customer: true,
+      stages: true,
+    },
+  });
+
+  // Log the change with correct ProjectLog schema
+  await prisma.projectLog.create({
+    data: {
+      projectId,
+      note: `New requested delivery date set to ${parsedDate.toISOString()}${
+        existingProject.newRequestedDelivery
+          ? ` (Previous: ${existingProject.newRequestedDelivery.toISOString()})`
+          : ''
+      }`,
+      createdById: userId, // Optional: Set if you have the user ID
+      createdAt: new Date(),
+    },
+  });
+
+  return updatedProject;
+};
 module.exports = {
   createBank,
   updateBank,
   deleteBank,
   getAllBanks,
   getBankById,
+  addNewRequestedDeliveryDate,
 };

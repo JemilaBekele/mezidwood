@@ -1,6 +1,7 @@
 const httpStatus = require('http-status');
 const catchAsync = require('../utils/catchAsync');
 const { bankService } = require('../services');
+const ApiError = require('../utils/ApiError');
 
 // Create Bank
 const createBank = async (req, res) => {
@@ -95,7 +96,28 @@ const deleteBank = catchAsync(async (req, res) => {
     message: 'Bank deleted successfully',
   });
 });
+// Add New Requested Delivery Date
+const addNewRequestedDeliveryDate = catchAsync(async (req, res) => {
+  const { newDeliveryDate } = req.body;
+  const userId = req.user?.id; // Assuming you have auth middleware that sets req.user
+console.log('Received new delivery date:', req.body);
+  // Validate required fields
+  if (!newDeliveryDate) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'New delivery date is required');
+  }
 
+  const updatedProject = await bankService.addNewRequestedDeliveryDate(
+    req.params.id,
+    newDeliveryDate,
+    userId,
+  );
+
+  res.status(httpStatus.OK).send({
+    success: true,
+    message: 'New requested delivery date added successfully',
+    data: updatedProject,
+  });
+});
 module.exports = {
   createBank,
   getBank,
@@ -103,4 +125,5 @@ module.exports = {
   searchBanks,
   updateBank,
   deleteBank,
+  addNewRequestedDeliveryDate,
 };

@@ -45,8 +45,6 @@ const getStockCorrectionById = async (id) => {
     throw error;
   }
 };
-
-// Get material stock quantity by material ID
 const getMaterialStockQuantity = async (materialId) => {
   try {
     if (!materialId || typeof materialId !== 'string') {
@@ -91,6 +89,111 @@ const getMaterialStockQuantity = async (materialId) => {
     throw error;
   }
 };
+// Get material stock quantity by material ID
+const getMaterialStockQuantitywithproject = async (materialId) => {
+  try {
+    if (!materialId || typeof materialId !== 'string') {
+      throw new Error('Invalid material ID');
+    }
+
+    const material = await prisma.material.findUnique({
+      where: { id: materialId },
+      select: {
+        name: true,
+      },
+    });
+
+    if (!material) {
+      return null;
+    }
+
+    // Get total available stock
+    const totalStock = await prisma.inventoryStock.aggregate({
+      where: {
+        materialId,
+        status: 'Available',
+      },
+      _sum: {
+        quantity: true,
+      },
+    });
+
+    // Get reserved quantities from proforma items where design is FINISHED
+    const reservedItems = await prisma.proformaItemMaterial.findMany({
+      where: {
+        materialId,
+        status: {
+          in: ['PENDING', 'PARTIALLY'],
+        },
+        item: {
+          invoice: {
+            project: {
+              designStatus: 'FINISHED',
+            },
+          },
+        },
+      },
+      select: {
+        quantity: true,
+        additionalQuantity: true,
+        status: true,
+        item: {
+          select: {
+            invoice: {
+              select: {
+                project: {
+                  select: {
+                    id: true,
+                    designStatus: true,
+                    status: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Calculate total reserved quantity
+    let reservedQuantity = 0;
+    const projectDetails = [];
+
+    reservedItems.forEach((item) => {
+      const itemTotal = (item.quantity || 0) + (item.additionalQuantity || 0);
+      reservedQuantity += itemTotal;
+
+      const project = item.item?.proformaInvoice?.project;
+      if (project) {
+        projectDetails.push({
+          projectId: project.id,
+          designStatus: project.designStatus,
+          projectStatus: project.status,
+          quantity: itemTotal,
+        });
+      }
+    });
+
+    const totalAvailable = (totalStock._sum.quantity || 0) - reservedQuantity;
+
+    return {
+      materialId,
+      materialName: material.name,
+      totalQuantity: Math.max(0, totalAvailable),
+    };
+  } catch (error) {
+    if (error.code) {
+      console.error('Prisma error code:', error.code);
+    }
+    if (
+      error.message.includes('connect') ||
+      error.message.includes('connection')
+    ) {
+      console.error('Database connection error');
+    }
+    throw error;
+  }
+};
 const getMaterialStockQuantityreserve = async (materialId) => {
   try {
     if (!materialId || typeof materialId !== 'string') {
@@ -120,64 +223,52 @@ const getMaterialStockQuantityreserve = async (materialId) => {
     });
 
     // Reserved stock from other projects
-    const reservedMaterials =
-      await prisma.proformaItemMaterial.findMany({
-        where: {
-          materialId,
-          status: {
-            in: ['PENDING', 'PARTIALLY'],
-          },
+    const reservedMaterials = await prisma.proformaItemMaterial.findMany({
+      where: {
+        materialId,
+        status: {
+          in: ['PENDING', 'PARTIALLY'],
         },
-        select: {
-          quantity: true,
-          additionalQuantity: true,
-          givenquantity: true,
-        },
-      });
+      },
+      select: {
+        quantity: true,
+        additionalQuantity: true,
+        givenquantity: true,
+      },
+    });
 
     // Calculate reserved remaining quantity
-    const reservedQuantity =
-      reservedMaterials.reduce((sum, item) => {
-        const reserved =
-          (item.quantity || 0) +
-          (item.additionalQuantity || 0) -
-          (item.givenquantity || 0);
+    const reservedQuantity = reservedMaterials.reduce((sum, item) => {
+      const reserved =
+        (item.quantity || 0) +
+        (item.additionalQuantity || 0) -
+        (item.givenquantity || 0);
 
-        return sum + (reserved > 0 ? reserved : 0);
-      }, 0);
+      return sum + (reserved > 0 ? reserved : 0);
+    }, 0);
 
-    const physicalQuantity =
-      totalStock._sum.quantity || 0;
+    const physicalQuantity = totalStock._sum.quantity || 0;
 
     // Final available quantity
-    const remainingQuantity =
-      physicalQuantity - reservedQuantity;
+    const remainingQuantity = physicalQuantity - reservedQuantity;
 
     return {
       materialId,
       materialName: material.name,
 
       // frontend expects this
-      totalQuantity:
-        remainingQuantity > 0
-          ? remainingQuantity
-          : 0,
+      totalQuantity: remainingQuantity > 0 ? remainingQuantity : 0,
     };
   } catch (error) {
     if (error.code) {
-      console.error(
-        'Prisma error code:',
-        error.code,
-      );
+      console.error('Prisma error code:', error.code);
     }
 
     if (
       error.message.includes('connect') ||
       error.message.includes('connection')
     ) {
-      console.error(
-        'Database connection error',
-      );
+      console.error('Database connection error');
     }
 
     throw error;
@@ -277,8 +368,10 @@ const generateShortCode = async () => {
 const createStockCorrection = async (stockCorrectionBody, userId) => {
   const shortCode = await generateShortCode();
 
-  const { items: itemsString, ...restStockCorrectionBody } = stockCorrectionBody;
-  const items = typeof itemsString === 'string' ? JSON.parse(itemsString) : itemsString;
+  const { items: itemsString, ...restStockCorrectionBody } =
+    stockCorrectionBody;
+  const items =
+    typeof itemsString === 'string' ? JSON.parse(itemsString) : itemsString;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     throw new ApiError(
@@ -356,12 +449,11 @@ const createStockCorrection = async (stockCorrectionBody, userId) => {
           materialId: item.materialId,
           quantity: item.quantity,
         };
-      } else {
-        return {
-          itemId: item.itemId,
-          quantity: item.quantity,
-        };
       }
+      return {
+        itemId: item.itemId,
+        quantity: item.quantity,
+      };
     }),
   );
 
@@ -377,7 +469,7 @@ const createStockCorrection = async (stockCorrectionBody, userId) => {
     data: {
       ...cleanedStockCorrectionBody,
       shortCode,
-      ismaterial: ismaterial, // Set the ismaterial flag
+      ismaterial, // Set the ismaterial flag
       createdById: userId,
       updatedById: userId,
       items: {
@@ -429,8 +521,10 @@ const updateStockCorrection = async (
     }
   }
 
-  const { items: itemsString, ...restStockCorrectionBody } = stockCorrectionBody;
-  const items = typeof itemsString === 'string' ? JSON.parse(itemsString) : itemsString;
+  const { items: itemsString, ...restStockCorrectionBody } =
+    stockCorrectionBody;
+  const items =
+    typeof itemsString === 'string' ? JSON.parse(itemsString) : itemsString;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     throw new ApiError(
@@ -440,9 +534,10 @@ const updateStockCorrection = async (
   }
 
   // Get ismaterial from body (default to existing value if not provided)
-  const ismaterial = stockCorrectionBody.ismaterial !== undefined 
-    ? stockCorrectionBody.ismaterial 
-    : existingStockCorrection.ismaterial;
+  const ismaterial =
+    stockCorrectionBody.ismaterial !== undefined
+      ? stockCorrectionBody.ismaterial
+      : existingStockCorrection.ismaterial;
 
   // Validate items using map
   const itemsWithDetails = await Promise.all(
@@ -492,12 +587,11 @@ const updateStockCorrection = async (
           materialId: item.materialId,
           quantity: item.quantity,
         };
-      } else {
-        return {
-          itemId: item.itemId,
-          quantity: item.quantity,
-        };
       }
+      return {
+        itemId: item.itemId,
+        quantity: item.quantity,
+      };
     }),
   );
 
@@ -518,7 +612,7 @@ const updateStockCorrection = async (
       where: { id: stockCorrectionId },
       data: {
         ...cleanedStockCorrectionBody,
-        ismaterial: ismaterial, // Update the ismaterial flag if changed
+        ismaterial, // Update the ismaterial flag if changed
         updatedById: userId,
         items: {
           create: itemsWithDetails,
@@ -576,13 +670,13 @@ const approveStockCorrection = async (stockCorrectionId, userId) => {
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    const ismaterial = stockCorrection.ismaterial;
+    const { ismaterial } = stockCorrection;
 
     // Check for negative stock BEFORE processing
     const stockCheckPromises = stockCorrection.items
       .filter((item) => item.quantity < 0)
       .map(async (item) => {
-        const itemName = ismaterial 
+        const itemName = ismaterial
           ? item.material?.name || `Material ID: ${item.materialId}`
           : item.item?.name || `Item ID: ${item.itemId}`;
         const absoluteQuantity = Math.abs(item.quantity);
@@ -605,7 +699,7 @@ const approveStockCorrection = async (stockCorrectionId, userId) => {
             },
           });
         }
-        
+
         const currentStock = inventoryStock?.quantity || 0;
 
         if (currentStock < absoluteQuantity) {
@@ -619,16 +713,22 @@ const approveStockCorrection = async (stockCorrectionId, userId) => {
       });
 
     const stockCheckResults = await Promise.all(stockCheckPromises);
-    const insufficientStockItems = stockCheckResults.filter((result) => result !== null);
+    const insufficientStockItems = stockCheckResults.filter(
+      (result) => result !== null,
+    );
 
     if (insufficientStockItems.length > 0) {
       const errorDetails = insufficientStockItems
-        .map((item) => `${item.itemName}: Required ${item.required}, Available ${item.available}`)
+        .map(
+          (item) =>
+            `${item.itemName}: Required ${item.required}, Available ${item.available}`,
+        )
         .join('; ');
 
-      const errorMessage = insufficientStockItems.length === 1
-        ? `Insufficient stock: ${errorDetails}`
-        : `Insufficient stock for multiple items: ${errorDetails}`;
+      const errorMessage =
+        insufficientStockItems.length === 1
+          ? `Insufficient stock: ${errorDetails}`
+          : `Insufficient stock for multiple items: ${errorDetails}`;
 
       throw new ApiError(httpStatus.BAD_REQUEST, errorMessage);
     }
@@ -636,10 +736,10 @@ const approveStockCorrection = async (stockCorrectionId, userId) => {
     // Process each item
     await Promise.all(
       stockCorrection.items.map(async (item, index) => {
-        const itemName = ismaterial 
+        const itemName = ismaterial
           ? item.material?.name || `Material ID: ${item.materialId}`
           : item.item?.name || `Item ID: ${item.itemId}`;
-        
+
         const isAddition = item.quantity > 0;
         const movementType = isAddition ? 'IN' : 'OUT';
         const absoluteQuantity = Math.abs(item.quantity);
@@ -649,7 +749,9 @@ const approveStockCorrection = async (stockCorrectionId, userId) => {
 
         const now = new Date();
         const timestamp = now.getTime();
-        const uniqueReference = `${stockCorrection.shortCode || 'SC'}-${timestamp}-${index + 1}`;
+        const uniqueReference = `${
+          stockCorrection.shortCode || 'SC'
+        }-${timestamp}-${index + 1}`;
 
         if (ismaterial) {
           // Handle Material Stock
@@ -686,7 +788,7 @@ const approveStockCorrection = async (stockCorrectionId, userId) => {
           } else {
             throw new ApiError(
               httpStatus.BAD_REQUEST,
-              `Cannot subtract ${absoluteQuantity} from non-existent stock for "${itemName}"`
+              `Cannot subtract ${absoluteQuantity} from non-existent stock for "${itemName}"`,
             );
           }
 
@@ -700,7 +802,7 @@ const approveStockCorrection = async (stockCorrectionId, userId) => {
               quantity: absoluteQuantity,
               reference: uniqueReference,
               userId,
-              notes: notes,
+              notes,
               movementDate: now,
             },
           });
@@ -735,7 +837,7 @@ const approveStockCorrection = async (stockCorrectionId, userId) => {
           } else {
             throw new ApiError(
               httpStatus.BAD_REQUEST,
-              `Cannot subtract ${absoluteQuantity} from non-existent stock for "${itemName}"`
+              `Cannot subtract ${absoluteQuantity} from non-existent stock for "${itemName}"`,
             );
           }
 
@@ -749,11 +851,11 @@ const approveStockCorrection = async (stockCorrectionId, userId) => {
               quantity: absoluteQuantity,
               reference: uniqueReference,
               userId,
-              notes: notes,
+              notes,
             },
           });
         }
-      })
+      }),
     );
 
     // Update stock correction status to APPROVED
@@ -770,15 +872,16 @@ const approveStockCorrection = async (stockCorrectionId, userId) => {
       .map((item) => {
         if (ismaterial) {
           return item.material?.name || `Material ID: ${item.materialId}`;
-        } else {
-          return item.item?.name || `Item ID: ${item.itemId}`;
         }
+        return item.item?.name || `Item ID: ${item.itemId}`;
       })
       .join(', ');
 
     await tx.log.create({
       data: {
-        action: `Approved stock correction ${stockCorrection.reference || stockCorrection.id} for items: ${itemNames}`,
+        action: `Approved stock correction ${
+          stockCorrection.reference || stockCorrection.id
+        } for items: ${itemNames}`,
         userId,
       },
     });
@@ -852,7 +955,7 @@ const deleteStockCorrection = async (id, userId) => {
               // If we're trying to reverse a subtraction but stock doesn't exist (shouldn't happen)
               // Just skip - stock was likely already removed
               console.warn(
-                `Stock not found for material ${item.materialId} during reversal of subtraction`
+                `Stock not found for material ${item.materialId} during reversal of subtraction`,
               );
             }
 
@@ -910,7 +1013,7 @@ const deleteStockCorrection = async (id, userId) => {
               }
             } else if (!isAddition) {
               console.warn(
-                `Item stock not found for item ${item.itemId} during reversal of subtraction`
+                `Item stock not found for item ${item.itemId} during reversal of subtraction`,
               );
             }
 
@@ -1037,5 +1140,6 @@ module.exports = {
   rejectStockCorrection,
   getStockCorrectionsByPurchaseId,
   getMaterialStockQuantity,
+  getMaterialStockQuantitywithproject,
   getMaterialStockQuantityreserve,
 };

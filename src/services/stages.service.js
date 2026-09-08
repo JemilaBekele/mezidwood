@@ -418,7 +418,7 @@ const getUnassignedDesignProjects = async (status = 'all') => {
 
 const getPurchasingProjects = async (status = 'all') => {
   try {
-    // Get all projects that have PURCHASING stage (no eligibility/prerequisite checks)
+    // Get all projects that have PURCHASING stage
     const projectsWithPurchasing = await prisma.project.findMany({
       where: {
         stages: {
@@ -435,11 +435,17 @@ const getPurchasingProjects = async (status = 'all') => {
           },
         },
         invoice: {
-          select: {
-            id: true,
-            piNumber: true,
-            total: true,
-            status: true,
+          include: {
+            items: {
+              include: {
+                proformaItemMaterials: {
+                  include: {
+                    material: true,
+                    materialIssues: true,
+                  },
+                },
+              },
+            },
           },
         },
         stages: {
@@ -475,40 +481,120 @@ const getPurchasingProjects = async (status = 'all') => {
         },
       },
       orderBy: {
-        createdAt: 'desc', // Show newest first
+        createdAt: 'desc',
       },
     });
 
-    // Filter by purchasing status if specified (no prerequisite checks)
+    // Helper function to check if all materials are issued for a project
+    const areAllMaterialsIssued = (project) => {
+      if (!project.invoice || !project.invoice.items) {
+        return false;
+      }
+
+      // Get all proforma item materials from all invoice items
+      const allMaterials = [];
+      for (const item of project.invoice.items) {
+        if (item.proformaItemMaterials) {
+          allMaterials.push(...item.proformaItemMaterials);
+        }
+      }
+
+      // If there are no materials, consider it "finished" (nothing to issue)
+      if (allMaterials.length === 0) {
+        return true;
+      }
+
+      // Check if every material has been fully issued
+      for (const material of allMaterials) {
+        const totalRequired = (material.quantity || 0) + (material.additionalQuantity || 0);
+        const totalIssued = material.materialIssues?.reduce((sum, issue) => sum + issue.quantity, 0) || 0;
+
+        // If any material is not fully issued, return false
+        if (totalIssued < totalRequired) {
+          return false;
+        }
+      }
+
+      // All materials are fully issued
+      return true;
+    };
+
+    // Helper function to get material issue status details
+    const getMaterialIssueStatus = (project) => {
+      if (!project.invoice || !project.invoice.items) {
+        return {
+          totalMaterials: 0,
+          issuedMaterials: 0,
+          fullyIssued: false,
+          details: [],
+        };
+      }
+
+      const details = [];
+      let totalMaterials = 0;
+      let issuedMaterials = 0;
+
+      for (const item of project.invoice.items) {
+        if (item.proformaItemMaterials) {
+          for (const material of item.proformaItemMaterials) {
+            const totalRequired = (material.quantity || 0) + (material.additionalQuantity || 0);
+            const totalIssued = material.materialIssues?.reduce((sum, issue) => sum + issue.quantity, 0) || 0;
+            const isFullyIssued = totalIssued >= totalRequired;
+
+            totalMaterials++;
+            if (isFullyIssued) {
+              issuedMaterials++;
+            }
+
+            details.push({
+              materialId: material.materialId,
+              materialName: material.material?.name || 'Unknown',
+              required: totalRequired,
+              issued: totalIssued,
+              status: material.status,
+              isFullyIssued,
+            });
+          }
+        }
+      }
+
+      return {
+        totalMaterials,
+        issuedMaterials,
+        fullyIssued: totalMaterials > 0 ? issuedMaterials === totalMaterials : true,
+        details,
+      };
+    };
+
+    // Filter by purchasing status based on material issuance
     let eligibleProjects = projectsWithPurchasing;
 
     if (status !== 'all') {
       eligibleProjects = eligibleProjects.filter((project) => {
-        const purchasingStage = project.stages.find(
-          (stage) => stage.stage === 'PURCHASING',
-        );
+        const materialStatus = getMaterialIssueStatus(project);
 
         if (status === 'finished') {
-          return (
-            purchasingStage &&
-            (purchasingStage.finished === true ||
-              purchasingStage.status === 'COMPLETED')
-          );
+          // Purchasing is finished ONLY if all materials are issued
+          return materialStatus.fullyIssued === true;
         }
         if (status === 'not-finished') {
-          return (
-            purchasingStage &&
-            purchasingStage.finished !== true &&
-            purchasingStage.status !== 'COMPLETED'
-          );
+          // Purchasing is NOT finished if any material is not fully issued
+          return materialStatus.fullyIssued === false;
         }
 
         return true;
       });
     }
+
+    // Add material issue summary to each project in the response
+    const projectsWithMaterialStatus = eligibleProjects.map((project) => ({
+      ...project,
+      materialIssueSummary: getMaterialIssueStatus(project),
+    }));
+
     return {
-      projects: eligibleProjects,
-      count: eligibleProjects.length,
+      projects: projectsWithMaterialStatus,
+      count: projectsWithMaterialStatus.length,
       total: projectsWithPurchasing.length,
     };
   } catch (error) {

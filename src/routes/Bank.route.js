@@ -47,5 +47,10 @@ router.delete(
   checkPermission('DELETE_BANK'),
   bankController.deleteBank,
 );
+router.patch(
+  '/api/projectschange/:id/requested-delivery-date',
+    auth,
+  bankController.addNewRequestedDeliveryDate,
+);
 
 module.exports = router;
