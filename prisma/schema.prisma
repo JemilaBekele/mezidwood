@@ -1355,7 +1355,7 @@ model ProjectStage {
   startDate DateTime?
   endDate   DateTime?
   projectstartDate  DateTime?
-
+projectendDate DateTime?
   // MORNING   => 2:30 - 6:30
   // AFTERNOON => 7:30 - 11:00
   // FULL_DAY  => both shifts
