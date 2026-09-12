@@ -14,7 +14,21 @@ const createPurchase = catchAsync(async (req, res) => {
     purchase,
   });
 });
+// Accept Purchase Item
+const acceptPurchaseItem = catchAsync(async (req, res) => {
+  const { id } = req.params; // ✅ Item ID from URL params
+  const { acceptquantity } = req.body;
+console.log("hi")
+  const updatedItem = await purchaseService.acceptPurchaseItem(id, {
+    acceptquantity,
+  });
 
+  res.status(httpStatus.OK).send({
+    success: true,
+    message: 'Purchase item accepted successfully',
+    item: updatedItem,
+  });
+});
 // Get Purchase by ID
 const getPurchase = catchAsync(async (req, res) => {
   const purchase = await purchaseService.getPurchaseById(req.params.id);
@@ -92,6 +106,7 @@ const deletePurchase = catchAsync(async (req, res) => {
 });
 
 module.exports = {
+  acceptPurchaseItem,
   createPurchase,
   getPurchase,
   getPurchaseByInvoice,

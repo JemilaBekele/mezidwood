@@ -435,6 +435,8 @@ model PurchaseItem {
 
   // ✅ Link directly to a single unit of measure\
   quantity    Int
+   acceptquantity   Int?
+  isfullyaccepted  Boolean         @default(false)
   unitPrice   Float           @default(0)
   totalPrice  Float           @default(0)
 

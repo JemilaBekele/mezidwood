@@ -239,6 +239,9 @@ module.exports = {
     DELETE: {
       name: 'DELETE_PURCHASE',
     },
+    ACCEPT_PURCHASE_ITEM: {
+      name: 'ACCEPT_PURCHASE',
+    },
   },
   REPORT: {
     VIEW_COMPLETE_STATISTICS_REPORT: {

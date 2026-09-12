@@ -23,7 +23,67 @@ const getPurchaseById = async (id) => {
 
   return purchase;
 };
+const acceptPurchaseItem = async (itemId, { acceptquantity }) => {
+  try {
+    // Validate input
+    if (acceptquantity === undefined || acceptquantity === null) {
+      throw new Error('acceptquantity is required');
+    }
 
+    if (!Number.isInteger(acceptquantity) || acceptquantity < 0) {
+      throw new Error('acceptquantity must be a non-negative integer');
+    }
+
+    // Fetch existing purchase item
+    const existingItem = await prisma.purchaseItem.findUnique({
+      where: { id: itemId },
+    });
+
+    if (!existingItem) {
+      throw new Error('Purchase item not found');
+    }
+
+    // ✅ Calculate new accepted total:
+    //    - If a past value exists (not null/0), ADD to it
+    //    - Otherwise use the incoming value as-is
+    const previousAccepted = existingItem.acceptquantity ?? 0;
+    const newAcceptedTotal =
+      previousAccepted > 0 ? previousAccepted + acceptquantity : acceptquantity;
+
+    // Prevent accepting more than ordered (after summing)
+    if (newAcceptedTotal > existingItem.quantity) {
+      throw new Error(
+        `Total accepted quantity (${newAcceptedTotal}) cannot exceed ordered quantity (${existingItem.quantity}). ` +
+        `Already accepted: ${previousAccepted}, attempting to add: ${acceptquantity}.`
+      );
+    }
+
+    // Determine if fully accepted
+    const isfullyaccepted = newAcceptedTotal === existingItem.quantity;
+
+    // Update item
+    const updatedItem = await prisma.purchaseItem.update({
+      where: { id: itemId },
+      data: {
+        acceptquantity: newAcceptedTotal,
+        isfullyaccepted,
+      },
+      include: {
+        material: true,
+        unitOfMeasure: true,
+      },
+    });
+
+    return updatedItem;
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error name:', error.name);
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+    }
+    throw error;
+  }
+};
 // Get Purchase by invoice number
 const getPurchaseByInvoiceNo = async (invoiceNo) => {
   const purchase = await prisma.purchase.findFirst({
@@ -743,4 +803,5 @@ module.exports = {
   updatePurchase,
   deletePurchase,
   acceptPurchase,
+  acceptPurchaseItem,
 };

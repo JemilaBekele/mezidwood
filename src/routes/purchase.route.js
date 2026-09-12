@@ -12,7 +12,13 @@ router.post(
   checkPermission('CREATE_PURCHASE'),
   purchaseController.createPurchase,
 );
-
+// Accept a purchase item
+router.patch(
+  '/api/purchase-items/:id/accept',
+  auth,
+ // checkPermission('ACCEPT_PURCHASE_ITEM'),
+  purchaseController.acceptPurchaseItem,
+);
 // Get a purchase by ID
 router.get(
   '/api/purchases/:id',
