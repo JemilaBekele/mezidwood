@@ -1005,6 +1005,8 @@ const getAllProjects = async (filters = {}) => {
           select: {
             id: true,
             name: true,
+            phone1: true,
+            phone2: true,
           },
         },
         designBy: {
@@ -1770,7 +1772,8 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
 
         // Sync actualWorkUnits to match workUnits for purchasing stage
         const syncedPurchasingActualWorkUnits = purchasingWorkUnits;
-        const purchasingWorkUnitsChanged = purchasingWorkUnits !== purchasingActualWorkUnits;
+        const purchasingWorkUnitsChanged =
+          purchasingWorkUnits !== purchasingActualWorkUnits;
 
         if (purchasingWorkUnitsChanged) {
           console.log(
@@ -1943,7 +1946,13 @@ const updateProjectDesignStatus = async (id, designStatus, userId) => {
       prisma.projectLog.create({
         data: {
           projectId: id,
-          note: `Purchasing phase completed automatically (design finished). Freed ${purchasingStageUpdate.totalFreedUnits.toFixed(2)} units (${purchasingStageUpdate.totalFreedHours.toFixed(2)} hours) from ${purchasingStageUpdate.allocationsCount} allocation(s).`,
+          note: `Purchasing phase completed automatically (design finished). Freed ${purchasingStageUpdate.totalFreedUnits.toFixed(
+            2,
+          )} units (${purchasingStageUpdate.totalFreedHours.toFixed(
+            2,
+          )} hours) from ${
+            purchasingStageUpdate.allocationsCount
+          } allocation(s).`,
           createdById: userId,
         },
       }),

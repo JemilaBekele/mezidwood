@@ -38,14 +38,7 @@ const normalizeIpAddress = (ipAddr) => String(ipAddr || 'unknown_ip');
 
 const login = async (email, password, ipAddr) => {
   try {
-    console.log('Login attempt:', {
-      email,
-      ipAddr,
-    });
-
     const normalizedIp = normalizeIpAddress(ipAddr);
-
-    console.log('Normalized IP:', normalizedIp);
 
     const promises = [slowerBruteLimiter.consume(normalizedIp)];
 
@@ -62,22 +55,16 @@ const login = async (email, password, ipAddr) => {
             },
           },
         },
-        showrooms: true,  // Multiple showrooms (plural)
-        stores: true,     // Multiple stores (plural)
+        showrooms: true, // Multiple showrooms (plural)
+        stores: true, // Multiple stores (plural)
       },
     });
-
-    console.log('User found:', user ? user.email : 'No user');
 
     // Check password
     const passwordMatch =
       user && (await userService.isPasswordMatch(user, password));
 
-    console.log('Password match:', passwordMatch);
-
     if (!user || !passwordMatch) {
-      console.log('Invalid credentials');
-
       if (user) {
         promises.push(
           emailIpBruteLimiter.consume(`${email}_${normalizedIp}`),
@@ -87,18 +74,11 @@ const login = async (email, password, ipAddr) => {
 
       await Promise.all(promises);
 
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Incorrect email or password',
-      );
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Incorrect email or password');
     }
-
-    console.log('User status:', user.status);
 
     // Check status
     if (user.status !== 'Active') {
-      console.log('Inactive account');
-
       throw new ApiError(
         httpStatus.FORBIDDEN,
         'Your account is not active. Please contact administrator.',
@@ -115,15 +95,13 @@ const login = async (email, password, ipAddr) => {
       lastLoginAt: user.lastLoginAt,
       status: user.status,
       phone: user.phone,
-      showrooms: user.showrooms,  // Multiple showrooms (plural)
-      stores: user.stores,        // Multiple stores (plural)
-      showroomIds: user.showrooms?.map(s => s.id) || [],  // Array of showroom IDs
-      storeIds: user.stores?.map(s => s.id) || [],        // Array of store IDs
+      showrooms: user.showrooms, // Multiple showrooms (plural)
+      stores: user.stores, // Multiple stores (plural)
+      showroomIds: user.showrooms?.map((s) => s.id) || [], // Array of showroom IDs
+      storeIds: user.stores?.map((s) => s.id) || [], // Array of store IDs
       permissions:
         user.role?.permissions?.map((rp) => rp.permission.name) || [],
     };
-
-    console.log('Formatted user:', formattedUser);
 
     // Update login time
     await prisma.user.update({
@@ -132,8 +110,6 @@ const login = async (email, password, ipAddr) => {
         lastLoginAt: new Date(),
       },
     });
-
-    console.log('Last login updated');
 
     return formattedUser;
   } catch (error) {
