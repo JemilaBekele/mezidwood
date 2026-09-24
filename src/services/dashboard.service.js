@@ -900,17 +900,12 @@ const getTopPIByCreator = async (startDate, endDate) => {
 };
 const getCompleteStaticReport = async (startDate, endDate) => {
   try {
-    // Helper function to format numbers with 3 decimal places
-    const formatNumber = (value) => {
-      if (value === null || value === undefined || value === '') {
-        return '0.000';
-      }
-
+    const roundNum = (value, decimals = 2) => {
+      if (value === null || value === undefined || value === '') return 0;
       const num = Number(value);
-      if (isNaN(num) || !isFinite(num)) {
-        return '0.000';
-      }
-      return num.toFixed(3).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      if (isNaN(num) || !isFinite(num)) return 0;
+      const factor = 10 ** decimals;
+      return Math.round(num * factor) / factor;
     };
 
     // Helper function to safely get numeric value
@@ -919,6 +914,12 @@ const getCompleteStaticReport = async (startDate, endDate) => {
       const num = Number(value);
       return isNaN(num) || !isFinite(num) ? 0 : num;
     };
+
+    // Only used for the small set of fields the frontend's TS types declare
+    // as strings ending in "%" (revenueConversionRate, quantityConversionRate,
+    // averageConversionRate). Everything else stays a plain number.
+    const formatPercent = (value, decimals = 2) =>
+      `${roundNum(value, decimals)}%`;
 
     // Helper function to calculate total from proformas array
     const calculateTotalFromProformas = (proformas) => {
@@ -935,13 +936,15 @@ const getCompleteStaticReport = async (startDate, endDate) => {
         getItemSalesAnalysis(startDate, endDate),
         getTopSalesByCreator(startDate, endDate),
         getTopPIByCreator(startDate, endDate),
+        // Expected to group ProformaInvoiceItem rows by categoryId
+        // (-> ProductCategory) and still carry itemId/itemName through,
+        // since the frontend's combined-item view matches sales items to
+        // PI items by itemId.
         getTopItemsFromPI(startDate, endDate),
       ]);
-
     // Validate that all responses have the expected structure
-    const validateResponse = (response, defaultStructure) => {
+    const validateResponse = (response, defaultStructure, label) => {
       if (!response || typeof response !== 'object') {
-        console.warn('Invalid response, using default structure');
         return defaultStructure;
       }
       return response;
@@ -976,12 +979,14 @@ const getCompleteStaticReport = async (startDate, endDate) => {
       allPreparers: [],
     };
 
+    // categoryId/categoryName sit alongside itemId/itemName (kept for the
+    // frontend's itemId-based join in getCombinedItemData).
     const defaultTopItemsPI = {
       summary: {
         totalRequestedQuantity: 0,
         totalRequestedValue: 0,
         totalOrders: 0,
-        uniqueItems: 0,
+        uniqueCategories: 0,
         averageValue: 0,
       },
       topByQuantity: [],
@@ -990,16 +995,26 @@ const getCompleteStaticReport = async (startDate, endDate) => {
       categoryAnalysis: [],
     };
 
-    const validatedItemSales = validateResponse(itemSales, defaultItemSales);
+    const validatedItemSales = validateResponse(
+      itemSales,
+      defaultItemSales,
+      'itemSales',
+    );
     const validatedTopSalesCreators = validateResponse(
       topSalesCreators,
       defaultTopSalesCreators,
+      'topSalesCreators',
     );
     const validatedTopPICreators = validateResponse(
       topPICreators,
       defaultTopPICreators,
+      'topPICreators',
     );
-    const validatedTopItemsPI = validateResponse(topItemsPI, defaultTopItemsPI);
+    const validatedTopItemsPI = validateResponse(
+      topItemsPI,
+      defaultTopItemsPI,
+      'topItemsPI',
+    );
 
     // CALCULATE TOTAL PI VALUE FROM PROFORMAS
     let calculatedTotalValue = 0;
@@ -1050,14 +1065,14 @@ const getCompleteStaticReport = async (startDate, endDate) => {
       }
     }
 
-    // Calculate total from items using totalRevenue
+    // Calculate total from PI items/categories using totalRevenue
     let calculatedItemsTotalValue = 0;
     if (
       validatedTopItemsPI.allItems &&
       Array.isArray(validatedTopItemsPI.allItems)
     ) {
-      validatedTopItemsPI.allItems.forEach((item) => {
-        const revenue = getNumericValue(item.totalRevenue);
+      validatedTopItemsPI.allItems.forEach((entry) => {
+        const revenue = getNumericValue(entry.totalRevenue);
         calculatedItemsTotalValue += revenue;
       });
     }
@@ -1094,102 +1109,51 @@ const getCompleteStaticReport = async (startDate, endDate) => {
         ? (totalRevenue / consistentTotalPIValue) * 100
         : 0;
 
-    // Find matching items between PI and Sales for comparison
     const topItemsComparison = [];
-    const topPIItems = (validatedTopItemsPI.topByQuantity || []).slice(0, 5);
+    const topPICategories = (validatedTopItemsPI.topByQuantity || []).slice(
+      0,
+      5,
+    );
 
-    topPIItems.forEach((piItem) => {
-      const soldItem = (validatedItemSales.allItems || []).find(
-        (sale) => sale && sale.itemId === piItem.itemId,
+    topPICategories.forEach((piCategory, idx) => {
+      const categoryId = piCategory.categoryId ?? null;
+      const categoryName =
+        piCategory.categoryName || piCategory.itemName || 'Unknown Category';
+
+      const soldCategoryEntry = (validatedItemSales.allItems || []).find(
+        (sale) => sale && categoryId !== null && sale.categoryId === categoryId,
       );
-      const requestedQty = getNumericValue(piItem.totalRequestedQuantity);
-      const soldQty = soldItem ? getNumericValue(soldItem.totalQuantity) : 0;
-      const itemValue = getNumericValue(piItem.totalRevenue);
+
+      if (!soldCategoryEntry) {
+        console.log(
+          `[getCompleteStaticReport] [${idx}] "${categoryName}" (categoryId=${categoryId}) -> NO MATCH in sales data`,
+        );
+      } else {
+        console.log(
+          `[getCompleteStaticReport] [${idx}] "${categoryName}" (categoryId=${categoryId}) -> matched:`,
+          JSON.stringify(soldCategoryEntry, null, 2),
+        );
+      }
+
+      const requestedQty = getNumericValue(piCategory.totalRequestedQuantity);
+      const soldQty = soldCategoryEntry
+        ? getNumericValue(soldCategoryEntry.totalQuantity)
+        : 0;
+      const categoryValue = getNumericValue(piCategory.totalRevenue);
+      const catConversionRate =
+        soldQty && requestedQty ? (soldQty / requestedQty) * 100 : 0;
+      const gap = requestedQty - soldQty;
 
       topItemsComparison.push({
-        itemName: piItem.itemName || 'Unknown Item',
-        requestedQuantity: requestedQty,
-        soldQuantity: soldQty,
-        conversionRate:
-          soldQty && requestedQty ? (soldQty / requestedQty) * 100 : 0,
-        gap: requestedQty - soldQty,
-        requestedValue: itemValue,
+        itemName: categoryName, // kept as `itemName` for frontend ComparisonItem type compatibility
+        categoryName,
+        categoryId,
+        requestedQuantity: roundNum(requestedQty),
+        soldQuantity: roundNum(soldQty),
+        conversionRate: roundNum(catConversionRate),
+        gap: roundNum(gap),
+        requestedValue: roundNum(categoryValue),
       });
-    });
-
-    // Format executive summary
-    const formatExecutiveSummary = (summary) => ({
-      totalRevenueFromSales: formatNumber(summary.totalRevenueFromSales || 0),
-      totalProformaValue: formatNumber(summary.totalProformaValue || 0),
-      revenueConversionRate: `${formatNumber(
-        parseFloat(summary.revenueConversionRate || 0),
-      )}%`,
-      totalItemsSold: formatNumber(summary.totalItemsSold || 0),
-      totalItemsRequested: formatNumber(summary.totalItemsRequested || 0),
-      quantityConversionRate: `${formatNumber(
-        parseFloat(summary.quantityConversionRate || 0),
-      )}%`,
-      topSellingItemByQuantity: summary.topSellingItemByQuantity
-        ? {
-            ...summary.topSellingItemByQuantity,
-            quantity: formatNumber(
-              summary.topSellingItemByQuantity.quantity || 0,
-            ),
-            revenue: formatNumber(
-              summary.topSellingItemByQuantity.revenue || 0,
-            ),
-          }
-        : null,
-      topRequestedItemByQuantity: summary.topRequestedItemByQuantity
-        ? {
-            ...summary.topRequestedItemByQuantity,
-            quantity: formatNumber(
-              summary.topRequestedItemByQuantity.quantity || 0,
-            ),
-            value: formatNumber(summary.topRequestedItemByQuantity.value || 0),
-          }
-        : null,
-      topSellingItemByRevenue: summary.topSellingItemByRevenue
-        ? {
-            ...summary.topSellingItemByRevenue,
-            revenue: formatNumber(summary.topSellingItemByRevenue.revenue || 0),
-            quantity: formatNumber(
-              summary.topSellingItemByRevenue.quantity || 0,
-            ),
-          }
-        : null,
-      topRequestedItemByValue: summary.topRequestedItemByValue
-        ? {
-            ...summary.topRequestedItemByValue,
-            value: formatNumber(summary.topRequestedItemByValue.value || 0),
-            quantity: formatNumber(
-              summary.topRequestedItemByValue.quantity || 0,
-            ),
-          }
-        : null,
-      topSalesPerson: summary.topSalesPerson
-        ? {
-            ...summary.topSalesPerson,
-            revenue: formatNumber(summary.topSalesPerson.revenue || 0),
-            salesCount: formatNumber(summary.topSalesPerson.salesCount || 0),
-            percentageOfTotal: formatNumber(
-              summary.topSalesPerson.percentageOfTotal || 0,
-            ),
-          }
-        : null,
-      topPIPreparer: summary.topPIPreparer
-        ? {
-            ...summary.topPIPreparer,
-            value: formatNumber(summary.topPIPreparer.value || 0),
-            piCount: formatNumber(summary.topPIPreparer.piCount || 0),
-            percentageOfTotal: formatNumber(
-              summary.topPIPreparer.percentageOfTotal || 0,
-            ),
-          }
-        : null,
-      averageOrderValue: formatNumber(summary.averageOrderValue || 0),
-      averageProformaValue: formatNumber(summary.averageProformaValue || 0),
-      uniqueCustomers: formatNumber(summary.uniqueCustomers || 0),
     });
 
     // Get top PI preparer with properly calculated values
@@ -1201,34 +1165,47 @@ const getCompleteStaticReport = async (startDate, endDate) => {
       const piCount = creatorData.totalPI || creatorData.totalProformas || 0;
       topPIPreparerData = {
         name: creatorData.creatorName || 'Unknown',
-        value: creatorTotal,
-        piCount,
+        value: roundNum(creatorTotal),
+        piCount: roundNum(piCount, 0),
         percentageOfTotal: 100,
       };
     }
 
-    // Get top requested items with proper values
-    const topRequestedItem = (validatedTopItemsPI.topByQuantity || [])[0];
-    const topRequestedItemData = topRequestedItem
+    // Top requested item/category by quantity
+    const topRequestedEntry = (validatedTopItemsPI.topByQuantity || [])[0];
+    const topRequestedItemData = topRequestedEntry
       ? {
-          name: topRequestedItem.itemName || 'Unknown',
-          quantity: getNumericValue(topRequestedItem.totalRequestedQuantity),
-          value: getNumericValue(topRequestedItem.totalRevenue),
+          name:
+            topRequestedEntry.categoryName ||
+            topRequestedEntry.itemName ||
+            'Unknown',
+          categoryId: topRequestedEntry.categoryId ?? null,
+          quantity: roundNum(topRequestedEntry.totalRequestedQuantity, 0),
+          value: roundNum(topRequestedEntry.totalRevenue),
         }
       : null;
 
-    const topRequestedItemByValue = (validatedTopItemsPI.topByRevenue || [])[0];
-    const topRequestedItemByValueData = topRequestedItemByValue
+    // Top requested item/category by value
+    const topRequestedEntryByValue = (validatedTopItemsPI.topByRevenue ||
+      [])[0];
+    const topRequestedItemByValueData = topRequestedEntryByValue
       ? {
-          name: topRequestedItemByValue.itemName || 'Unknown',
-          value: getNumericValue(topRequestedItemByValue.totalRevenue),
-          quantity: getNumericValue(
-            topRequestedItemByValue.totalRequestedQuantity,
+          name:
+            topRequestedEntryByValue.categoryName ||
+            topRequestedEntryByValue.itemName ||
+            'Unknown',
+          categoryId: topRequestedEntryByValue.categoryId ?? null,
+          value: roundNum(topRequestedEntryByValue.totalRevenue),
+          quantity: roundNum(
+            topRequestedEntryByValue.totalRequestedQuantity,
+            0,
           ),
         }
       : null;
 
-    // Build the response
+    // Build the response — numeric fields are real numbers; only the
+    // *ConversionRate fields (typed as strings in the frontend) carry a
+    // formatted "X%" string.
     const response = {
       reportDate: new Date(),
       period: {
@@ -1236,106 +1213,98 @@ const getCompleteStaticReport = async (startDate, endDate) => {
         endDate: endDate || 'All time',
       },
 
-      // Individual Reports
       itemSalesAnalysis: {
         ...validatedItemSales,
         summary: {
           ...validatedItemSales.summary,
-          totalRevenue: formatNumber(
-            validatedItemSales.summary.totalRevenue || 0,
+          totalRevenue: roundNum(validatedItemSales.summary.totalRevenue),
+          totalItemsSold: roundNum(
+            validatedItemSales.summary.totalItemsSold,
+            0,
           ),
-          totalItemsSold: formatNumber(
-            validatedItemSales.summary.totalItemsSold || 0,
-          ),
-          totalOrders: formatNumber(
-            validatedItemSales.summary.totalOrders || 0,
-          ),
-          uniqueItems: formatNumber(
-            validatedItemSales.summary.uniqueItems || 0,
-          ),
-          averagePrice: formatNumber(
-            validatedItemSales.summary.averagePrice || 0,
-          ),
+          totalOrders: roundNum(validatedItemSales.summary.totalOrders, 0),
+          uniqueItems: roundNum(validatedItemSales.summary.uniqueItems, 0),
+          averagePrice: roundNum(validatedItemSales.summary.averagePrice),
         },
         topByQuantity: (validatedItemSales.topByQuantity || []).map((item) => ({
           ...item,
-          totalQuantity: formatNumber(item.totalQuantity || 0),
-          totalRevenue: formatNumber(item.totalRevenue || 0),
-          uniqueCustomers: formatNumber(item.uniqueCustomers || 0),
+          totalQuantity: roundNum(item.totalQuantity, 0),
+          totalRevenue: roundNum(item.totalRevenue),
+          uniqueCustomers: roundNum(item.uniqueCustomers, 0),
         })),
         topByRevenue: (validatedItemSales.topByRevenue || []).map((item) => ({
           ...item,
-          totalQuantity: formatNumber(item.totalQuantity || 0),
-          totalRevenue: formatNumber(item.totalRevenue || 0),
-          uniqueCustomers: formatNumber(item.uniqueCustomers || 0),
+          totalQuantity: roundNum(item.totalQuantity, 0),
+          totalRevenue: roundNum(item.totalRevenue),
+          uniqueCustomers: roundNum(item.uniqueCustomers, 0),
         })),
         allItems: (validatedItemSales.allItems || []).map((item) => ({
           ...item,
-          totalQuantity: formatNumber(item.totalQuantity || 0),
-          totalRevenue: formatNumber(item.totalRevenue || 0),
-          uniqueCustomers: formatNumber(item.uniqueCustomers || 0),
+          totalQuantity: roundNum(item.totalQuantity, 0),
+          totalRevenue: roundNum(item.totalRevenue),
+          uniqueCustomers: roundNum(item.uniqueCustomers, 0),
         })),
         categoryAnalysis: (validatedItemSales.categoryAnalysis || []).map(
           (cat) => ({
             ...cat,
-            totalQuantity: formatNumber(cat.totalQuantity || 0),
-            totalRevenue: formatNumber(cat.totalRevenue || 0),
-            uniqueItems: formatNumber(cat.uniqueItems || 0),
+            totalQuantity: roundNum(cat.totalQuantity, 0),
+            totalRevenue: roundNum(cat.totalRevenue),
+            uniqueItems: roundNum(cat.uniqueItems, 0),
           }),
         ),
       },
+
       salesByCreatorAnalysis: {
         ...validatedTopSalesCreators,
         summary: {
           ...validatedTopSalesCreators.summary,
-          totalRevenue: formatNumber(
-            validatedTopSalesCreators.summary.totalRevenue || 0,
+          totalRevenue: roundNum(
+            validatedTopSalesCreators.summary.totalRevenue,
           ),
-          totalSales: formatNumber(
-            validatedTopSalesCreators.summary.totalSales || 0,
-          ),
-          uniqueCreators: formatNumber(
-            validatedTopSalesCreators.summary.uniqueCreators || 0,
+          totalSales: roundNum(validatedTopSalesCreators.summary.totalSales, 0),
+          uniqueCreators: roundNum(
+            validatedTopSalesCreators.summary.uniqueCreators,
+            0,
           ),
         },
         topByQuantity: (validatedTopSalesCreators.topByQuantity || []).map(
           (creator) => ({
             ...creator,
-            totalQuantity: formatNumber(creator.totalQuantity || 0),
-            totalRevenue: formatNumber(creator.totalRevenue || 0),
-            totalSales: formatNumber(creator.totalSales || 0),
-            percentageOfTotal: formatNumber(creator.percentageOfTotal || 0),
+            totalQuantity: roundNum(creator.totalQuantity, 0),
+            totalRevenue: roundNum(creator.totalRevenue),
+            totalSales: roundNum(creator.totalSales, 0),
+            percentageOfTotal: roundNum(creator.percentageOfTotal),
           }),
         ),
         topByRevenue: (validatedTopSalesCreators.topByRevenue || []).map(
           (creator) => ({
             ...creator,
-            totalQuantity: formatNumber(creator.totalQuantity || 0),
-            totalRevenue: formatNumber(creator.totalRevenue || 0),
-            totalSales: formatNumber(creator.totalSales || 0),
-            percentageOfTotal: formatNumber(creator.percentageOfTotal || 0),
+            totalQuantity: roundNum(creator.totalQuantity, 0),
+            totalRevenue: roundNum(creator.totalRevenue),
+            totalSales: roundNum(creator.totalSales, 0),
+            percentageOfTotal: roundNum(creator.percentageOfTotal),
           }),
         ),
         allCreators: (validatedTopSalesCreators.allCreators || []).map(
           (creator) => ({
             ...creator,
-            totalQuantity: formatNumber(creator.totalQuantity || 0),
-            totalRevenue: formatNumber(creator.totalRevenue || 0),
-            totalSales: formatNumber(creator.totalSales || 0),
-            percentageOfTotal: formatNumber(creator.percentageOfTotal || 0),
+            totalQuantity: roundNum(creator.totalQuantity, 0),
+            totalRevenue: roundNum(creator.totalRevenue),
+            totalSales: roundNum(creator.totalSales, 0),
+            percentageOfTotal: roundNum(creator.percentageOfTotal),
           }),
         ),
       },
+
       proformaByCreatorAnalysis: {
         ...validatedTopPICreators,
         summary: {
           ...validatedTopPICreators.summary,
-          totalProformaValue: formatNumber(calculatedTotalValue || 0),
-          totalPI: formatNumber(
-            validatedTopPICreators.summary.totalProformas || 0,
-          ),
-          uniqueCreators: formatNumber(
-            validatedTopPICreators.summary.activePreparers || 0,
+          totalProformaValue: roundNum(calculatedTotalValue),
+          totalPI: roundNum(validatedTopPICreators.summary.totalProformas, 0),
+          uniqueCreators: roundNum(
+            validatedTopPICreators.summary.activePreparers,
+            0,
           ),
         },
         topByValue: (validatedTopPICreators.topByValue || []).map((creator) => {
@@ -1344,12 +1313,12 @@ const getCompleteStaticReport = async (startDate, endDate) => {
             : 0;
           return {
             ...creator,
-            totalValue: formatNumber(totalValue),
-            totalPI: formatNumber(creator.totalPI || 0),
-            percentageOfTotal: formatNumber(creator.percentageOfTotal || 0),
+            totalValue: roundNum(totalValue),
+            totalPI: roundNum(creator.totalPI, 0),
+            percentageOfTotal: roundNum(creator.percentageOfTotal),
           };
         }),
-        // FIX: This is the section used by "Sales & Proforma Performance by Person"
+        // Used by "Sales & Proforma Performance by Person"
         topByPICount: (validatedTopPICreators.topByPICount || []).map(
           (creator) => {
             const totalValue = creator.proformas
@@ -1357,9 +1326,9 @@ const getCompleteStaticReport = async (startDate, endDate) => {
               : 0;
             return {
               ...creator,
-              totalValue: formatNumber(totalValue),
-              totalPI: formatNumber(creator.totalPI || 0),
-              percentageOfTotal: formatNumber(creator.percentageOfTotal || 0),
+              totalValue: roundNum(totalValue),
+              totalPI: roundNum(creator.totalPI, 0),
+              percentageOfTotal: roundNum(creator.percentageOfTotal),
             };
           },
         ),
@@ -1370,14 +1339,13 @@ const getCompleteStaticReport = async (startDate, endDate) => {
               : 0;
             return {
               ...creator,
-              totalQuantity: formatNumber(creator.totalItemsRequested || 0),
-              totalValue: formatNumber(totalValue),
-              totalPI: formatNumber(creator.totalPI || 0),
-              percentageOfTotal: formatNumber(creator.percentageOfTotal || 0),
+              totalQuantity: roundNum(creator.totalItemsRequested, 0),
+              totalValue: roundNum(totalValue),
+              totalPI: roundNum(creator.totalPI, 0),
+              percentageOfTotal: roundNum(creator.percentageOfTotal),
             };
           },
         ),
-        // Add allCreators alias for compatibility with UI that expects this field
         allCreators: (validatedTopPICreators.allPreparers || []).map(
           (creator) => {
             const totalValue = creator.proformas
@@ -1385,35 +1353,37 @@ const getCompleteStaticReport = async (startDate, endDate) => {
               : 0;
             return {
               ...creator,
-              totalQuantity: formatNumber(creator.totalItemsRequested || 0),
-              totalValue: formatNumber(totalValue),
-              totalPI: formatNumber(creator.totalPI || 0),
-              percentageOfTotal: formatNumber(creator.percentageOfTotal || 0),
+              totalQuantity: roundNum(creator.totalItemsRequested, 0),
+              totalValue: roundNum(totalValue),
+              totalPI: roundNum(creator.totalPI, 0),
+              percentageOfTotal: roundNum(creator.percentageOfTotal),
             };
           },
         ),
       },
+
       proformaItemsAnalysis: {
         ...validatedTopItemsPI,
         summary: {
           ...validatedTopItemsPI.summary,
-          totalRequestedQuantity: formatNumber(
-            validatedTopItemsPI.summary.totalRequestedQuantity || 0,
+          totalRequestedQuantity: roundNum(
+            validatedTopItemsPI.summary.totalRequestedQuantity,
+            0,
           ),
-          totalRequestedValue: formatNumber(
+          totalRequestedValue: roundNum(
             calculatedItemsTotalValue > 0
               ? calculatedItemsTotalValue
               : calculatedTotalValue,
           ),
-          totalOrders: formatNumber(
-            validatedTopItemsPI.summary.totalOrders || 0,
-          ),
-          uniqueItems: formatNumber(
-            validatedTopItemsPI.summary.uniqueItemsRequested ||
+          totalOrders: roundNum(validatedTopItemsPI.summary.totalOrders, 0),
+          uniqueCategories: roundNum(
+            validatedTopItemsPI.summary.uniqueCategories ||
+              validatedTopItemsPI.summary.uniqueItemsRequested ||
               validatedTopItemsPI.summary.uniqueItems ||
               0,
+            0,
           ),
-          averageValue: formatNumber(
+          averageValue: roundNum(
             validatedTopItemsPI.summary.totalRequestedQuantity > 0
               ? (calculatedItemsTotalValue > 0
                   ? calculatedItemsTotalValue
@@ -1423,55 +1393,60 @@ const getCompleteStaticReport = async (startDate, endDate) => {
           ),
         },
         topByQuantity: (validatedTopItemsPI.topByQuantity || []).map(
-          (item) => ({
-            ...item,
-            totalRequestedQuantity: formatNumber(
-              item.totalRequestedQuantity || 0,
-            ),
-            totalValue: formatNumber(getNumericValue(item.totalRevenue)),
+          (entry) => ({
+            ...entry,
+            categoryName:
+              entry.categoryName || entry.itemName || 'Unknown Category',
+            categoryId: entry.categoryId ?? null,
+            totalRequestedQuantity: roundNum(entry.totalRequestedQuantity, 0),
+            totalValue: roundNum(getNumericValue(entry.totalRevenue)),
           }),
         ),
-        topByRevenue: (validatedTopItemsPI.topByRevenue || []).map((item) => ({
-          ...item,
-          totalRequestedQuantity: formatNumber(
-            item.totalRequestedQuantity || 0,
-          ),
-          totalValue: formatNumber(getNumericValue(item.totalRevenue)),
+        topByRevenue: (validatedTopItemsPI.topByRevenue || []).map((entry) => ({
+          ...entry,
+          categoryName:
+            entry.categoryName || entry.itemName || 'Unknown Category',
+          categoryId: entry.categoryId ?? null,
+          totalRequestedQuantity: roundNum(entry.totalRequestedQuantity, 0),
+          totalValue: roundNum(getNumericValue(entry.totalRevenue)),
         })),
-        allItems: (validatedTopItemsPI.allItems || []).map((item) => ({
-          ...item,
-          totalRequestedQuantity: formatNumber(
-            item.totalRequestedQuantity || 0,
-          ),
-          totalValue: formatNumber(getNumericValue(item.totalRevenue)),
+        allItems: (validatedTopItemsPI.allItems || []).map((entry) => ({
+          ...entry,
+          categoryName:
+            entry.categoryName || entry.itemName || 'Unknown Category',
+          categoryId: entry.categoryId ?? null,
+          totalRequestedQuantity: roundNum(entry.totalRequestedQuantity, 0),
+          totalValue: roundNum(getNumericValue(entry.totalRevenue)),
         })),
         categoryAnalysis: (validatedTopItemsPI.categoryAnalysis || []).map(
           (cat) => ({
             ...cat,
-            totalRequestedQuantity: formatNumber(
-              cat.totalRequestedQuantity || 0,
-            ),
-            totalValue: formatNumber(getNumericValue(cat.totalValue)),
-            uniqueItems: formatNumber(cat.uniqueItems || 0),
+            totalRequestedQuantity: roundNum(cat.totalRequestedQuantity, 0),
+            totalValue: roundNum(getNumericValue(cat.totalValue)),
+            uniqueItems: roundNum(cat.uniqueItems, 0),
           }),
         ),
       },
 
-      // Executive Summary
-      executiveSummary: formatExecutiveSummary({
-        totalRevenueFromSales: totalRevenue,
-        totalProformaValue: consistentTotalPIValue,
-        revenueConversionRate,
-
-        totalItemsSold,
-        totalItemsRequested: totalRequestedQuantity,
-        quantityConversionRate: conversionRate,
+      // Executive Summary — numbers except the two *ConversionRate string fields
+      executiveSummary: {
+        totalRevenueFromSales: roundNum(totalRevenue),
+        totalProformaValue: roundNum(consistentTotalPIValue),
+        revenueConversionRate: formatPercent(revenueConversionRate),
+        totalItemsSold: roundNum(totalItemsSold, 0),
+        totalItemsRequested: roundNum(totalRequestedQuantity, 0),
+        quantityConversionRate: formatPercent(conversionRate),
 
         topSellingItemByQuantity: (validatedItemSales.topByQuantity || [])[0]
           ? {
               name: validatedItemSales.topByQuantity[0].itemName || 'Unknown',
-              quantity: validatedItemSales.topByQuantity[0].totalQuantity || 0,
-              revenue: validatedItemSales.topByQuantity[0].totalRevenue || 0,
+              quantity: roundNum(
+                validatedItemSales.topByQuantity[0].totalQuantity,
+                0,
+              ),
+              revenue: roundNum(
+                validatedItemSales.topByQuantity[0].totalRevenue,
+              ),
             }
           : null,
 
@@ -1480,8 +1455,13 @@ const getCompleteStaticReport = async (startDate, endDate) => {
         topSellingItemByRevenue: (validatedItemSales.topByRevenue || [])[0]
           ? {
               name: validatedItemSales.topByRevenue[0].itemName || 'Unknown',
-              revenue: validatedItemSales.topByRevenue[0].totalRevenue || 0,
-              quantity: validatedItemSales.topByRevenue[0].totalQuantity || 0,
+              revenue: roundNum(
+                validatedItemSales.topByRevenue[0].totalRevenue,
+              ),
+              quantity: roundNum(
+                validatedItemSales.topByRevenue[0].totalQuantity,
+                0,
+              ),
             }
           : null,
 
@@ -1492,47 +1472,49 @@ const getCompleteStaticReport = async (startDate, endDate) => {
               name:
                 validatedTopSalesCreators.topByRevenue[0].creatorName ||
                 'Unknown',
-              revenue:
-                validatedTopSalesCreators.topByRevenue[0].totalRevenue || 0,
-              salesCount:
-                validatedTopSalesCreators.topByRevenue[0].totalSales || 0,
-              percentageOfTotal:
-                validatedTopSalesCreators.topByRevenue[0].percentageOfTotal ||
+              revenue: roundNum(
+                validatedTopSalesCreators.topByRevenue[0].totalRevenue,
+              ),
+              salesCount: roundNum(
+                validatedTopSalesCreators.topByRevenue[0].totalSales,
                 0,
+              ),
+              percentageOfTotal: roundNum(
+                validatedTopSalesCreators.topByRevenue[0].percentageOfTotal,
+              ),
             }
           : null,
 
         topPIPreparer: topPIPreparerData,
 
-        averageOrderValue:
+        averageOrderValue: roundNum(
           (validatedItemSales.summary.totalOrders || 0) > 0
             ? totalRevenue / validatedItemSales.summary.totalOrders
             : 0,
-        averageProformaValue:
+        ),
+        averageProformaValue: roundNum(
           (validatedTopItemsPI.summary.totalOrders || 0) > 0
             ? consistentTotalPIValue / validatedTopItemsPI.summary.totalOrders
             : 0,
-        uniqueCustomers: (validatedItemSales.allItems || []).reduce(
-          (sum, item) => sum + (item.uniqueCustomers || 0),
+        ),
+        uniqueCustomers: roundNum(
+          (validatedItemSales.allItems || []).reduce(
+            (sum, item) => sum + (item.uniqueCustomers || 0),
+            0,
+          ),
           0,
         ),
-      }),
+      },
 
-      // Comparison Analysis
+      // Comparison Analysis — kept as top5ItemsComparison for frontend type
+      // compatibility; entries are category-matched (see topItemsComparison above)
       comparisonAnalysis: {
-        top5ItemsComparison: topItemsComparison.map((item) => ({
-          ...item,
-          requestedQuantity: formatNumber(item.requestedQuantity),
-          soldQuantity: formatNumber(item.soldQuantity),
-          conversionRate: formatNumber(item.conversionRate),
-          gap: formatNumber(item.gap),
-          requestedValue: formatNumber(item.requestedValue),
-        })),
+        top5ItemsComparison: topItemsComparison,
         summary: {
-          totalGapQuantity: formatNumber(
+          totalGapQuantity: roundNum(
             topItemsComparison.reduce((sum, item) => sum + (item.gap || 0), 0),
           ),
-          averageConversionRate: formatNumber(
+          averageConversionRate: formatPercent(
             topItemsComparison.reduce(
               (sum, item) => sum + (item.conversionRate || 0),
               0,
@@ -1543,13 +1525,14 @@ const getCompleteStaticReport = async (startDate, endDate) => {
 
       generatedAt: new Date(),
     };
-console.log(response);
+
     return response;
   } catch (error) {
-    console.error('Error in getCompleteStaticReport:', error);
+    console.error('[getCompleteStaticReport] ERROR:', error);
     throw error;
   }
 };
+
 const getCombinedReport = async (options = {}) => {
   const {
     lowStockThreshold = null, // Changed: null means use individual material thresholds
