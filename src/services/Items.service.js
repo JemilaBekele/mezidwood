@@ -807,7 +807,6 @@ const updateItem = async (id, updateBody, files) => {
  */
 const deleteItem = async (id) => {
   try {
-
     // Check if item exists with all dependencies
     const existingItem = await prisma.items.findUnique({
       where: { id },
@@ -848,11 +847,8 @@ const deleteItem = async (id) => {
       throw new ApiError(httpStatus.NOT_FOUND, 'Item not found');
     }
 
-    
-
     // Check for other dependencies (excluding itemMaterials)
     if (existingItem.itemStocks?.length > 0) {
-
       throw new ApiError(
         httpStatus.CONFLICT,
         `Cannot delete item because it has ${existingItem.itemStocks.length} associated stock records`,
@@ -860,7 +856,6 @@ const deleteItem = async (id) => {
     }
 
     if (existingItem.itemStockLedgers?.length > 0) {
-    
       throw new ApiError(
         httpStatus.CONFLICT,
         `Cannot delete item because it has ${existingItem.itemStockLedgers.length} associated stock ledger records`,
@@ -868,7 +863,6 @@ const deleteItem = async (id) => {
     }
 
     if (existingItem.proformaInvoiceItems?.length > 0) {
-  
       throw new ApiError(
         httpStatus.CONFLICT,
         `Cannot delete item because it is referenced in ${existingItem.proformaInvoiceItems.length} proforma invoices`,
@@ -876,7 +870,6 @@ const deleteItem = async (id) => {
     }
 
     if (existingItem.sellItems?.length > 0) {
-  
       throw new ApiError(
         httpStatus.CONFLICT,
         `Cannot delete item because it is referenced in ${existingItem.sellItems.length} sales`,
@@ -884,7 +877,6 @@ const deleteItem = async (id) => {
     }
 
     if (existingItem.transferItems?.length > 0) {
-    
       throw new ApiError(
         httpStatus.CONFLICT,
         `Cannot delete item because it is referenced in ${existingItem.transferItems.length} transfers`,
@@ -892,7 +884,6 @@ const deleteItem = async (id) => {
     }
 
     if (existingItem.stockCorrectionItems?.length > 0) {
-    
       throw new ApiError(
         httpStatus.CONFLICT,
         `Cannot delete item because it is referenced in ${existingItem.stockCorrectionItems.length} stock corrections`,
@@ -900,7 +891,6 @@ const deleteItem = async (id) => {
     }
 
     if (existingItem.itemImages?.length > 0) {
-    
       throw new ApiError(
         httpStatus.CONFLICT,
         `Cannot delete item because it has ${existingItem.itemImages.length} associated images`,
@@ -909,12 +899,9 @@ const deleteItem = async (id) => {
 
     // Delete associated item materials first
     if (existingItem.itemMaterials?.length > 0) {
-  
-      
       await prisma.itemMaterial.deleteMany({
         where: { itemId: id },
       });
-      
     }
 
     // Delete associated item images from database
@@ -928,7 +915,6 @@ const deleteItem = async (id) => {
     if (existingItem.imageUrl) {
       try {
         await deleteImage(existingItem.imageUrl);
-       
       } catch (err) {
         console.error('Failed to delete item image file:', {
           error: err,
@@ -1174,19 +1160,15 @@ const getAllItemslist = async (filter = {}) => {
     },
   });
 
-  // Transform the data to include detailed stock information and filter by stock > 1
+  // Transform the data to include detailed stock information and filter by showroom stock > 0
   const itemsWithStock = items
     .map((item) => {
-      // Group stocks by store
       const storeStocks = [];
-      // Group stocks by showroom
       const showroomStocks = [];
 
-      // Track totals
       let totalStoreQuantity = 0;
       let totalShowroomQuantity = 0;
 
-      // Process each stock record
       item.itemStocks.forEach((stock) => {
         if (stock.storeId && stock.store) {
           const existingStore = storeStocks.find(
@@ -1225,8 +1207,8 @@ const getAllItemslist = async (filter = {}) => {
 
       const totalQuantity = totalStoreQuantity + totalShowroomQuantity;
 
-      // Only return items with total quantity greater than 1
-      if (totalQuantity <= 1) {
+      // Only include items that have showroom stock
+      if (totalShowroomQuantity <= 0) {
         return null;
       }
 
@@ -1242,22 +1224,18 @@ const getAllItemslist = async (filter = {}) => {
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
         itemMaterials: item.itemMaterials,
-
-        // Stock details with only locations that have stock
         stockDetails: {
-          stores: storeStocks, // Array of stores with stock
-          showrooms: showroomStocks, // Array of showrooms with stock
+          stores: storeStocks,
+          showrooms: showroomStocks,
           totalStoreQuantity,
           totalShowroomQuantity,
           totalQuantity,
           stock: totalQuantity,
         },
-
-        // For backward compatibility
         stock: totalQuantity,
       };
     })
-    .filter((item) => item !== null); // Remove null items (those with stock <= 1)
+    .filter((item) => item !== null);
 
   return {
     items: itemsWithStock,
