@@ -1021,6 +1021,17 @@ const getAllProjects = async (filters = {}) => {
             piNumber: true,
             total: true,
             status: true,
+            items: {
+              select: {
+                id: true,
+                itemname: true,
+                description: true,
+                quantity: true,
+                images: {
+                  select: { id: true, imageUrl: true },
+                },
+              },
+            },
           },
         },
         stages: {

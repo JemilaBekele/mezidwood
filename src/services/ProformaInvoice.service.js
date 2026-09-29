@@ -33,7 +33,6 @@ const generatePINumber = async () => {
 
 const VAT_RATE = 0.15;
 
-
 const calculateTotals = (items, vatApplied = false, vatPercent = 15) => {
   const subtotal = money.sum(
     items.map((item) => money.multiply(item.unitPrice, item.quantity)),
@@ -43,7 +42,12 @@ const calculateTotals = (items, vatApplied = false, vatPercent = 15) => {
   let total = subtotal;
 
   // Only calculate VAT if vatApplied is true
-  if (vatApplied === true || vatApplied === 'true' || vatApplied === '1' || vatApplied === 1) {
+  if (
+    vatApplied === true ||
+    vatApplied === 'true' ||
+    vatApplied === '1' ||
+    vatApplied === 1
+  ) {
     const rate = parseFloat(vatPercent) / 100 || VAT_RATE;
     vat = money.multiply(subtotal, rate);
     total = money.sum(subtotal, vat);
@@ -134,8 +138,8 @@ const createProformaInvoice = async (
       approvedById,
       amountDate,
       store = false,
-         vatApplied = false,    // ← Add this
-      vatPercent = 15,  
+      vatApplied = false, // ← Add this
+      vatPercent = 15,
       ...otherData
     } = invoiceData;
 
@@ -330,7 +334,11 @@ const createProformaInvoice = async (
     }
 
     // Calculate totals
-    const { subtotal, vat, total } = calculateTotals(items, vatApplied, vatPercent);
+    const { subtotal, vat, total } = calculateTotals(
+      items,
+      vatApplied,
+      vatPercent,
+    );
 
     // ✅ amountPaid is always 0 for new proforma invoices
     const amountPaid = 0;
@@ -2997,7 +3005,7 @@ const getAllProformaInvoices = async (filters = {}) => {
     customerId,
     startDate,
     endDate,
- 
+
     sortBy = 'createdAt',
     sortOrder = 'desc',
   } = filters;
