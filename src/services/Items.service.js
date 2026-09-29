@@ -1526,7 +1526,7 @@ const getAllProformaInvoicesAndSales = async (filters = {}) => {
     // Add payment status filter for proforma
     if (
       paymentStatus &&
-      ['PENDING', 'PAID', 'PARTIAL', 'UNPAID'].includes(paymentStatus)
+      ['PENDING', 'PARTIAL', 'PAID', 'CANCELLED', 'NONE'].includes(paymentStatus)
     ) {
       proformaFilters.paymentStatus = paymentStatus;
     }
@@ -1538,14 +1538,17 @@ const getAllProformaInvoicesAndSales = async (filters = {}) => {
     // Add payment status filter for sales
     if (
       paymentStatus &&
-      ['PENDING', 'PAID', 'PARTIAL', 'UNPAID'].includes(paymentStatus)
+      ['PENDING', 'PARTIAL', 'PAID', 'CANCELLED', 'NONE'].includes(paymentStatus)
     ) {
       salesFilters.paymentStatus = paymentStatus;
     }
 
-    // Handle status filters separately for each type
+    // Handle status filters separately for each type.
+    // A status that only exists on one document type excludes the other type
+    // (e.g. PENDING_ST must not return every sale too).
+    let includeProforma = type === 'proforma' || type === 'all';
+    let includeSales = type === 'sale' || type === 'all';
     if (status) {
-      // Proforma statuses
       const proformaStatuses = [
         'PENDING_ST',
         'APPROVED_ST',
@@ -1555,11 +1558,6 @@ const getAllProformaInvoicesAndSales = async (filters = {}) => {
         'APPROVED_CREATE_PROJECT',
         'CANCELLED',
       ];
-      if (proformaStatuses.includes(status)) {
-        proformaFilters.status = status;
-      }
-
-      // Sale statuses
       const saleStatuses = [
         'NOT_APPROVED',
         'APPROVED',
@@ -1567,29 +1565,31 @@ const getAllProformaInvoicesAndSales = async (filters = {}) => {
         'DELIVERED',
         'CANCELLED',
       ];
+      if (proformaStatuses.includes(status)) {
+        proformaFilters.status = status;
+      } else {
+        includeProforma = false;
+      }
       if (saleStatuses.includes(status)) {
         salesFilters.saleStatus = status;
+      } else {
+        includeSales = false;
       }
     }
 
-    // Search filter for invoice number or customer name
+    // Search filter for invoice number, customer name or customer phone.
+    // No `mode: 'insensitive'` - MySQL rejects it and its collation is already case-insensitive.
     const addSearchFilter = (filters, search, modelType) => {
-      if (!search) return filters;
-
-      if (modelType === 'proforma') {
-        return {
-          ...filters,
-          OR: [
-            { piNumber: { contains: search, mode: 'insensitive' } },
-            { customer: { name: { contains: search, mode: 'insensitive' } } },
-          ],
-        };
-      }
+      const term = search?.trim();
+      if (!term) return filters;
+      const numberField = modelType === 'proforma' ? 'piNumber' : 'invoiceNo';
       return {
         ...filters,
         OR: [
-          { invoiceNo: { contains: search, mode: 'insensitive' } },
-          { customer: { name: { contains: search, mode: 'insensitive' } } },
+          { [numberField]: { contains: term } },
+          { customer: { name: { contains: term } } },
+          { customer: { phone1: { contains: term } } },
+          { customer: { phone2: { contains: term } } },
         ],
       };
     };
@@ -1601,68 +1601,13 @@ const getAllProformaInvoicesAndSales = async (filters = {}) => {
     );
     const salesFinalFilters = addSearchFilter(salesFilters, searchTerm, 'sale');
 
-    // DEBUG: Check what proforma invoices exist without filters
-    if (type === 'proforma' || type === 'all') {
-      try {
-        // Get ALL proforma invoices for debugging
-        const allProformaInvoices = await prisma.proformaInvoice.findMany({
-          take: 10,
-          select: {
-            id: true,
-            piNumber: true,
-            status: true,
-            paymentStatus: true,
-            preparedById: true,
-            customerId: true,
-            store: true,
-          },
-        });
-
-        // Get count of proforma invoices by status
-        const statusCounts = await prisma.proformaInvoice.groupBy({
-          by: ['status'],
-          _count: {
-            status: true,
-          },
-        });
-
-        // Get count by payment status
-        const paymentStatusCounts = await prisma.proformaInvoice.groupBy({
-          by: ['paymentStatus'],
-          _count: {
-            paymentStatus: true,
-          },
-        });
-
-        // Check for specific customer
-        if (customerId) {
-          const customerProformaCount = await prisma.proformaInvoice.count({
-            where: {
-              customerId,
-            },
-          });
-        }
-
-        // Check for specific preparedBy
-        if (createdById) {
-          const userProformaCount = await prisma.proformaInvoice.count({
-            where: {
-              preparedById: createdById,
-            },
-          });
-        }
-      } catch (debugError) {
-        console.error('Debug error:', debugError);
-      }
-    }
-
     // Execute queries based on type
     let proformaInvoices = [];
     let sales = [];
     let proformaCount = 0;
     let salesCount = 0;
 
-    if (type === 'proforma' || type === 'all') {
+    if (includeProforma) {
       try {
         [proformaInvoices, proformaCount] = await Promise.all([
           prisma.proformaInvoice.findMany({
@@ -1674,6 +1619,7 @@ const getAllProformaInvoicesAndSales = async (filters = {}) => {
                   name: true,
                   companyName: true,
                   phone1: true,
+                  phone2: true,
                 },
               },
               preparedBy: {
@@ -1722,9 +1668,8 @@ const getAllProformaInvoicesAndSales = async (filters = {}) => {
       }
     }
 
-    if (type === 'sale' || type === 'all') {
+    if (includeSales) {
       try {
-        console.log('Fetching sales...');
         [sales, salesCount] = await Promise.all([
           prisma.sell.findMany({
             where: salesFinalFilters,
@@ -1742,6 +1687,7 @@ const getAllProformaInvoicesAndSales = async (filters = {}) => {
                   name: true,
                   companyName: true,
                   phone1: true,
+                  phone2: true,
                 },
               },
               createdBy: {
@@ -1795,15 +1741,17 @@ const getAllProformaInvoicesAndSales = async (filters = {}) => {
         return {
           id: invoice.id,
           invoiceNo: invoice.piNumber,
+          piNumber: invoice.piNumber,
           type: 'PROFORMA',
           customer: invoice.customer,
           status: invoice.status,
           paymentStatus: invoice.paymentStatus || 'PENDING',
-          subtotal: invoice.subtotal || 0,
-          vat: invoice.vat || 0,
-          total: invoice.total || 0,
-          amountPaid: invoice.amountPaid || 0,
-          balance: invoice.balance || 0,
+          subtotal: Number(invoice.subtotal || 0),
+          vat: Number(invoice.vat || 0),
+          total: Number(invoice.total || 0),
+          amountPaid: Number(invoice.amountPaid || 0),
+          totalPaid: Number(invoice.amountPaid || 0),
+          balance: Number(invoice.balance || 0),
           amountDate: invoice.amountDate,
           preparedBy: invoice.preparedBy,
           approvedBy: invoice.approvedBy,
@@ -1877,6 +1825,33 @@ const getAllProformaInvoicesAndSales = async (filters = {}) => {
       }
     };
 
+    // Money totals across ALL filtered records (not just the current page)
+    const [proformaSums, salesSums] = await Promise.all([
+      includeProforma
+        ? prisma.proformaInvoice.aggregate({
+            where: proformaFinalFilters,
+            _sum: { total: true, amountPaid: true, balance: true },
+          })
+        : null,
+      includeSales
+        ? prisma.sell.aggregate({
+            where: salesFinalFilters,
+            _sum: { grandTotal: true, totalPaid: true, balance: true },
+          })
+        : null,
+    ]);
+    const totals = {
+      totalAmount:
+        Number(proformaSums?._sum.total || 0) +
+        Number(salesSums?._sum.grandTotal || 0),
+      totalPaid:
+        Number(proformaSums?._sum.amountPaid || 0) +
+        Number(salesSums?._sum.totalPaid || 0),
+      totalBalance:
+        Number(proformaSums?._sum.balance || 0) +
+        Number(salesSums?._sum.balance || 0),
+    };
+
     // Prepare response
     let allItems = [];
     let totalCount = 0;
@@ -1917,6 +1892,7 @@ const getAllProformaInvoicesAndSales = async (filters = {}) => {
         proformaCount,
         salesCount,
         totalCount,
+        ...totals,
         ...(startDate &&
           endDate && {
             dateRange: {

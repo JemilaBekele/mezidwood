@@ -45,7 +45,8 @@ const getDesignProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          },
+          phone1: true,
+          phone2: true,},
         },
         invoice: {
           select: {
@@ -53,6 +54,17 @@ const getDesignProjects = async (status = 'all') => {
             piNumber: true,
             total: true,
             status: true,
+            items: {
+              select: {
+                id: true,
+                itemname: true,
+                description: true,
+                quantity: true,
+                images: {
+                  select: { id: true, imageUrl: true },
+                },
+              },
+            },
           },
         },
         stages: {
@@ -156,6 +168,7 @@ const getbyDesignProject = async (status = 'all', currentUserId) => {
             id: true,
             name: true,
             phone1: true,
+            phone2: true,
           },
         },
         invoice: {
@@ -164,7 +177,17 @@ const getbyDesignProject = async (status = 'all', currentUserId) => {
             piNumber: true,
             total: true,
             status: true,
-            createdAt: true,
+            items: {
+              select: {
+                id: true,
+                itemname: true,
+                description: true,
+                quantity: true,
+                images: {
+                  select: { id: true, imageUrl: true },
+                },
+              },
+            },
           },
         },
         stages: {
@@ -303,7 +326,17 @@ const getUnassignedDesignProjects = async (status = 'all') => {
             piNumber: true,
             total: true,
             status: true,
-            createdAt: true,
+            items: {
+              select: {
+                id: true,
+                itemname: true,
+                description: true,
+                quantity: true,
+                images: {
+                  select: { id: true, imageUrl: true },
+                },
+              },
+            },
           },
         },
         stages: {
@@ -432,7 +465,8 @@ const getPurchasingProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          },
+          phone1: true,
+          phone2: true,},
         },
         invoice: {
           include: {
@@ -506,8 +540,13 @@ const getPurchasingProjects = async (status = 'all') => {
 
       // Check if every material has been fully issued
       for (const material of allMaterials) {
-        const totalRequired = (material.quantity || 0) + (material.additionalQuantity || 0);
-        const totalIssued = material.materialIssues?.reduce((sum, issue) => sum + issue.quantity, 0) || 0;
+        const totalRequired =
+          (material.quantity || 0) + (material.additionalQuantity || 0);
+        const totalIssued =
+          material.materialIssues?.reduce(
+            (sum, issue) => sum + issue.quantity,
+            0,
+          ) || 0;
 
         // If any material is not fully issued, return false
         if (totalIssued < totalRequired) {
@@ -537,8 +576,13 @@ const getPurchasingProjects = async (status = 'all') => {
       for (const item of project.invoice.items) {
         if (item.proformaItemMaterials) {
           for (const material of item.proformaItemMaterials) {
-            const totalRequired = (material.quantity || 0) + (material.additionalQuantity || 0);
-            const totalIssued = material.materialIssues?.reduce((sum, issue) => sum + issue.quantity, 0) || 0;
+            const totalRequired =
+              (material.quantity || 0) + (material.additionalQuantity || 0);
+            const totalIssued =
+              material.materialIssues?.reduce(
+                (sum, issue) => sum + issue.quantity,
+                0,
+              ) || 0;
             const isFullyIssued = totalIssued >= totalRequired;
 
             totalMaterials++;
@@ -561,7 +605,8 @@ const getPurchasingProjects = async (status = 'all') => {
       return {
         totalMaterials,
         issuedMaterials,
-        fullyIssued: totalMaterials > 0 ? issuedMaterials === totalMaterials : true,
+        fullyIssued:
+          totalMaterials > 0 ? issuedMaterials === totalMaterials : true,
         details,
       };
     };
@@ -625,7 +670,8 @@ const getMetalWorkProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          },
+          phone1: true,
+          phone2: true,},
         },
         invoice: {
           select: {
@@ -746,7 +792,8 @@ const getCNCProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          },
+          phone1: true,
+          phone2: true,},
         },
         invoice: {
           select: {
@@ -754,6 +801,17 @@ const getCNCProjects = async (status = 'all') => {
             piNumber: true,
             total: true,
             status: true,
+            items: {
+              select: {
+                id: true,
+                itemname: true,
+                description: true,
+                quantity: true,
+                images: {
+                  select: { id: true, imageUrl: true },
+                },
+              },
+            },
           },
         },
         stages: {
@@ -897,7 +955,8 @@ const getCuttingProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          },
+          phone1: true,
+          phone2: true,},
         },
         invoice: {
           select: {
@@ -905,6 +964,17 @@ const getCuttingProjects = async (status = 'all') => {
             piNumber: true,
             total: true,
             status: true,
+            items: {
+              select: {
+                id: true,
+                itemname: true,
+                description: true,
+                quantity: true,
+                images: {
+                  select: { id: true, imageUrl: true },
+                },
+              },
+            },
           },
         },
         stages: {
@@ -1055,7 +1125,8 @@ const getEdgeBandingProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          },
+          phone1: true,
+          phone2: true,},
         },
         invoice: {
           select: {
@@ -1063,6 +1134,17 @@ const getEdgeBandingProjects = async (status = 'all') => {
             piNumber: true,
             total: true,
             status: true,
+            items: {
+              select: {
+                id: true,
+                itemname: true,
+                description: true,
+                quantity: true,
+                images: {
+                  select: { id: true, imageUrl: true },
+                },
+              },
+            },
           },
         },
         stages: {
@@ -1213,7 +1295,8 @@ const getAssemblyProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          },
+          phone1: true,
+          phone2: true,},
         },
         invoice: {
           select: {
@@ -1221,6 +1304,17 @@ const getAssemblyProjects = async (status = 'all') => {
             piNumber: true,
             total: true,
             status: true,
+            items: {
+              select: {
+                id: true,
+                itemname: true,
+                description: true,
+                quantity: true,
+                images: {
+                  select: { id: true, imageUrl: true },
+                },
+              },
+            },
           },
         },
         stages: {
@@ -1391,7 +1485,8 @@ const getPaintingProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          },
+          phone1: true,
+          phone2: true,},
         },
         invoice: {
           select: {
@@ -1399,6 +1494,17 @@ const getPaintingProjects = async (status = 'all') => {
             piNumber: true,
             total: true,
             status: true,
+            items: {
+              select: {
+                id: true,
+                itemname: true,
+                description: true,
+                quantity: true,
+                images: {
+                  select: { id: true, imageUrl: true },
+                },
+              },
+            },
           },
         },
         stages: {
@@ -1570,7 +1676,8 @@ const getFinishingProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          },
+          phone1: true,
+          phone2: true,},
         },
         invoice: {
           select: {
@@ -1578,6 +1685,17 @@ const getFinishingProjects = async (status = 'all') => {
             piNumber: true,
             total: true,
             status: true,
+            items: {
+              select: {
+                id: true,
+                itemname: true,
+                description: true,
+                quantity: true,
+                images: {
+                  select: { id: true, imageUrl: true },
+                },
+              },
+            },
           },
         },
         stages: {
@@ -1748,7 +1866,8 @@ const getDeliveryProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          },
+          phone1: true,
+          phone2: true,},
         },
         invoice: {
           select: {
@@ -1756,9 +1875,17 @@ const getDeliveryProjects = async (status = 'all') => {
             piNumber: true,
             total: true,
             status: true,
-            paymentStatus: true, // ✅ ADDED: Payment status from invoice
-            amountPaid: true, // ✅ ADDED: Amount paid
-            balance: true, // ✅ ADDED: Balance
+            items: {
+              select: {
+                id: true,
+                itemname: true,
+                description: true,
+                quantity: true,
+                images: {
+                  select: { id: true, imageUrl: true },
+                },
+              },
+            },
           },
         },
         stages: {
@@ -1821,7 +1948,8 @@ const getDeliveryProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          },
+          phone1: true,
+          phone2: true,},
         },
         store: {
           select: {
@@ -2242,7 +2370,8 @@ const getInstallationProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          },
+          phone1: true,
+          phone2: true,},
         },
         invoice: {
           select: {
@@ -2250,6 +2379,17 @@ const getInstallationProjects = async (status = 'all') => {
             piNumber: true,
             total: true,
             status: true,
+            items: {
+              select: {
+                id: true,
+                itemname: true,
+                description: true,
+                quantity: true,
+                images: {
+                  select: { id: true, imageUrl: true },
+                },
+              },
+            },
           },
         },
         stages: {
@@ -2440,7 +2580,8 @@ const getMaterialUsageReport = async () => {
           select: {
             id: true,
             name: true,
-          },
+          phone1: true,
+          phone2: true,},
         },
         project: {
           include: {

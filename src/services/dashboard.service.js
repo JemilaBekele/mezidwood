@@ -421,26 +421,47 @@ const getTopRequestedProductsFromPI = async (
   }
 };
 
+// Inclusive whole-day range: start of startDate .. end of endDate. Either side may be omitted.
+const buildDayRange = (startDate, endDate) => {
+  if (!startDate && !endDate) return undefined;
+  const range = {};
+  if (startDate) {
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    range.gte = start;
+  }
+  if (endDate) {
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    range.lte = end;
+  }
+  return range;
+};
+
+// Prisma Decimal -> number (plain `+=` on a Decimal concatenates strings)
+const toNum = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+};
+
 const getTopItemsFromPI = async (startDate, endDate) => {
   try {
     // Date filter for customer orders (store = false)
     const dateFilter = {};
-    if (startDate && endDate) {
-      dateFilter.createdAt = {
-        gte: new Date(startDate),
-        lte: new Date(endDate),
-      };
-    }
+    const createdAtRange = buildDayRange(startDate, endDate);
+    if (createdAtRange) dateFilter.createdAt = createdAtRange;
 
     // Get all proforma invoice items from customer orders (store = false)
     const piItems = await prisma.proformaInvoiceItem.findMany({
       where: {
         invoice: {
           store: false, // Customer orders only
+          status: { not: 'CANCELLED' },
           ...dateFilter,
         },
       },
       include: {
+        category: true,
         item: {
           include: {
             category: true,
@@ -468,11 +489,12 @@ const getTopItemsFromPI = async (startDate, endDate) => {
     let totalRequestedValue = 0;
 
     piItems.forEach((piItem) => {
-      if (!piItem.item) return;
-
-      const { itemId } = piItem;
-      const { quantity } = piItem;
-      const value = piItem.amount;
+      // Group by product (ProductCategory, e.g. "01-Bed 150"); the typed description is just a label
+      const category = piItem.category || piItem.item?.category || null;
+      const itemId = category?.id || 'uncategorized';
+      const productName = category?.name?.trim() || 'Other (no product)';
+      const quantity = toNum(piItem.quantity);
+      const value = toNum(piItem.amount);
 
       totalRequestedQuantity += quantity;
       totalRequestedValue += value;
@@ -481,18 +503,21 @@ const getTopItemsFromPI = async (startDate, endDate) => {
         const existing = itemAnalysis.get(itemId);
         existing.totalRequestedQuantity += quantity;
         existing.totalValue += value;
+        existing.totalRevenue += value; // alias read by the report response
         existing.piCount += 1;
         existing.customers.add(piItem.invoice.customer?.name || 'Unknown');
       } else {
         itemAnalysis.set(itemId, {
-          itemId: piItem.item.id,
-          itemName: piItem.item.name,
-          category: piItem.item.category?.name || 'Uncategorized',
-          type: piItem.item.type?.name || 'Standard',
-          size: piItem.item.size?.name || 'One Size',
-          color: piItem.item.color,
-          price: piItem.item.price,
-          imageUrl: piItem.item.imageUrl,
+          itemId,
+          categoryId: category?.id ?? null,
+          categoryName: productName,
+          itemName: productName,
+          category: productName,
+          type: piItem.item?.type?.name || 'Standard',
+          size: piItem.item?.size?.name || 'One Size',
+          color: piItem.item?.color,
+          price: piItem.item?.price ?? toNum(piItem.unitPrice),
+          imageUrl: piItem.item?.imageUrl,
           totalRequestedQuantity: quantity,
           totalValue: value,
           totalRevenue: value, // Alias for consistency
@@ -544,12 +569,8 @@ const getItemSalesAnalysis = async (startDate, endDate) => {
   try {
     // Date filter for completed sales
     const dateFilter = {};
-    if (startDate && endDate) {
-      dateFilter.saleDate = {
-        gte: new Date(startDate),
-        lte: new Date(endDate),
-      };
-    }
+    const saleDateRange = buildDayRange(startDate, endDate);
+    if (saleDateRange) dateFilter.saleDate = saleDateRange;
 
     // Get all sold items from completed sales (PAID)
     const soldItems = await prisma.sellItem.findMany({
@@ -589,9 +610,11 @@ const getItemSalesAnalysis = async (startDate, endDate) => {
     let totalQuantity = 0;
 
     soldItems.forEach((sale) => {
-      const { itemId } = sale;
-      const revenue = sale.totalPrice;
-      const { quantity } = sale;
+      // Group by product (ProductCategory) - same key as the PI item analysis
+      const itemId = sale.item?.category?.id || 'uncategorized';
+      const productName = sale.item?.category?.name?.trim() || 'Other (no product)';
+      const revenue = toNum(sale.totalPrice);
+      const quantity = toNum(sale.quantity);
 
       totalRevenue += revenue;
       totalQuantity += quantity;
@@ -600,13 +623,16 @@ const getItemSalesAnalysis = async (startDate, endDate) => {
         const existing = itemAnalysis.get(itemId);
         existing.totalQuantity += quantity;
         existing.totalRevenue += revenue;
+        existing.totalValue += revenue; // keep alias in sync
         existing.orderCount += 1;
         existing.customers.add(sale.sell.customer?.name || 'Walk-in');
       } else {
         itemAnalysis.set(itemId, {
-          itemId: sale.item.id,
-          itemName: sale.item.name,
-          category: sale.item.category?.name || 'Uncategorized',
+          itemId,
+          categoryId: sale.item?.category?.id ?? null,
+          categoryName: productName,
+          itemName: productName,
+          category: productName,
           type: sale.item.type?.name || 'Standard',
           size: sale.item.size?.name || 'One Size',
           color: sale.item.color,
@@ -663,12 +689,8 @@ const getTopSalesByCreator = async (startDate, endDate) => {
   try {
     // Date filter
     const dateFilter = {};
-    if (startDate && endDate) {
-      dateFilter.saleDate = {
-        gte: new Date(startDate),
-        lte: new Date(endDate),
-      };
-    }
+    const saleDateRange = buildDayRange(startDate, endDate);
+    if (saleDateRange) dateFilter.saleDate = saleDateRange;
 
     // Get all sales with creator info
     const sales = await prisma.sell.findMany({
@@ -700,9 +722,9 @@ const getTopSalesByCreator = async (startDate, endDate) => {
 
     sales.forEach((sale) => {
       const creatorId = sale.createdBy?.id || 'unknown';
-      const saleRevenue = sale.grandTotal;
+      const saleRevenue = toNum(sale.grandTotal);
       const saleItemsCount = sale.items.reduce(
-        (sum, item) => sum + item.quantity,
+        (sum, item) => sum + toNum(item.quantity),
         0,
       );
 
@@ -750,7 +772,9 @@ const getTopSalesByCreator = async (startDate, endDate) => {
       .map((creator, index) => ({
         rank: index + 1,
         ...creator,
-        percentageOfTotal: (creator.totalRevenue / totalOverallRevenue) * 100,
+        percentageOfTotal: totalOverallRevenue
+          ? (creator.totalRevenue / totalOverallRevenue) * 100
+          : 0,
       }));
 
     const topBySalesCount = Array.from(creatorAnalysis.values())
@@ -784,17 +808,14 @@ const getTopPIByCreator = async (startDate, endDate) => {
   try {
     // Date filter
     const dateFilter = {};
-    if (startDate && endDate) {
-      dateFilter.createdAt = {
-        gte: new Date(startDate),
-        lte: new Date(endDate),
-      };
-    }
+    const createdAtRange = buildDayRange(startDate, endDate);
+    if (createdAtRange) dateFilter.createdAt = createdAtRange;
 
     // Get all proforma invoices with store = false
     const proformas = await prisma.proformaInvoice.findMany({
       where: {
         store: false,
+        status: { not: 'CANCELLED' },
         ...dateFilter,
       },
       include: {
@@ -821,7 +842,7 @@ const getTopPIByCreator = async (startDate, endDate) => {
 
     proformas.forEach((pi) => {
       const creatorId = pi.preparedBy?.id || 'unknown';
-      const piTotal = pi.total;
+      const piTotal = toNum(pi.total);
 
       totalOverallValue += piTotal;
       totalOverallPI += 1;
@@ -869,7 +890,9 @@ const getTopPIByCreator = async (startDate, endDate) => {
       .map((creator, index) => ({
         rank: index + 1,
         ...creator,
-        percentageOfTotal: (creator.totalValue / totalOverallValue) * 100,
+        percentageOfTotal: totalOverallValue
+          ? (creator.totalValue / totalOverallValue) * 100
+          : 0,
       }));
 
     const topByPICount = Array.from(creatorPIAnalysis.values())
@@ -1016,81 +1039,23 @@ const getCompleteStaticReport = async (startDate, endDate) => {
       'topItemsPI',
     );
 
-    // CALCULATE TOTAL PI VALUE FROM PROFORMAS
-    let calculatedTotalValue = 0;
-    let creatorData = null;
-
-    // Method 1: From topByValue (most reliable)
-    if (
-      validatedTopPICreators.topByValue &&
-      Array.isArray(validatedTopPICreators.topByValue) &&
-      validatedTopPICreators.topByValue.length > 0
-    ) {
-      creatorData = validatedTopPICreators.topByValue[0];
-      if (creatorData.proformas && Array.isArray(creatorData.proformas)) {
-        calculatedTotalValue = calculateTotalFromProformas(
-          creatorData.proformas,
-        );
-      }
-    }
-
-    // Method 2: From allPreparers
-    if (
-      calculatedTotalValue === 0 &&
-      validatedTopPICreators.allPreparers &&
-      Array.isArray(validatedTopPICreators.allPreparers) &&
-      validatedTopPICreators.allPreparers.length > 0
-    ) {
-      creatorData = validatedTopPICreators.allPreparers[0];
-      if (creatorData.proformas && Array.isArray(creatorData.proformas)) {
-        calculatedTotalValue = calculateTotalFromProformas(
-          creatorData.proformas,
-        );
-      }
-    }
-
-    // Method 3: From topByPICount
-    if (
-      calculatedTotalValue === 0 &&
-      validatedTopPICreators.topByPICount &&
-      Array.isArray(validatedTopPICreators.topByPICount) &&
-      validatedTopPICreators.topByPICount.length > 0
-    ) {
-      const piCountData = validatedTopPICreators.topByPICount[0];
-      if (piCountData.proformas && Array.isArray(piCountData.proformas)) {
-        calculatedTotalValue = calculateTotalFromProformas(
-          piCountData.proformas,
-        );
-        if (!creatorData) creatorData = piCountData;
-      }
-    }
-
-    // Calculate total from PI items/categories using totalRevenue
-    let calculatedItemsTotalValue = 0;
-    if (
-      validatedTopItemsPI.allItems &&
-      Array.isArray(validatedTopItemsPI.allItems)
-    ) {
-      validatedTopItemsPI.allItems.forEach((entry) => {
-        const revenue = getNumericValue(entry.totalRevenue);
-        calculatedItemsTotalValue += revenue;
-      });
-    }
-
-    // Use the calculated values
-    const totalPIValueFromCreators = calculatedTotalValue;
-    const totalPIValueFromItems =
-      calculatedItemsTotalValue > 0
-        ? calculatedItemsTotalValue
-        : calculatedTotalValue;
-    const consistentTotalPIValue = Math.max(
-      totalPIValueFromCreators,
-      totalPIValueFromItems,
+    // TOTAL PI VALUE = every preparer's PIs (not only the top preparer's)
+    const calculatedTotalValue = getNumericValue(
+      validatedTopPICreators.summary.totalProformaValue,
     );
+    const creatorData = (validatedTopPICreators.topByValue || [])[0] || null;
+
+    // Value of PI items (per-item analysis). Kept for the items summary only.
+    const calculatedItemsTotalValue = (validatedTopItemsPI.allItems || []).reduce(
+      (sum, entry) => sum + getNumericValue(entry.totalRevenue),
+      0,
+    );
+    const consistentTotalPIValue = calculatedTotalValue;
 
     // Calculate additional metrics
+    // Same source as the per-person table (paid sales, grand total) so the numbers add up
     const totalRevenue = getNumericValue(
-      validatedItemSales.summary.totalRevenue,
+      validatedTopSalesCreators.summary.totalRevenue,
     );
     const totalItemsSold = getNumericValue(
       validatedItemSales.summary.totalItemsSold,
@@ -1124,16 +1089,6 @@ const getCompleteStaticReport = async (startDate, endDate) => {
         (sale) => sale && categoryId !== null && sale.categoryId === categoryId,
       );
 
-      if (!soldCategoryEntry) {
-        console.log(
-          `[getCompleteStaticReport] [${idx}] "${categoryName}" (categoryId=${categoryId}) -> NO MATCH in sales data`,
-        );
-      } else {
-        console.log(
-          `[getCompleteStaticReport] [${idx}] "${categoryName}" (categoryId=${categoryId}) -> matched:`,
-          JSON.stringify(soldCategoryEntry, null, 2),
-        );
-      }
 
       const requestedQty = getNumericValue(piCategory.totalRequestedQuantity);
       const soldQty = soldCategoryEntry
@@ -1167,7 +1122,9 @@ const getCompleteStaticReport = async (startDate, endDate) => {
         name: creatorData.creatorName || 'Unknown',
         value: roundNum(creatorTotal),
         piCount: roundNum(piCount, 0),
-        percentageOfTotal: 100,
+        percentageOfTotal: roundNum(
+          calculatedTotalValue > 0 ? (creatorTotal / calculatedTotalValue) * 100 : 0,
+        ),
       };
     }
 
@@ -1488,13 +1445,13 @@ const getCompleteStaticReport = async (startDate, endDate) => {
         topPIPreparer: topPIPreparerData,
 
         averageOrderValue: roundNum(
-          (validatedItemSales.summary.totalOrders || 0) > 0
-            ? totalRevenue / validatedItemSales.summary.totalOrders
+          (validatedTopSalesCreators.summary.totalSales || 0) > 0
+            ? totalRevenue / validatedTopSalesCreators.summary.totalSales
             : 0,
         ),
         averageProformaValue: roundNum(
-          (validatedTopItemsPI.summary.totalOrders || 0) > 0
-            ? consistentTotalPIValue / validatedTopItemsPI.summary.totalOrders
+          (validatedTopPICreators.summary.totalProformas || 0) > 0
+            ? consistentTotalPIValue / validatedTopPICreators.summary.totalProformas
             : 0,
         ),
         uniqueCustomers: roundNum(

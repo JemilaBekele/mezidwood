@@ -436,6 +436,12 @@ module.exports = {
     ADD_PAYMENT: {
       name: 'ADD_PAYMENT_TO_PROFORMA_INVOICE',
     },
+    EDIT_PAYMENT: {
+      name: 'EDIT_PAYMENT_TO_PROFORMA_INVOICE',
+    },
+    DELETE_PAYMENT: {
+      name: 'DELETE_PAYMENT_TO_PROFORMA_INVOICE',
+    },
     ISSUE_STOCK_MATERIALS: {
       name: 'ISSUE_STOCK_MATERIALS_FOR_PROFORMA',
     },

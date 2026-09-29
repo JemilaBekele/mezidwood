@@ -36,6 +36,8 @@ const transferRourer = require('../routes/transferitem.route');
 const productcategoryRouter = require('../routes/producttype.route');
 const StoreRouter = require('../routes/Store.route');
 const reportsRouter = require('../routes/dashboard.route');
+const overviewInsightsRouter = require('../routes/overviewInsights.route');
+const paymentsReportRouter = require('../routes/paymentsReport.route');
 const SchedulingSettingsRouter = require('../routes/SchedulingSettings.route');
 const HolidayRouter = require('../routes/Holiday.route');
 const { errorHandler, errorConverter } = require('../middlewares/error');
@@ -86,6 +88,8 @@ module.exports = async (app) => {
   app.use(ResetRouter);
 
   app.use(reportsRouter);
+  app.use(overviewInsightsRouter);
+  app.use(paymentsReportRouter);
   app.use(transferRourer);
   app.use(authRouter);
   app.use(rolesRouter);
