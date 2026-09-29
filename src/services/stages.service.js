@@ -45,8 +45,9 @@ const getDesignProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          phone1: true,
-          phone2: true,},
+            phone1: true,
+            phone2: true,
+          },
         },
         invoice: {
           select: {
@@ -465,9 +466,11 @@ const getPurchasingProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          phone1: true,
-          phone2: true,},
+            phone1: true,
+            phone2: true,
+          },
         },
+        
         invoice: {
           include: {
             items: {
@@ -477,6 +480,9 @@ const getPurchasingProjects = async (status = 'all') => {
                     material: true,
                     materialIssues: true,
                   },
+                },
+                images: {
+                  select: { id: true, imageUrl: true },
                 },
               },
             },
@@ -670,8 +676,9 @@ const getMetalWorkProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          phone1: true,
-          phone2: true,},
+            phone1: true,
+            phone2: true,
+          },
         },
         invoice: {
           select: {
@@ -679,6 +686,17 @@ const getMetalWorkProjects = async (status = 'all') => {
             piNumber: true,
             total: true,
             status: true,
+            items: {
+              select: {
+                id: true,
+                itemname: true,
+                description: true,
+                quantity: true,
+                images: {
+                  select: { id: true, imageUrl: true },
+                },
+              },
+            },
           },
         },
         stages: {
@@ -792,8 +810,9 @@ const getCNCProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          phone1: true,
-          phone2: true,},
+            phone1: true,
+            phone2: true,
+          },
         },
         invoice: {
           select: {
@@ -955,8 +974,9 @@ const getCuttingProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          phone1: true,
-          phone2: true,},
+            phone1: true,
+            phone2: true,
+          },
         },
         invoice: {
           select: {
@@ -1125,8 +1145,9 @@ const getEdgeBandingProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          phone1: true,
-          phone2: true,},
+            phone1: true,
+            phone2: true,
+          },
         },
         invoice: {
           select: {
@@ -1295,8 +1316,9 @@ const getAssemblyProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          phone1: true,
-          phone2: true,},
+            phone1: true,
+            phone2: true,
+          },
         },
         invoice: {
           select: {
@@ -1485,8 +1507,9 @@ const getPaintingProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          phone1: true,
-          phone2: true,},
+            phone1: true,
+            phone2: true,
+          },
         },
         invoice: {
           select: {
@@ -1676,8 +1699,9 @@ const getFinishingProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          phone1: true,
-          phone2: true,},
+            phone1: true,
+            phone2: true,
+          },
         },
         invoice: {
           select: {
@@ -1866,8 +1890,9 @@ const getDeliveryProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          phone1: true,
-          phone2: true,},
+            phone1: true,
+            phone2: true,
+          },
         },
         invoice: {
           select: {
@@ -1948,8 +1973,9 @@ const getDeliveryProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          phone1: true,
-          phone2: true,},
+            phone1: true,
+            phone2: true,
+          },
         },
         store: {
           select: {
@@ -2370,8 +2396,9 @@ const getInstallationProjects = async (status = 'all') => {
           select: {
             id: true,
             name: true,
-          phone1: true,
-          phone2: true,},
+            phone1: true,
+            phone2: true,
+          },
         },
         invoice: {
           select: {
@@ -2580,8 +2607,9 @@ const getMaterialUsageReport = async () => {
           select: {
             id: true,
             name: true,
-          phone1: true,
-          phone2: true,},
+            phone1: true,
+            phone2: true,
+          },
         },
         project: {
           include: {
