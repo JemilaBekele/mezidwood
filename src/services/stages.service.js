@@ -1899,6 +1899,9 @@ const getDeliveryProjects = async (status = 'all') => {
             id: true,
             piNumber: true,
             total: true,
+            amountPaid: true,
+            balance: true,
+            paymentStatus: true,
             status: true,
             items: {
               select: {
