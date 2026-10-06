@@ -652,6 +652,25 @@ const loadExistingUsage = async (cal, fromDate, client = prisma) => {
         );
       }
     });
+    // A stage completed today has its whole day's allocation released (so the
+    // freed UNITS go to the next project), but the team was still busy on it
+    // until the completion moment. Keep that as a time floor so a new project
+    // planned from today's opening isn't booked over hours already worked.
+    const completed = await client.projectStage.findMany({
+      where: {
+        status: 'COMPLETED',
+        stage: { in: CAPACITY_STAGES },
+        projectendDate: { gte: cal.startOfDay(fromDate) },
+      },
+      select: { stage: true, projectendDate: true },
+    });
+    completed.forEach((s) => {
+      rememberBusyUntil(
+        busyUntil,
+        usageKey(s.stage, cal.dayKey(s.projectendDate)),
+        s.projectendDate,
+      );
+    });
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn('[engine] could not load existing capacity usage:', err.message);

@@ -9,6 +9,7 @@ const {
   withTimeBasedStages,
 } = require('./scheduling/engine');
 const { VALID_DIFFICULTIES, CAPACITY_STAGES } = require('./scheduling/config');
+const { getCalendar } = require('./scheduling/calendar');
 
 // Columns a client is allowed to sort by. FN-9: `orderBy: { [sortBy]: order }`
 // with an unvalidated query param threw a raw 500 on any unknown field.
@@ -203,9 +204,16 @@ const calculateDeliveryEstimate = async (calculationData) => {
   // engine createProject uses, so an estimate reproduces the project created from
   // it (given the same stage quantities). dryRun consults existing capacity (so
   // estimates no longer silently over-book) but reserves nothing.
+  // Same default as createProject: with no explicit start, plan from today's
+  // opening time so the estimate matches the project created from it.
+  let planStart = startDate;
+  if (!planStart) {
+    const cal = await getCalendar();
+    planStart = cal.startOfWorkingDay(cal.nextWorkingStart(new Date()));
+  }
   const plan = await scheduleProject({
     stageQuantities,
-    startDate,
+    startDate: planStart,
     difficulty,
     mode: 'dryRun',
   });

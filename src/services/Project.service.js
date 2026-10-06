@@ -351,12 +351,20 @@ const createProject = async (projectData, userId) => {
   }
 
   // WT-1 — the working-time guard. A project created at 21:00, on a Sunday, on
-  // a holiday or during the lunch break used to be scheduled from 08:30 THAT
-  // MORNING, i.e. in the past, silently reserving capacity for hours that could
-  // not be worked. The calendar rolls the start forward to the next instant the
+  // a holiday or during the lunch break rolls forward to the next instant the
   // factory is actually open, and we tell the caller when it did.
-  const baseStart = cal.nextWorkingStart(requestedStart);
-  if (baseStart.getTime() !== requestedStart.getTime()) {
+  const firstWorkingInstant = cal.nextWorkingStart(requestedStart);
+
+  // A project created DURING working hours (no manual start) is planned from
+  // that working day's opening time (Scheduling Settings), not from the
+  // creation minute — a team idle since opening should not lose the morning.
+  // Each stage still stacks after work its team already has booked that day
+  // (busyUntil in the engine), so DESIGN starts when the previous project's
+  // DESIGN ends, never on top of it.
+  const baseStart = manualStartDate
+    ? firstWorkingInstant
+    : cal.startOfWorkingDay(firstWorkingInstant);
+  if (firstWorkingInstant.getTime() !== requestedStart.getTime()) {
     warnings.push({
       code: 'OUT_OF_WORKING_HOURS',
       message:
@@ -3303,6 +3311,25 @@ const STAGE_ORDER = [
   'INSTALLATION',
 ];
 const validateStageChronology = async (projectId, stageName, newStartDate) => {
+  // Finished work already happened; it can't be moved. Say so plainly rather
+  // than letting the reschedule fall through to a generic "not found".
+  const target = await prisma.projectStage.findFirst({
+    where: { projectId, stage: stageName },
+    select: { status: true, finished: true },
+  });
+  if (
+    target &&
+    (target.finished ||
+      target.status === 'COMPLETED' ||
+      target.status === 'CANCELLED')
+  ) {
+    const state = target.status === 'CANCELLED' ? 'cancelled' : 'completed';
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      `${stageName} is already ${state} for this project and can't be rescheduled.`,
+    );
+  }
+
   const currentStageIndex = STAGE_ORDER.indexOf(stageName);
 
   // 1. Validate stage name exists in our order list
