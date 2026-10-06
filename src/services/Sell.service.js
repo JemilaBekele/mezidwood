@@ -770,7 +770,22 @@ const deleteSell = async (id, userId) => {
 };
 // ==================== ADD SELL PAYMENT ====================
 const addSellPayment = async (sellId, paymentData, userId) => {
-  const { amount, bankId, paidBy } = paymentData;
+  const { amount, bankId, paidBy, paidDate } = paymentData;
+
+  // When the customer actually paid. Optional: defaults to now.
+  let paidOn = new Date();
+  if (paidDate !== undefined && paidDate !== null && paidDate !== '') {
+    paidOn = new Date(paidDate);
+    if (Number.isNaN(paidOn.getTime())) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid payment date');
+    }
+    if (paidOn.getTime() > Date.now()) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Payment date cannot be in the future',
+      );
+    }
+  }
 
   // Validate amount
   if (!amount || amount <= 0) {
@@ -863,6 +878,7 @@ const addSellPayment = async (sellId, paymentData, userId) => {
         amount: Number(amount),
         bankId,
         paidBy,
+        paidDate: paidOn,
         createdById: userId,
       },
       include: {
@@ -911,7 +927,7 @@ const getSellPaymentHistory = async (sellId) => {
     where: { id: sellId },
     include: {
       sellPayments: {
-        orderBy: { createdAt: 'desc' },
+        orderBy: { paidDate: 'desc' },
         include: {
           createdBy: {
             select: { id: true, name: true, email: true },

@@ -69,7 +69,8 @@ const getPaymentsReport = async ({
     includeSales
       ? prisma.sellPayment.findMany({
           where: {
-            ...(createdAt && { createdAt }),
+            // Sale payments are dated by when the customer paid.
+            ...(createdAt && { paidDate: createdAt }),
             ...(bankId && { bankId }),
             ...(customerId && { sell: { customerId } }),
           },
@@ -86,7 +87,7 @@ const getPaymentsReport = async ({
               },
             },
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { paidDate: 'desc' },
         })
       : [],
   ]);
@@ -109,7 +110,7 @@ const getPaymentsReport = async ({
     ...salePayments.map((p) => ({
       id: p.id,
       type: 'SALE',
-      date: p.createdAt,
+      date: p.paidDate || p.createdAt,
       documentId: p.sell?.id || null,
       invoiceNo: p.sell?.invoiceNo || '-',
       customer: p.sell?.customer || null,
@@ -346,6 +347,11 @@ const updateSellPayment = async (paymentId, updates = {}) =>
       if (!payment) throw new ApiError(httpStatus.NOT_FOUND, 'Sale payment not found');
 
       const { data } = await buildPaymentChanges(tx, updates, payment.amount);
+      // A sale payment's date is its paid date (createdAt stays the record time).
+      if (data.createdAt) {
+        data.paidDate = data.createdAt;
+        delete data.createdAt;
+      }
       const updatedPayment = await tx.sellPayment.update({
         where: { id: paymentId },
         data,

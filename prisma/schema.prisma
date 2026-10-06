@@ -623,9 +623,11 @@ model SellPayment {
   bankId             String
   bank               Bank @relation(fields: [bankId], references: [id])
 
-  paidBy String? 
+  paidBy String?
 
-
+  // When the customer actually paid (entered by the user). createdAt is when
+  // the payment was recorded in the system.
+  paidDate DateTime @default(now())
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

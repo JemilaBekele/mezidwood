@@ -1608,7 +1608,7 @@ const getMonthlyBreakdown = async (year = null) => {
       // Get sell payments for this month
       const sellPayments = await prisma.sellPayment.findMany({
         where: {
-          createdAt: {
+          paidDate: {
             gte: monthStart,
             lte: monthEnd,
           },
