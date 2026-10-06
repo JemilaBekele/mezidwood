@@ -733,3 +733,231 @@ test('day keys: working-hour instants agree under both readings', () => {
     assert.strictEqual(cal.businessDayKey(d), d.toISOString().slice(0, 10));
   }
 });
+
+/* ================================================================== *
+ * Compact week — window, 130% ceiling, working hours
+ * ================================================================== */
+const {
+  compactionWindow,
+  COMPACT_OVERCAPACITY_FACTOR,
+} = require('../src/services/scheduling/reschedule');
+
+// Tuesday 4 August 2026 in Addis (UTC+3).
+const addis = (isoLocal) => new Date(`${isoLocal}+03:00`);
+
+test('compact window: mid-shift starts NOW, never earlier in the week', () => {
+  const now = addis('2026-08-04T10:15:00');
+  const w = compactionWindow(cal, now);
+  assert.strictEqual(w.floor.getTime(), now.getTime());
+  assert.strictEqual(w.floorKey, '2026-08-04');
+  assert.strictEqual(w.weekEndKey, '2026-08-08'); // Saturday
+  assert.strictEqual(w.isEmpty, false);
+});
+
+test('compact window: after closing starts at the next opening', () => {
+  const w = compactionWindow(cal, addis('2026-08-04T19:00:00'));
+  assert.strictEqual(local(w.floor), '05/08/2026, 08:30:00');
+});
+
+test('compact window: during lunch starts when lunch ends', () => {
+  const w = compactionWindow(cal, addis('2026-08-04T12:45:00'));
+  assert.strictEqual(hourOf(w.floor), LUNCH_END);
+});
+
+test('compact window: Saturday after closing leaves nothing to compact', () => {
+  const w = compactionWindow(cal, addis('2026-08-08T19:00:00'));
+  assert.strictEqual(w.isEmpty, true);
+});
+
+test('compact window: on Sunday it compacts the coming week from Monday', () => {
+  const w = compactionWindow(cal, addis('2026-08-09T10:00:00'));
+  assert.strictEqual(local(w.floor), '10/08/2026, 08:30:00');
+  assert.strictEqual(w.weekEndKey, '2026-08-15');
+  assert.strictEqual(w.isEmpty, false);
+});
+
+test('compact fill: the 130% ceiling holds, counting existing bookings', () => {
+  assert.strictEqual(COMPACT_OVERCAPACITY_FACTOR, 1.3);
+  const monday = cal.dayKey(MONDAY_OPEN);
+  const p = buildSchedule({
+    calendar: cal,
+    capacityConfig: capacityConfig(10),
+    stageQuantities: { DESIGN: 20 },
+    startDate: MONDAY_OPEN,
+    settings: { contingencyDays: 0, difficultyBuffer: { EASY: 0 } },
+    existingUsage: { usage: { [`DESIGN|${monday}`]: 8 } },
+    overCapacityFactor: COMPACT_OVERCAPACITY_FACTOR,
+    fillByUnits: true,
+  });
+  const perDay = {};
+  p.stages[0].allocations.forEach((a) => {
+    perDay[a.date] = (perDay[a.date] || 0) + a.units;
+  });
+  // Monday already had 8: only 5 more fit under the 13-unit (130%) ceiling.
+  assert.ok(
+    Math.abs(perDay[monday] - 5) < 0.01,
+    `Monday got ${perDay[monday]}`,
+  );
+  Object.entries(perDay).forEach(([date, units]) => {
+    const existing = date === monday ? 8 : 0;
+    assert.ok(
+      existing + units <= 13 + 1e-6,
+      `${date}: ${existing + units} > 130%`,
+    );
+  });
+});
+
+test('compact fill: a day with free units is used even if a booking runs to closing', () => {
+  const monday = cal.dayKey(MONDAY_OPEN);
+  const busy = {
+    usage: { [`DESIGN|${monday}`]: 4 },
+    busyUntil: { [`DESIGN|${monday}`]: cal.endOfWorkingDay(MONDAY_OPEN) },
+  };
+  const base = {
+    calendar: cal,
+    capacityConfig: capacityConfig(10),
+    stageQuantities: { DESIGN: 5 },
+    startDate: MONDAY_OPEN,
+    settings: { contingencyDays: 0, difficultyBuffer: { EASY: 0 } },
+    existingUsage: busy,
+    overCapacityFactor: COMPACT_OVERCAPACITY_FACTOR,
+  };
+  // Normal scheduling queues behind the booking and loses Monday...
+  assert.notStrictEqual(
+    buildSchedule(base).stages[0].allocations[0].date,
+    monday,
+  );
+  // ...compaction measures room in units and books Monday.
+  const p = buildSchedule({ ...base, fillByUnits: true });
+  assert.strictEqual(p.stages[0].allocations[0].date, monday);
+});
+
+test('compact fill: every booking stays inside working hours', () => {
+  const p = buildSchedule({
+    calendar: cal,
+    capacityConfig: capacityConfig(10),
+    stageQuantities: { DESIGN: 40, CUTTING: 40, ASSEMBLY: 40 },
+    startDate: addis('2026-08-04T15:40:00'),
+    settings: { contingencyDays: 0, difficultyBuffer: { EASY: 0 } },
+    overCapacityFactor: COMPACT_OVERCAPACITY_FACTOR,
+    fillByUnits: true,
+  });
+  p.stages.forEach((s) =>
+    s.allocations.forEach((a) => {
+      assert.ok(
+        cal.isWithinWorkingHours(a.startDateTime),
+        `${s.stage} starts ${local(a.startDateTime)}`,
+      );
+      assert.ok(
+        hourOf(a.endDateTime) <= CLOSE + 1e-9,
+        `${s.stage} ends ${local(a.endDateTime)}`,
+      );
+      assert.ok(
+        !(
+          hourOf(a.startDateTime) >= 12.5 && hourOf(a.startDateTime) < LUNCH_END
+        ),
+        'starts in lunch',
+      );
+    }),
+  );
+});
+
+test('compact fill: a half-gone day only takes the units its remaining hours allow', () => {
+  // Monday 13:30: 4.0 of the 8.0 working hours are left. Capacity 10/day at
+  // 130% => 13/day, so at most 6.5 units fit in the remaining half day.
+  const halfDay = addis('2026-08-03T13:30:00');
+  const monday = cal.dayKey(halfDay);
+  const p = buildSchedule({
+    calendar: cal,
+    capacityConfig: capacityConfig(10),
+    stageQuantities: { DESIGN: 20 },
+    startDate: halfDay,
+    settings: { contingencyDays: 0, difficultyBuffer: { EASY: 0 } },
+    existingUsage: {
+      usage: { [`DESIGN|${monday}`]: 2 },
+      usageFrom: { [`DESIGN|${monday}`]: 2 },
+    },
+    overCapacityFactor: COMPACT_OVERCAPACITY_FACTOR,
+    fillByUnits: true,
+  });
+  const mondayUnits = p.stages[0].allocations
+    .filter((a) => a.date === monday)
+    .reduce((s, a) => s + a.units, 0);
+  // 6.5 for the half day, minus the 2 already booked in that afternoon.
+  assert.ok(Math.abs(mondayUnits - 4.5) < 0.01, `Monday got ${mondayUnits}`);
+});
+
+test('compact fill: on the day of "now", all bookings share only the hours left', () => {
+  // Monday 16:30 with 08:30-17:30 days: 1.0h left. Capacity 8/day at 130%
+  // => 1.3 units/hour, so the rest of Monday holds 1.3 units however many
+  // plans start inside it.
+  const now = addis('2026-08-03T16:30:00');
+  const monday = cal.dayKey(now);
+  const run = (start, usage) =>
+    buildSchedule({
+      calendar: cal,
+      capacityConfig: capacityConfig(8),
+      stageQuantities: { DESIGN: 5 },
+      startDate: start,
+      settings: { contingencyDays: 0, difficultyBuffer: { EASY: 0 } },
+      existingUsage: usage,
+      overCapacityFactor: COMPACT_OVERCAPACITY_FACTOR,
+      fillByUnits: true,
+      notBefore: now,
+    }).stages[0].allocations.filter((a) => a.date === monday);
+  // A first plan from 16:30 already booked 1.0 unit (16:30-17:16).
+  const key = `DESIGN|${monday}`;
+  const usage = {
+    usage: { [key]: 1.0 },
+    usageFrom: { [key]: 0 },
+    usageFloor: { [key]: 1.0 },
+  };
+  // A second plan starting at 17:00 is told nothing is booked in ITS window,
+  // but the day since "now" only has 0.3 units left.
+  const later = run(addis('2026-08-03T17:00:00'), usage);
+  const units = later.reduce((t, a) => t + a.units, 0);
+  assert.ok(units <= 0.3 + 0.01, `Monday got ${units} more units`);
+  // Without the "now" floor the same plan would take its whole half hour (0.65).
+  const unfloored = buildSchedule({
+    calendar: cal,
+    capacityConfig: capacityConfig(8),
+    stageQuantities: { DESIGN: 5 },
+    startDate: addis('2026-08-03T17:00:00'),
+    settings: { contingencyDays: 0, difficultyBuffer: { EASY: 0 } },
+    existingUsage: usage,
+    overCapacityFactor: COMPACT_OVERCAPACITY_FACTOR,
+    fillByUnits: true,
+  }).stages[0].allocations.filter((a) => a.date === monday);
+  assert.ok(unfloored.reduce((t, a) => t + a.units, 0) > 0.3 + 0.01);
+});
+
+test('compact fill: endBy is a hard stop — nothing is placed at or after it', () => {
+  // Capacity 10/day at 130% => 13/day. 50 units from Thursday with a stop at
+  // next Monday's opening: Thu+Fri+Sat hold 39, the other 11 stay unplaced.
+  const thursday = addis('2026-08-06T08:30:00');
+  const nextMonday = addis('2026-08-10T08:30:00');
+  const p = buildSchedule({
+    calendar: cal,
+    capacityConfig: capacityConfig(10),
+    stageQuantities: { DESIGN: 50 },
+    startDate: thursday,
+    settings: { contingencyDays: 0, difficultyBuffer: { EASY: 0 } },
+    overCapacityFactor: COMPACT_OVERCAPACITY_FACTOR,
+    fillByUnits: true,
+    endBy: nextMonday,
+  });
+  const allocs = p.stages[0].allocations;
+  allocs.forEach((a) => {
+    assert.ok(a.date < '2026-08-10', `booked on ${a.date}`);
+  });
+  const placed = allocs.reduce((t, a) => t + a.units, 0);
+  assert.ok(Math.abs(placed - 39) < 0.01, `placed ${placed}`);
+});
+
+test('compact window: the overflow window is the earlier days of this week', () => {
+  const w = compactionWindow(cal, addis('2026-08-05T10:00:00')); // Wednesday
+  assert.strictEqual(local(w.weekStart), '03/08/2026, 08:30:00'); // Monday
+  assert.strictEqual(local(w.pastEnd), '05/08/2026, 08:30:00'); // today's opening
+  const first = compactionWindow(cal, addis('2026-08-03T10:00:00')); // Monday
+  assert.strictEqual(first.weekStart.getTime(), first.pastEnd.getTime()); // none
+});

@@ -191,7 +191,24 @@ const resetDailyStageCapacities = async () => {
 // NOTE: despite the name this does NOT reconcile the ledger — it pulls work
 // forward into gaps in the current week. Use `reconcileCapacityLedger` below to
 // repair drifted counters.
-const rebuildCapacityLedger = async () => reschedule.compactCurrentWeek();
+// A second press while a compaction is still running in this process is
+// refused straight away (the DB row lock in compactCurrentWeek covers other
+// processes). Compaction can take tens of seconds on a busy week.
+let compactionRunning = false;
+const rebuildCapacityLedger = async () => {
+  if (compactionRunning) {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      'Compact week is already running. Please wait for it to finish.',
+    );
+  }
+  compactionRunning = true;
+  try {
+    return await reschedule.compactCurrentWeek();
+  } finally {
+    compactionRunning = false;
+  }
+};
 
 /**
  * Recompute every daily capacity counter from its allocation rows, enforcing

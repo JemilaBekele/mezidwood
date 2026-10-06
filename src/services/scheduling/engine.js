@@ -220,10 +220,17 @@ const allocateStage = (cal, stage, quantity, startInstant, ctx) => {
         `Scheduler failed to converge for ${stage} (qty=${quantity}, capacity=${cfg.capacity})`,
       );
     }
+    // `endBy` (compaction): place nothing at or after it. Units that do not
+    // fit before it are left unplaced; the caller checks what was placed.
+    if (ctx.endBy && cur.getTime() >= ctx.endBy.getTime()) break;
 
     // Stack after any work this same stage/team already has booked today.
     const dateKey = cal.dayKey(cur);
-    const busy = ctx.busyUntil[usageKey(stage, dateKey)];
+    // fillByUnits (compaction): share the day with other projects up to the
+    // unit ceiling instead of queueing behind the latest booking's end.
+    const busy = ctx.fillByUnits
+      ? null
+      : ctx.busyUntil[usageKey(stage, dateKey)];
     let dayStart = cur;
     if (busy && busy.getTime() > dayStart.getTime()) {
       dayStart = cal.nextWorkingStart(busy);
@@ -236,8 +243,31 @@ const allocateStage = (cal, stage, quantity, startInstant, ctx) => {
     }
 
     const used = ctx.usage[usageKey(stage, dateKey)] || 0;
-    const capacityHoursLeft = Math.max(0, dailyMaxUnits - used) / rate;
     const windowHoursLeft = cal.remainingHoursInDay(dayStart);
+    let unitsLeft = Math.max(0, dailyMaxUnits - used);
+    if (ctx.fillByUnits) {
+      // Bookings share the day's hours here, so the ceiling must follow the
+      // hours actually left: a half-gone day holds half a day's units, less
+      // what is already booked in that remaining time.
+      const usedInWindow = ctx.usageFrom[usageKey(stage, dateKey)] ?? used;
+      unitsLeft = Math.min(
+        unitsLeft,
+        Math.max(0, rate * windowHoursLeft - usedInWindow),
+      );
+      // On the day of `notBefore` ("now"), the hours before it are gone for
+      // everyone: every booking that day shares only the time left from it.
+      if (ctx.notBefore && dateKey === cal.dayKey(ctx.notBefore)) {
+        const usedSinceFloor = ctx.usageFloor[usageKey(stage, dateKey)] ?? used;
+        unitsLeft = Math.min(
+          unitsLeft,
+          Math.max(
+            0,
+            rate * cal.remainingHoursInDay(ctx.notBefore) - usedSinceFloor,
+          ),
+        );
+      }
+    }
+    const capacityHoursLeft = unitsLeft / rate;
     const availableHours = Math.min(capacityHoursLeft, windowHoursLeft);
 
     if (availableHours <= EPS) {
@@ -269,6 +299,12 @@ const allocateStage = (cal, stage, quantity, startInstant, ctx) => {
       shift: DEFAULT_STAGE_SHIFT,
     });
     ctx.usage[usageKey(stage, dateKey)] = used + assign;
+    if (ctx.usageFrom[usageKey(stage, dateKey)] != null) {
+      ctx.usageFrom[usageKey(stage, dateKey)] += assign;
+    }
+    if (ctx.usageFloor[usageKey(stage, dateKey)] != null) {
+      ctx.usageFloor[usageKey(stage, dateKey)] += assign;
+    }
     addDelta(ctx.deltas, usageKey(stage, dateKey), assign, useHours);
     rememberBusyUntil(ctx.busyUntil, usageKey(stage, dateKey), endDT);
 
@@ -337,7 +373,11 @@ const allocateStageManual = (cal, stage, quantity, startInstant, minutes, ctx) =
     guard += 1;
 
     const dateKey = cal.dayKey(cur);
-    const busy = ctx.busyUntil[usageKey(stage, dateKey)];
+    // fillByUnits (compaction): share the day with other projects up to the
+    // unit ceiling instead of queueing behind the latest booking's end.
+    const busy = ctx.fillByUnits
+      ? null
+      : ctx.busyUntil[usageKey(stage, dateKey)];
     let dayStart = cur;
     if (busy && busy.getTime() > dayStart.getTime()) {
       dayStart = cal.nextWorkingStart(busy);
@@ -451,6 +491,9 @@ const buildSchedule = ({
   settings = {},
   overCapacityFactor = 1.0,
   manualDurations = {},
+  fillByUnits = false,
+  notBefore = null,
+  endBy = null,
 }) => {
   const cal = calendar;
   const seeded =
@@ -464,10 +507,18 @@ const buildSchedule = ({
   const ctx = {
     capacityConfig,
     usage: { ...(seeded.usage || {}) },
+    // Units already booked from the plan's start instant to the end of that
+    // day (only the first day can be part-gone). Used by fillByUnits.
+    usageFrom: { ...(seeded.usageFrom || {}) },
+    // Same, measured from `notBefore` on that instant's day.
+    usageFloor: { ...(seeded.usageFloor || {}) },
+    notBefore: notBefore ? new Date(notBefore) : null,
+    endBy: endBy ? new Date(endBy) : null,
     busyUntil: seededBusyUntil,
     deltas: {},
     overCapacityFactor,
     manualDurations: manualDurations || {},
+    fillByUnits,
   };
 
   const contingencyDays =
@@ -623,15 +674,44 @@ const loadCapacityConfig = async (client = prisma) => {
   return cfg;
 };
 
-const loadExistingUsage = async (cal, fromDate, client = prisma) => {
+/**
+ * `excludeStageId` leaves one stage's own bookings out of the picture, so a
+ * dry run can ask "where would this stage land if it were not booked yet?"
+ */
+const loadExistingUsage = async (
+  cal,
+  fromDate,
+  client = prisma,
+  excludeStageId = null,
+  notBefore = null,
+) => {
   const usage = {};
   const busyUntil = {};
+  const usageFrom = {};
+  const usageFloor = {};
+  const fromKey = cal.dayKey(fromDate);
+  const floorKey = notBefore ? cal.dayKey(notBefore) : null;
+  // Units of booking `a` that fall at or after `instant` (working time).
+  const unitsAfter = (a, instant) => {
+    const total = cal.workingHoursBetween(a.startDateTime, a.endDateTime);
+    const after = cal.workingHoursBetween(
+      maxDate(new Date(a.startDateTime), new Date(instant)),
+      a.endDateTime,
+    );
+    return (a.allocatedUnits || 0) * (total > EPS ? after / total : 1);
+  };
   try {
     const rows = await client.dailyStageCapacity.findMany({
       where: { date: { gte: cal.startOfDay(fromDate) } },
       include: {
         projectStageCapacityAllocations: {
-          select: { endDateTime: true, customEndTime: true },
+          select: {
+            endDateTime: true,
+            customEndTime: true,
+            projectStageId: true,
+            allocatedUnits: true,
+            startDateTime: true,
+          },
         },
       },
     });
@@ -640,7 +720,17 @@ const loadExistingUsage = async (cal, fromDate, client = prisma) => {
       const key = usageKey(r.stage, dateKey);
       usage[key] = r.usedCapacity;
       (r.projectStageCapacityAllocations || []).forEach((a) => {
+        if (excludeStageId && a.projectStageId === excludeStageId) {
+          usage[key] = Math.max(0, usage[key] - (a.allocatedUnits || 0));
+          return;
+        }
         rememberBusyUntil(busyUntil, key, a.endDateTime || a.customEndTime);
+        if (dateKey === fromKey && a.startDateTime && a.endDateTime) {
+          usageFrom[key] = (usageFrom[key] || 0) + unitsAfter(a, fromDate);
+        }
+        if (dateKey === floorKey && a.startDateTime && a.endDateTime) {
+          usageFloor[key] = (usageFloor[key] || 0) + unitsAfter(a, notBefore);
+        }
       });
       if (!busyUntil[key] && (r.usedHours || 0) > EPS) {
         // No allocation rows (legacy data): assume the used hours were worked
@@ -675,7 +765,7 @@ const loadExistingUsage = async (cal, fromDate, client = prisma) => {
     // eslint-disable-next-line no-console
     console.warn('[engine] could not load existing capacity usage:', err.message);
   }
-  return { usage, busyUntil };
+  return { usage, busyUntil, usageFrom, usageFloor };
 };
 
 /**
@@ -790,13 +880,23 @@ const scheduleProject = async ({
   tx = null,
   overCapacityFactor = 1.0,
   manualDurations = {},
+  fillByUnits = false,
+  excludeStageId = null,
+  notBefore = null,
+  endBy = null,
 }) => {
   const db = tx || prisma;
   const cal = await getCalendar();
   const settings = await getSchedulingSettings();
   const capacityConfig = await loadCapacityConfig(db);
   const start = startDate && startDate !== '' ? new Date(startDate) : new Date();
-  const existingUsage = await loadExistingUsage(cal, start, db);
+  const existingUsage = await loadExistingUsage(
+    cal,
+    start,
+    db,
+    excludeStageId,
+    notBefore,
+  );
 
   const plan = buildSchedule({
     calendar: cal,
@@ -808,6 +908,9 @@ const scheduleProject = async ({
     settings,
     overCapacityFactor,
     manualDurations,
+    fillByUnits,
+    notBefore,
+    endBy,
   });
 
   if (mode === 'commit') {

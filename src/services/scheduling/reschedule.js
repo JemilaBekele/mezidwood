@@ -29,11 +29,18 @@ const {
   effectiveDailyMax,
   PHASES,
 } = require('./engine');
-const { deliveryBufferDays, OVERCAPACITY_FACTOR } = require('./config');
+const {
+  deliveryBufferDays,
+  OVERCAPACITY_FACTOR,
+  CAPACITY_STAGES,
+} = require('./config');
 
 // Per-day allocation loops do several sequential writes; give the interactive
 // transaction generous headroom (per-project scale is tiny relative to this).
 const TX_OPTS = { timeout: 30000, maxWait: 15000 };
+// Compaction re-plans many stages across every open project in one atomic
+// transaction, which can outlast the default 30s.
+const COMPACT_TX_OPTS = { timeout: 180000, maxWait: 15000 };
 
 const phaseIndexOf = (stage) => PHASES.findIndex((phase) => phase.includes(stage));
 
@@ -193,8 +200,10 @@ const materialStageQuantities = (invoice, existingByStage = new Map()) => {
  * the transaction), otherwise open a fresh interactive transaction. Lets the
  * low-level helpers compose into one atomic operation OR run standalone.
  */
-const withClient = (client, fn) =>
-  (client ? fn(client) : prisma.$transaction(fn, TX_OPTS));
+const withClient = (client, fn, txOpts = TX_OPTS) =>
+  (client ? fn(client) : prisma.$transaction(fn, txOpts));
+const withCompactClient = (client, fn) =>
+  withClient(client, fn, COMPACT_TX_OPTS);
 
 /** Best-effort audit log — never let history writing break a schedule op. */
 const logScheduleEvent = async (client, data) => {
@@ -1334,102 +1343,458 @@ const endOfWorkingWeekKey = (cal, now) => {
 };
 
 /**
- * Compact the CURRENT WEEK only: pull stages that currently start within
- * [today, end-of-working-week] as early as they legally can (after their
- * upstream finishes, into genuinely free capacity ≤100%), removing gaps.
- *
- * Strictly conservative:
- *   - A stage moves ONLY if a dry-run proves it can start on an EARLIER day.
- *     If nothing can move, nothing is written.
- *   - Work dated outside the current week is never moved; there is NO downstream
- *     cascade. Other projects are never moved (only respected as capacity).
- *   - LOCKED projects and completed/cancelled/finished stages are untouched.
+ * Compaction may fill a stage's day up to 130% of its base capacity. This
+ * ceiling applies to compaction only; every other scheduling path keeps its
+ * own factor.
  */
-const compactCurrentWeek = async (client = null) =>
-  withClient(client, async (tx) => {
+const COMPACT_OVERCAPACITY_FACTOR = 1.3;
+
+/**
+ * The compaction window, as of `now`:
+ *   - `floor`      the first instant work can still be placed — `now` itself
+ *                  inside working hours, otherwise the next opening (lunch,
+ *                  evenings, closed days and holidays all roll forward). Work
+ *                  is never placed in hours that have already passed.
+ *   - `floorKey`   that instant's business day.
+ *   - `weekEndKey` the last working day of the current week. On a non-working
+ *                  Sunday this is the coming week's last day.
+ *   - `isEmpty`    true when no working time is left this week (e.g. Saturday
+ *                  after closing): compaction then does nothing.
+ */
+const compactionWindow = (cal, now = new Date()) => {
+  const floor = cal.nextWorkingStart(now);
+  const floorKey = cal.dayKey(floor);
+  const weekEndKey = endOfWorkingWeekKey(cal, now);
+  // First working day of that same week (walk back to its Sunday, then
+  // forward to the first configured working day).
+  const day = new Date(`${weekEndKey}T12:00:00Z`);
+  day.setUTCDate(day.getUTCDate() - day.getUTCDay());
+  while (
+    !cal.isWorkingDay(day) &&
+    day.toISOString().slice(0, 10) < weekEndKey
+  ) {
+    day.setUTCDate(day.getUTCDate() + 1);
+  }
+  return {
+    floor,
+    floorKey,
+    weekEndKey,
+    isEmpty: floorKey > weekEndKey,
+    // Overflow window: whole earlier working days of this week, before the
+    // day of `floor`. Empty on the week's first working day.
+    weekStart: cal.startOfWorkingDay(day),
+    pastEnd: cal.startOfWorkingDay(floor),
+  };
+};
+
+/**
+ * Compact the CURRENT WEEK: pack overdue and this week's work as early as it
+ * can legally go inside this week, so free space opens up at the week's end.
+ *
+ * Rules (they hold for any week, not just today's data):
+ *   - WINDOW: from `floor` (now, in working time) to the week's last working
+ *     day. Nothing is ever placed after the week ends — every booking has a
+ *     hard stop at next week's first opening.
+ *   - OVERFLOW: when OVERDUE work does not all fit from now to the week's
+ *     end, the part that fits stays from now and the remainder goes onto
+ *     whole EARLIER working days of this week (e.g. work stuck on 30 Sep
+ *     lands on Monday 5 Oct when today is Tuesday 6 Oct). Same 130% and
+ *     working-hours rules; never before an upstream stage ends. If even that
+ *     is not enough, the stage stays where it is.
+ *   - SCOPE: only active stages that are OVERDUE (unfinished units booked on a
+ *     day before today) or that START within this week. A stage starting next
+ *     week or later is never touched. For a stage that also has bookings next
+ *     week, only its past and this-week units move; its next-week bookings
+ *     stay exactly as they are.
+ *   - FIT: a stage moves only when ALL of its remaining units fit (with the
+ *     overflow rule above); otherwise it stays exactly where it is.
+ *   - CAPACITY: each stage-day holds at most 130% of its base daily capacity
+ *     (existing bookings included). Room is measured in units — a day with 24
+ *     of 60 units used is not "full" just because one booking runs to closing.
+ *   - WORKING HOURS: every booking is inside the Scheduling Settings window;
+ *     lunch, closing time, closed days and holidays are skipped.
+ *   - ORDER: a stage never starts before the unfinished earlier-phase stages
+ *     of its project have ended (using where they were just moved to).
+ *   - PRIORITY: pass 1 places OVERDUE work for every project (oldest project
+ *     first); pass 2 then pulls this week's stages onto an earlier day in the
+ *     room that is left. Overdue work is never crowded out by work that was
+ *     already on time.
+ *   - LOCKED projects, completed/cancelled stages and PURCHASING are never
+ *     touched. If nothing can move, nothing is written.
+ */
+const compactCurrentWeek = async (client = null, { now = new Date() } = {}) =>
+  withCompactClient(client, async (tx) => {
     const cal = await getCalendar();
-    const now = new Date();
-    const nowKey = cal.dayKey(now);
-    const weekEndKey = endOfWorkingWeekKey(cal, now);
+    const { floor, floorKey, weekEndKey, isEmpty, weekStart, pastEnd } =
+      compactionWindow(cal, now);
+    const summary = {
+      success: true,
+      compacted: 0,
+      overdueMoved: 0,
+      // Stages whose overflow went onto earlier days of this week.
+      usedEarlierDays: 0,
+      didNotFit: 0,
+      projectsTouched: 0,
+      window: { from: floor, to: weekEndKey },
+    };
+    if (isEmpty) return summary;
+    // One compaction at a time, across every server process: lock the single
+    // settings row for the length of this transaction (released on commit or
+    // rollback). A second run waits here, then sees the already-compacted week.
+    await tx.$queryRaw`SELECT id FROM scheduling_settings LIMIT 1 FOR UPDATE`;
+    // Hard stop: nothing compaction books can reach next week.
+    const weekLimit = cal.nextWorkingStart(
+      cal.endOfWorkingDay(new Date(`${weekEndKey}T12:00:00Z`)),
+    );
 
     const projects = await tx.project.findMany({
-      where: { totalFinishedPercent: { lt: 100 } },
+      where: {
+        totalFinishedPercent: { lt: 100 },
+        scheduleMode: { not: 'LOCKED' },
+      },
       orderBy: { createdAt: 'asc' },
-      include: { stages: { include: { projectStageCapacityAllocations: true } } },
+      include: {
+        stages: { include: { projectStageCapacityAllocations: true } },
+      },
     });
 
-    let compacted = 0;
+    // Live, mutable view of every project's stage dates, shared by both passes,
+    // so a stage always sees where its upstream was just moved to.
+    const liveByProject = new Map(
+      projects.map((p) => [p.id, p.stages.map((s) => ({ ...s }))]),
+    );
     const projectsTouched = new Set();
+    const isOpen = (s) => s.status === 'ACTIVE' && !s.finished;
+    const movableOf = (stages) =>
+      stages
+        .filter(
+          (s) =>
+            isOpen(s) &&
+            phaseIndexOf(s.stage) >= 0 &&
+            (CAPACITY_STAGES.includes(s.stage) || s.stage === 'INSTALLATION'),
+        )
+        .sort((x, y) => phaseIndexOf(x.stage) - phaseIndexOf(y.stage));
 
-    for (const project of projects) {
-      if (project.scheduleMode === 'LOCKED') continue;
+    const sched = (
+      project,
+      stage,
+      units,
+      earliest,
+      mode,
+      { notBefore = floor, endBy = weekLimit } = {},
+    ) =>
+      scheduleProject({
+        stageQuantities: { [stage.stage]: units },
+        startDate: earliest,
+        difficulty: project.difficulty,
+        mode,
+        tx,
+        overCapacityFactor: COMPACT_OVERCAPACITY_FACTOR,
+        manualDurations: manualDurationsOf([stage]),
+        fillByUnits: true,
+        excludeStageId: stage.id,
+        notBefore,
+        endBy,
+      });
 
-      // Live, mutable view of this project's stage dates so later stages see the
-      // new positions of earlier ones when computing their earliest legal start.
-      const liveStages = project.stages.map((s) => ({ ...s }));
-      const movable = liveStages
-        .filter((s) => phaseIndexOf(s.stage) >= 0 && s.status === 'ACTIVE' && !s.finished)
-        .sort((a, b) => phaseIndexOf(a.stage) - phaseIndexOf(b.stage));
-
-      for (const stage of movable) {
+    /**
+     * Plan one project's moves for a pass with DRY RUNS only, walking stages in
+     * phase order against a scratch copy of their dates. Stages in `held` are
+     * kept where they are. Returns the moves, or `blockedBy` = the moved
+     * upstream stage that left a later stage starting before it ends (that
+     * later stage could not follow inside this week).
+     */
+    const planProject = async (project, pass, held) => {
+      const scratch = liveByProject.get(project.id).map((s) => ({ ...s }));
+      const moves = [];
+      let notFit = 0;
+      for (const stage of movableOf(scratch)) {
         const curStart = stage.startDateTime || stage.startDate;
         if (!curStart) continue;
         const startKey = cal.dayKey(curStart);
-        // Candidate only if it currently starts within the current week.
-        if (startKey < nowKey || startKey > weekEndKey) continue;
-        const units = stage.workUnits || 0;
-        if (units <= 0) continue;
+        if (startKey > weekEndKey) continue; // next week or later: never touched
+        const allocs = stage.projectStageCapacityAllocations || [];
+        const timeBased = !CAPACITY_STAGES.includes(stage.stage);
+        const upstream = scratch.filter(
+          (s) =>
+            isOpen(s) &&
+            phaseIndexOf(s.stage) >= 0 &&
+            phaseIndexOf(s.stage) < phaseIndexOf(stage.stage),
+        );
+        const upstreamEnds = upstream
+          .map((s) => validDateOrNull(s.endDateTime || s.endDate))
+          .filter(Boolean);
+        const upstreamEnd = upstreamEnds.length
+          ? maxInstant(...upstreamEnds)
+          : null;
+        // Starts before its upstream ends (e.g. that upstream was overdue and
+        // was just pulled forward) — it must be re-planned after it.
+        const breaksOrder = !!upstreamEnd && new Date(curStart) < upstreamEnd;
+        // The moved upstream (if any) responsible for breaking the order.
+        const culprit = () =>
+          moves
+            .filter(
+              (m) =>
+                m.stage.endDateTime &&
+                new Date(m.stage.endDateTime) > new Date(curStart),
+            )
+            .map((m) => m.stage.id)
+            .pop();
 
-        const earliest = getStagePhaseStart(liveStages, stage.stage, now);
-        if (cal.dayKey(curStart) <= cal.dayKey(earliest)) continue; // already as early as allowed
+        // Anything already booked into next week stays exactly as it is. A
+        // time-based stage reaching next week is left whole; a capacity stage
+        // moves only its past and this-week part (its next-week rows stay).
+        const nextWeekUnits = allocs
+          .filter((a) => markerDayKey(a.allocationDate) > weekEndKey)
+          .reduce((sum, a) => sum + (a.allocatedUnits || 0), 0);
+        const units = Math.max(
+          0,
+          (stage.workUnits || 0) - (stage.actualWorkUnits || 0) - nextWeekUnits,
+        );
+        const isOverdue = timeBased
+          ? startKey < floorKey
+          : allocs.some((a) => markerDayKey(a.allocationDate) < floorKey);
+        const mustMove = isOverdue || breaksOrder;
+        const earliest = maxInstant(floor, upstreamEnd);
 
-        const sched = (mode) =>
-          scheduleProject({
-            stageQuantities: { [stage.stage]: units },
-            startDate: earliest,
-            difficulty: project.difficulty,
-            mode,
-            tx,
-            overCapacityFactor: 1.0, // only fill genuinely empty space
-            manualDurations: manualDurationsOf([stage]),
-          });
+        let skip =
+          held.has(stage.id) ||
+          units <= EPS ||
+          (timeBased &&
+            cal.dayKey(stage.endDateTime || stage.endDate || curStart) >
+              weekEndKey) ||
+          cal.dayKey(earliest) > weekEndKey ||
+          (pass === 'overdue' && !mustMove) ||
+          (pass === 'pull' && (mustMove || startKey <= cal.dayKey(earliest)));
 
-        // Probe: would it actually land on an earlier day? If not, leave it be.
-        // eslint-disable-next-line no-await-in-loop
-        const dry = await sched('dryRun');
-        const dp = dry.stages.find((p) => p.stage === stage.stage);
-        if (!dp || cal.dayKey(dp.startDateTime) >= startKey) continue;
-
-        // Real gap → pull the stage earlier. No downstream cascade.
-        // eslint-disable-next-line no-await-in-loop
-        await releaseStageCapacity(stage.id, null, tx);
-        // eslint-disable-next-line no-await-in-loop
-        const plan = await sched('commit');
-        const p = plan.stages.find((x) => x.stage === stage.stage);
-        if (p) {
+        let dp = null;
+        let split = null;
+        if (!skip) {
           // eslint-disable-next-line no-await-in-loop
-          await persistStageAllocations(stage.id, stage.stage, p.allocations, tx, 1.0);
+          const dry = await sched(project, stage, units, earliest, 'dryRun');
+          dp = dry.stages.find((x) => x.stage === stage.stage) || null;
+          const placedNow = dp
+            ? dp.allocations.reduce((t, al) => t + al.units, 0)
+            : 0;
+          const fitsNow = timeBased
+            ? !!dp && cal.dayKey(dp.endDateTime) <= weekEndKey
+            : !!dp && placedNow >= units - 0.01;
+          if (!fitsNow && !timeBased) {
+            // The rest of the week is full. Overdue work may overflow onto
+            // whole earlier days of this week (never next week): the part
+            // that fits from now stays from now, the remainder goes back.
+            const futureAllocs = dp ? dp.allocations : [];
+            const futureUnits = futureAllocs.reduce((t, al) => t + al.units, 0);
+            const rest = units - futureUnits;
+            const pastFrom = maxInstant(weekStart, upstreamEnd);
+            const canOverflow =
+              mustMove &&
+              !timeBased &&
+              !Object.keys(manualDurationsOf([stage])).length &&
+              pastFrom < pastEnd;
+            if (canOverflow) {
+              // eslint-disable-next-line no-await-in-loop
+              const back = await sched(
+                project,
+                stage,
+                rest,
+                pastFrom,
+                'dryRun',
+                {
+                  notBefore: weekStart,
+                  endBy: pastEnd,
+                },
+              );
+              const bp = back.stages.find((x) => x.stage === stage.stage);
+              const placed = bp
+                ? bp.allocations.reduce((t, al) => t + al.units, 0)
+                : 0;
+              if (bp && placed >= rest - 0.01) {
+                split = { futureUnits, rest, pastFrom, back: bp, futureAllocs };
+              }
+            }
+            if (!split) {
+              notFit += 1;
+              skip = true;
+            }
+          } else if (!fitsNow) {
+            notFit += 1;
+            skip = true;
+          } else if (
+            pass === 'pull' &&
+            cal.dayKey(dp.startDateTime) >= startKey
+          ) {
+            skip = true;
+          }
         }
-        // eslint-disable-next-line no-await-in-loop
-        const span = await recomputeStageSpan(stage.id, tx);
-        if (span) {
-          stage.startDateTime = span.newStart;
-          stage.startDate = span.newStart;
-          stage.endDateTime = span.newEnd;
-          stage.endDate = span.newEnd;
+
+        if (skip) {
+          // Left in place: if a move made earlier in THIS plan now ends after
+          // this stage starts, that move must be held back.
+          if (breaksOrder && culprit()) return { blockedBy: culprit() };
+          continue;
         }
-        compacted += 1;
-        projectsTouched.add(project.id);
+        moves.push({
+          stage,
+          units,
+          earliest,
+          nextWeekUnits,
+          isOverdue,
+          timeBased,
+          dp,
+          split,
+        });
+        // Scratch: where the stage now starts and ends (its next-week rows, if
+        // any, still finish it later).
+        const newStart = split ? split.back.startDateTime : dp.startDateTime;
+        let newEnd = dp ? dp.endDateTime : null;
+        if (split) {
+          newEnd = split.futureAllocs.length
+            ? split.futureAllocs[split.futureAllocs.length - 1].endDateTime
+            : split.back.endDateTime;
+        }
+        Object.assign(stage, {
+          startDateTime: newStart,
+          startDate: newStart,
+          ...(nextWeekUnits > EPS
+            ? {}
+            : { endDateTime: newEnd, endDate: newEnd }),
+        });
+      }
+      return { moves, notFit };
+    };
+
+    /** Write one planned move and refresh the live view of that stage. */
+    const commitMove = async (project, move) => {
+      const {
+        stage: scratchStage,
+        units,
+        earliest,
+        nextWeekUnits,
+        timeBased,
+        dp,
+        split,
+      } = move;
+      const live = liveByProject
+        .get(project.id)
+        .find((s) => s.id === scratchStage.id);
+      if (timeBased) {
+        // No capacity rows: just move the stage's dates.
+        await tx.projectStage.update({
+          where: { id: live.id },
+          data: {
+            startDate: dp.startDateTime,
+            startDateTime: dp.startDateTime,
+            endDate: dp.endDateTime,
+            endDateTime: dp.endDateTime,
+            customStartTime: dp.customStartTime,
+            customEndTime: dp.customEndTime,
+            capacityDays: dp.capacityDays,
+            timeTaken: dp.timeTaken,
+          },
+        });
+        Object.assign(live, {
+          startDateTime: dp.startDateTime,
+          startDate: dp.startDateTime,
+          endDateTime: dp.endDateTime,
+          endDate: dp.endDateTime,
+        });
+        return;
+      }
+      // Release the stage's past and this-week bookings (next-week rows are
+      // kept) and re-book those remaining units inside the window.
+      if (nextWeekUnits <= EPS) {
+        await releaseStageCapacity(live.id, null, tx);
+      } else {
+        for (const a of live.projectStageCapacityAllocations || []) {
+          if (markerDayKey(a.allocationDate) <= weekEndKey) {
+            // eslint-disable-next-line no-await-in-loop
+            await releaseStageUnitsOnDay(
+              live.id,
+              a.allocationDate,
+              a.allocatedUnits || 0,
+              tx,
+            );
+          }
+        }
+      }
+      // Book [units] from `from` and fail loudly if any unit is left over —
+      // the whole compaction then rolls back instead of losing work.
+      const book = async (qty, from, opts) => {
+        if (qty <= EPS) return;
+        const plan = await sched(project, live, qty, from, 'commit', opts);
+        const p = plan.stages.find((x) => x.stage === live.stage);
+        const placed = p ? p.allocations.reduce((t, al) => t + al.units, 0) : 0;
+        if (placed < qty - 0.01) {
+          throw new Error(
+            `Compaction could not place ${qty} ${live.stage} units (placed ${placed}); nothing was changed`,
+          );
+        }
+        await persistStageAllocations(
+          live.id,
+          live.stage,
+          p.allocations,
+          tx,
+          COMPACT_OVERCAPACITY_FACTOR,
+        );
+      };
+      if (split) {
+        await book(split.futureUnits, earliest);
+        await book(split.rest, split.pastFrom, {
+          notBefore: weekStart,
+          endBy: pastEnd,
+        });
+        summary.usedEarlierDays += 1;
+      } else {
+        await book(units, earliest);
+      }
+      const span = await recomputeStageSpan(live.id, tx);
+      Object.assign(live, {
+        ...(span
+          ? {
+              startDateTime: span.newStart,
+              startDate: span.newStart,
+              endDateTime: span.newEnd,
+              endDate: span.newEnd,
+            }
+          : {}),
+        projectStageCapacityAllocations:
+          await tx.projectStageCapacityAllocation.findMany({
+            where: { projectStageId: live.id },
+          }),
+      });
+    };
+
+    for (const pass of ['overdue', 'pull']) {
+      for (const project of projects) {
+        // Re-plan until no moved stage strands a later stage behind it: each
+        // round holds back the offending upstream move.
+        const held = new Set();
+        let result = { moves: [] };
+        for (let round = 0; round <= 20; round += 1) {
+          // eslint-disable-next-line no-await-in-loop
+          result = await planProject(project, pass, held);
+          if (!result.blockedBy) break;
+          held.add(result.blockedBy);
+          result = { moves: [] };
+        }
+        summary.didNotFit += result.notFit || 0;
+        for (const move of result.moves) {
+          // eslint-disable-next-line no-await-in-loop
+          await commitMove(project, move);
+          summary.compacted += 1;
+          if (move.isOverdue) summary.overdueMoved += 1;
+          projectsTouched.add(project.id);
+        }
       }
     }
-
     for (const pid of projectsTouched) {
       // eslint-disable-next-line no-await-in-loop
       await recomputeProjectDelivery(pid, tx);
     }
-    return { success: true, compacted, projectsTouched: projectsTouched.size };
+    summary.projectsTouched = projectsTouched.size;
+    return summary;
   });
-
 module.exports = {
   withClient,
   logScheduleEvent,
@@ -1446,6 +1811,8 @@ module.exports = {
   onStageCancelled,
   releaseStageUnitsOnDay,
   compactCurrentWeek,
+  compactionWindow,
+  COMPACT_OVERCAPACITY_FACTOR,
   __private: {
     phaseIndexOf,
     getStagePhaseStart,
