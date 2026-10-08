@@ -9,6 +9,7 @@ const {
   scheduleProject,
   dailyCapacityDate,
   effectiveDailyMax,
+  PHASES,
 } = require('./scheduling/engine');
 const { getCalendar } = require('./scheduling/calendar');
 const {
@@ -381,6 +382,9 @@ const createProject = async (projectData, userId) => {
     startDate: baseStart,
     difficulty: effectiveDifficulty,
     mode: 'dryRun',
+    // Use each team's free hours on a day (before/between/after other
+    // projects' bookings), not only the time after its latest booking.
+    fillGaps: true,
   });
 
   // Back-scheduling: if the customer's requested delivery is LATER than what we
@@ -421,6 +425,8 @@ const createProject = async (projectData, userId) => {
         difficulty: effectiveDifficulty,
         mode: 'commit',
         tx,
+        // Same free-window filling as the dry run above.
+        fillGaps: true,
       });
 
       // --- persist project + stages ---
@@ -3345,8 +3351,11 @@ const validateStageChronology = async (projectId, stageName, newStartDate) => {
     return true;
   }
 
-  // 3. Identify all stages that come BEFORE the current stage
-  const precedingStageNames = STAGE_ORDER.slice(0, currentStageIndex);
+  // 3. Identify the stages in EARLIER phases. Stages in the same phase run in
+  // parallel (e.g. ASSEMBLY ∥ PAINTING), so either may be moved before the
+  // other while neither is finished — only earlier phases gate the move.
+  const currentPhase = PHASES.findIndex((phase) => phase.includes(stageName));
+  const precedingStageNames = PHASES.slice(0, Math.max(0, currentPhase)).flat();
 
   // 4. Fetch the existing preceding stages from the database for this project
   const precedingStages = await prisma.projectStage.findMany({

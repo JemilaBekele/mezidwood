@@ -528,6 +528,9 @@ const rescheduleDownstream = async (
       mode: 'commit',
       tx,
       overCapacityFactor,
+      // Use each team's free hours (before/between/after other projects'
+      // bookings), not only the time after its latest booking.
+      fillGaps: true,
       // Honour any user-fixed durations on downstream stages so a manual time
       // sticks through this cascade instead of reverting to quantity-derived.
       manualDurations: manualDurationsOf(downstream),
@@ -613,6 +616,8 @@ const rescheduleWholeProject = async (projectId, startInstant, client = null) =>
       difficulty: project.difficulty,
       mode: 'commit',
       tx,
+      // Same free-window filling as createProject.
+      fillGaps: true,
       // A user-fixed duration sticks through a full rebuild too.
       manualDurations: manualDurationsOf(rebuildable),
     });
@@ -792,6 +797,8 @@ const reallocateProjectFromInvoiceMaterials = async (
         difficulty: project.difficulty,
         mode: 'commit',
         tx,
+        // Same free-window filling as createProject.
+        fillGaps: true,
       });
     }
 
@@ -959,6 +966,9 @@ const recomputeDownstreamFromBarrier = async (
     mode: 'commit',
     tx,
     overCapacityFactor,
+    // Downstream of a drag also uses each team's free windows, not only the
+    // time after its latest booking.
+    fillGaps: true,
     // User-fixed downstream durations stick through the drag cascade too.
     manualDurations: manualDurationsOf(downstreamStages),
   });
@@ -1082,7 +1092,33 @@ const rescheduleStageAndDownstream = async (
     const fromDateCutoff = effectiveFromDate
       ? dailyCapacityDate(dragCal.businessDayKey(effectiveFromDate))
       : null;
-    const effStart = new Date(newStartDate);
+    // A calendar drop names a DAY, not a time (the client encodes 08:00Z, i.e.
+    // 11:00 EAT, which hid the whole morning). Start from that day's opening
+    // time (Scheduling Settings) — or from now, if the day is today — and let
+    // the engine find the team's free windows on it (fillGaps).
+    const dropCal = dragCal || await getCalendar();
+    const dropOpening = dropCal.startOfWorkingDay(new Date(newStartDate));
+    const now = new Date();
+    const dropStart = dropCal.dayKey(dropOpening) === dropCal.dayKey(now)
+      && now.getTime() > dropOpening.getTime()
+      ? now
+      : dropOpening;
+    // Never before this project's own earlier phases finish (e.g. ASSEMBLY
+    // waits for its CUTTING), even when the team is free earlier that day.
+    const upstreamEnds = project.stages
+      .filter((s) =>
+        phaseIndexOf(s.stage) >= 0
+        && phaseIndexOf(s.stage) < targetPhase
+        && s.status !== 'CANCELLED'
+        && s.status !== 'COMPLETED'
+        && !s.finished)
+      .map((s) => validDateOrNull(s.endDateTime || s.endDate))
+      .filter(Boolean)
+      .map((d) => d.getTime());
+    const upstreamEnd = upstreamEnds.length ? Math.max(...upstreamEnds) : 0;
+    const effStart = upstreamEnd > dropStart.getTime()
+      ? new Date(upstreamEnd)
+      : dropStart;
 
     // ── PAST CELL-MOVE: drop to an EARLIER day ──
     // Move ONLY the source-day cell of the dragged stage AND each parallel peer
@@ -1112,6 +1148,7 @@ const rescheduleStageAndDownstream = async (
           mode: 'commit',
           tx,
           overCapacityFactor,
+          fillGaps: true,
         });
         const p = plan.stages.find((x) => x.stage === s.stage);
         if (p) {
@@ -1172,6 +1209,7 @@ const rescheduleStageAndDownstream = async (
         mode: 'commit',
         tx,
         overCapacityFactor,
+        fillGaps: true,
       });
       movedPlan = plan;
       const p = plan.stages.find((s) => s.stage === stageName);
@@ -1236,6 +1274,7 @@ const rescheduleStageAndDownstream = async (
         mode: 'commit',
         tx,
         overCapacityFactor,
+        fillGaps: true,
         // A dragged/parallel stage with a user-fixed time keeps that duration.
         manualDurations: manualDurationsOf(phaseStages),
       });

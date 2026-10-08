@@ -68,6 +68,46 @@ const rememberBusyUntil = (busyUntil, key, endDateTime) => {
   if (!prev || end.getTime() > prev.getTime()) busyUntil[key] = end;
 };
 
+/** Record that a stage/team is busy over [start, end) on a day. */
+const rememberInterval = (intervals, key, start, end) => {
+  const s = new Date(start);
+  const e = new Date(end);
+  if (!isValidDate(s) || !isValidDate(e) || e.getTime() <= s.getTime()) return;
+  if (!intervals[key]) intervals[key] = [];
+  intervals[key].push({ start: s, end: e });
+};
+
+/**
+ * fillGaps: the first FREE working window of `from`'s day, at or after `from`.
+ * Existing bookings are busy intervals; the team is free before, between and
+ * after them. busyUntil only knew the latest booking's END, so one booking at
+ * 15:00-17:00 blocked the whole day even when the team was idle all morning.
+ *
+ * Returns { start, end }. `end` is the next booking's start (or closing time).
+ * When no free window remains today, `start` is on a later day and `end` null.
+ */
+const nextFreeWindow = (cal, intervals, from) => {
+  const dateKey = cal.dayKey(from);
+  const dayEnd = cal.endOfWorkingDay(from);
+  let cursor = from;
+  const sorted = (intervals || [])
+    .filter((iv) => iv.end.getTime() > from.getTime() && iv.start.getTime() < dayEnd.getTime())
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+  for (const iv of sorted) {
+    if (
+      iv.start.getTime() > cursor.getTime()
+      && cal.workingHoursBetween(cursor, iv.start) > EPS
+    ) {
+      return { start: cursor, end: iv.start };
+    }
+    if (iv.end.getTime() > cursor.getTime()) {
+      cursor = cal.nextWorkingStart(iv.end);
+      if (cal.dayKey(cursor) !== dateKey) return { start: cursor, end: null };
+    }
+  }
+  return { start: cursor, end: dayEnd };
+};
+
 /** Accumulate a stage-day delta as BOTH units and working hours. */
 const addDelta = (deltas, key, units, hours) => {
   const cur = deltas[key] || { units: 0, hours: 0 };
@@ -226,14 +266,23 @@ const allocateStage = (cal, stage, quantity, startInstant, ctx) => {
 
     // Stack after any work this same stage/team already has booked today.
     const dateKey = cal.dayKey(cur);
-    // fillByUnits (compaction): share the day with other projects up to the
-    // unit ceiling instead of queueing behind the latest booking's end.
-    const busy = ctx.fillByUnits
-      ? null
-      : ctx.busyUntil[usageKey(stage, dateKey)];
     let dayStart = cur;
-    if (busy && busy.getTime() > dayStart.getTime()) {
-      dayStart = cal.nextWorkingStart(busy);
+    let windowEnd = null;
+    if (ctx.fillGaps) {
+      // Reschedule: use any free window of the team's day, not only the time
+      // after its latest booking.
+      const w = nextFreeWindow(cal, ctx.busyIntervals[usageKey(stage, dateKey)], cur);
+      dayStart = w.start;
+      windowEnd = w.end;
+    } else {
+      // fillByUnits (compaction): share the day with other projects up to the
+      // unit ceiling instead of queueing behind the latest booking's end.
+      const busy = ctx.fillByUnits
+        ? null
+        : ctx.busyUntil[usageKey(stage, dateKey)];
+      if (busy && busy.getTime() > dayStart.getTime()) {
+        dayStart = cal.nextWorkingStart(busy);
+      }
     }
     if (cal.dayKey(dayStart) !== dateKey) {
       // busyUntil pushed us into a later day — restart the loop on that day.
@@ -243,7 +292,9 @@ const allocateStage = (cal, stage, quantity, startInstant, ctx) => {
     }
 
     const used = ctx.usage[usageKey(stage, dateKey)] || 0;
-    const windowHoursLeft = cal.remainingHoursInDay(dayStart);
+    const windowHoursLeft = windowEnd
+      ? cal.workingHoursBetween(dayStart, windowEnd)
+      : cal.remainingHoursInDay(dayStart);
     let unitsLeft = Math.max(0, dailyMaxUnits - used);
     if (ctx.fillByUnits) {
       // Bookings share the day's hours here, so the ceiling must follow the
@@ -307,6 +358,7 @@ const allocateStage = (cal, stage, quantity, startInstant, ctx) => {
     }
     addDelta(ctx.deltas, usageKey(stage, dateKey), assign, useHours);
     rememberBusyUntil(ctx.busyUntil, usageKey(stage, dateKey), endDT);
+    rememberInterval(ctx.busyIntervals, usageKey(stage, dateKey), dayStart, endDT);
 
     remaining = isFinalChunk ? 0 : remaining - assign;
     if (remaining > EPS) cur = cal.nextWorkingStart(endDT);
@@ -373,14 +425,21 @@ const allocateStageManual = (cal, stage, quantity, startInstant, minutes, ctx) =
     guard += 1;
 
     const dateKey = cal.dayKey(cur);
-    // fillByUnits (compaction): share the day with other projects up to the
-    // unit ceiling instead of queueing behind the latest booking's end.
-    const busy = ctx.fillByUnits
-      ? null
-      : ctx.busyUntil[usageKey(stage, dateKey)];
     let dayStart = cur;
-    if (busy && busy.getTime() > dayStart.getTime()) {
-      dayStart = cal.nextWorkingStart(busy);
+    let windowEnd = null;
+    if (ctx.fillGaps) {
+      const w = nextFreeWindow(cal, ctx.busyIntervals[usageKey(stage, dateKey)], cur);
+      dayStart = w.start;
+      windowEnd = w.end;
+    } else {
+      // fillByUnits (compaction): share the day with other projects up to the
+      // unit ceiling instead of queueing behind the latest booking's end.
+      const busy = ctx.fillByUnits
+        ? null
+        : ctx.busyUntil[usageKey(stage, dateKey)];
+      if (busy && busy.getTime() > dayStart.getTime()) {
+        dayStart = cal.nextWorkingStart(busy);
+      }
     }
     if (cal.dayKey(dayStart) !== dateKey) {
       cur = dayStart;
@@ -388,7 +447,11 @@ const allocateStageManual = (cal, stage, quantity, startInstant, minutes, ctx) =
       continue;
     }
 
-    const availMin = Math.round(cal.remainingHoursInDay(dayStart) * 60);
+    const availMin = Math.round(
+      (windowEnd
+        ? cal.workingHoursBetween(dayStart, windowEnd)
+        : cal.remainingHoursInDay(dayStart)) * 60,
+    );
     if (availMin <= 0) {
       cur = cal.nextWorkingStart(cal.endOfWorkingDay(dayStart));
       // eslint-disable-next-line no-continue
@@ -426,6 +489,7 @@ const allocateStageManual = (cal, stage, quantity, startInstant, minutes, ctx) =
     ctx.usage[key] = round2((ctx.usage[key] || 0) + u);
     addDelta(ctx.deltas, key, u, hours);
     rememberBusyUntil(ctx.busyUntil, key, seg.endDateTime);
+    rememberInterval(ctx.busyIntervals, key, seg.startDateTime, seg.endDateTime);
     return {
       date: seg.dateKey,
       startDateTime: seg.startDateTime,
@@ -492,6 +556,7 @@ const buildSchedule = ({
   overCapacityFactor = 1.0,
   manualDurations = {},
   fillByUnits = false,
+  fillGaps = false,
   notBefore = null,
   endBy = null,
 }) => {
@@ -502,6 +567,10 @@ const buildSchedule = ({
   Object.entries(seeded.busyUntil || {}).forEach(([key, value]) => {
     const date = new Date(value);
     if (isValidDate(date)) seededBusyUntil[key] = date;
+  });
+  const seededIntervals = {};
+  Object.entries(seeded.busyIntervals || {}).forEach(([key, list]) => {
+    (list || []).forEach((iv) => rememberInterval(seededIntervals, key, iv.start, iv.end));
   });
 
   const ctx = {
@@ -515,10 +584,12 @@ const buildSchedule = ({
     notBefore: notBefore ? new Date(notBefore) : null,
     endBy: endBy ? new Date(endBy) : null,
     busyUntil: seededBusyUntil,
+    busyIntervals: seededIntervals,
     deltas: {},
     overCapacityFactor,
     manualDurations: manualDurations || {},
     fillByUnits,
+    fillGaps,
   };
 
   const contingencyDays =
@@ -687,6 +758,7 @@ const loadExistingUsage = async (
 ) => {
   const usage = {};
   const busyUntil = {};
+  const busyIntervals = {};
   const usageFrom = {};
   const usageFloor = {};
   const fromKey = cal.dayKey(fromDate);
@@ -711,6 +783,7 @@ const loadExistingUsage = async (
             projectStageId: true,
             allocatedUnits: true,
             startDateTime: true,
+            customStartTime: true,
           },
         },
       },
@@ -725,6 +798,12 @@ const loadExistingUsage = async (
           return;
         }
         rememberBusyUntil(busyUntil, key, a.endDateTime || a.customEndTime);
+        rememberInterval(
+          busyIntervals,
+          key,
+          a.startDateTime || a.customStartTime,
+          a.endDateTime || a.customEndTime,
+        );
         if (dateKey === fromKey && a.startDateTime && a.endDateTime) {
           usageFrom[key] = (usageFrom[key] || 0) + unitsAfter(a, fromDate);
         }
@@ -735,11 +814,10 @@ const loadExistingUsage = async (
       if (!busyUntil[key] && (r.usedHours || 0) > EPS) {
         // No allocation rows (legacy data): assume the used hours were worked
         // from the start of the day, in WORKING time.
-        rememberBusyUntil(
-          busyUntil,
-          key,
-          cal.addWorkingHours(cal.startOfWorkingDay(r.date), r.usedHours || 0),
-        );
+        const legacyStart = cal.startOfWorkingDay(r.date);
+        const legacyEnd = cal.addWorkingHours(legacyStart, r.usedHours || 0);
+        rememberBusyUntil(busyUntil, key, legacyEnd);
+        rememberInterval(busyIntervals, key, legacyStart, legacyEnd);
       }
     });
     // A stage completed today has its whole day's allocation released (so the
@@ -755,9 +833,12 @@ const loadExistingUsage = async (
       select: { stage: true, projectendDate: true },
     });
     completed.forEach((s) => {
-      rememberBusyUntil(
-        busyUntil,
-        usageKey(s.stage, cal.dayKey(s.projectendDate)),
+      const key = usageKey(s.stage, cal.dayKey(s.projectendDate));
+      rememberBusyUntil(busyUntil, key, s.projectendDate);
+      rememberInterval(
+        busyIntervals,
+        key,
+        cal.startOfWorkingDay(s.projectendDate),
         s.projectendDate,
       );
     });
@@ -765,7 +846,7 @@ const loadExistingUsage = async (
     // eslint-disable-next-line no-console
     console.warn('[engine] could not load existing capacity usage:', err.message);
   }
-  return { usage, busyUntil, usageFrom, usageFloor };
+  return { usage, busyUntil, busyIntervals, usageFrom, usageFloor };
 };
 
 /**
@@ -881,6 +962,7 @@ const scheduleProject = async ({
   overCapacityFactor = 1.0,
   manualDurations = {},
   fillByUnits = false,
+  fillGaps = false,
   excludeStageId = null,
   notBefore = null,
   endBy = null,
@@ -909,6 +991,7 @@ const scheduleProject = async ({
     overCapacityFactor,
     manualDurations,
     fillByUnits,
+    fillGaps,
     notBefore,
     endBy,
   });

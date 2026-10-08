@@ -961,3 +961,114 @@ test('compact window: the overflow window is the earlier days of this week', () 
   const first = compactionWindow(cal, addis('2026-08-03T10:00:00')); // Monday
   assert.strictEqual(first.weekStart.getTime(), first.pastEnd.getTime()); // none
 });
+
+/* ------------------------------------------------------------------ *
+ * fillGaps (calendar reschedule): a team booked only late in the day is
+ * free in the morning — a moved stage must use that time, not queue
+ * behind the latest booking's end.
+ * ------------------------------------------------------------------ */
+test('fill gaps: a late booking does not block the free morning', () => {
+  const monday = cal.dayKey(MONDAY_OPEN);
+  const key = `ASSEMBLY|${monday}`;
+  const existingUsage = {
+    usage: { [key]: 2 },
+    busyUntil: { [key]: addis('2026-08-03T17:30:00') },
+    busyIntervals: {
+      [key]: [{ start: addis('2026-08-03T15:30:00'), end: addis('2026-08-03T17:30:00') }],
+    },
+  };
+  const opts = {
+    calendar: cal,
+    capacityConfig: capacityConfig(10),
+    stageQuantities: { ASSEMBLY: 4 },
+    startDate: MONDAY_OPEN,
+    settings: { contingencyDays: 0, difficultyBuffer: { EASY: 0 } },
+    existingUsage,
+  };
+  // Old behaviour: queued behind the 17:30 end => Tuesday.
+  const queued = buildSchedule(opts);
+  assert.notStrictEqual(queued.stages[0].allocations[0].date, monday);
+
+  const p = buildSchedule({ ...opts, fillGaps: true });
+  const a = p.stages[0].allocations;
+  assert.strictEqual(a.length, 1);
+  assert.strictEqual(a[0].date, monday);
+  assert.strictEqual(local(a[0].startDateTime), '03/08/2026, 08:30:00');
+  assert.ok(a[0].endDateTime.getTime() <= addis('2026-08-03T15:30:00').getTime());
+});
+
+test('fill gaps: work wraps around a booking and respects the unit ceiling', () => {
+  const monday = cal.dayKey(MONDAY_OPEN);
+  const key = `ASSEMBLY|${monday}`;
+  const busyStart = addis('2026-08-03T13:30:00');
+  const busyEnd = addis('2026-08-03T15:30:00');
+  const p = buildSchedule({
+    calendar: cal,
+    capacityConfig: capacityConfig(10),
+    stageQuantities: { ASSEMBLY: 12 },
+    startDate: MONDAY_OPEN,
+    settings: { contingencyDays: 0, difficultyBuffer: { EASY: 0 } },
+    existingUsage: {
+      usage: { [key]: 2.5 },
+      busyIntervals: { [key]: [{ start: busyStart, end: busyEnd }] },
+    },
+    fillGaps: true,
+  });
+  const allocs = p.stages[0].allocations;
+  const mondayAllocs = allocs.filter((a) => a.date === monday);
+  // No piece overlaps the existing booking.
+  mondayAllocs.forEach((a) => {
+    const overlaps = a.startDateTime < busyEnd && a.endDateTime > busyStart;
+    assert.ok(!overlaps, `overlaps booking: ${local(a.startDateTime)}-${local(a.endDateTime)}`);
+  });
+  // Monday holds at most the 7.5 units left under the 10/day ceiling.
+  const mondayUnits = mondayAllocs.reduce((s, a) => s + a.units, 0);
+  assert.ok(mondayUnits <= 7.5 + 0.01, `Monday got ${mondayUnits}`);
+  assert.ok(mondayUnits >= 7.5 - 0.01, `Monday got ${mondayUnits}`);
+  // The rest spills to the next working day.
+  const total = allocs.reduce((s, a) => s + a.units, 0);
+  assert.ok(Math.abs(total - 12) < 0.01);
+});
+
+test('fill gaps on create: free hours are used and the phase sequence holds', () => {
+  const monday = cal.dayKey(MONDAY_OPEN);
+  const key = `DESIGN|${monday}`;
+  const busyStart = addis('2026-08-03T15:30:00');
+  const busyEnd = addis('2026-08-03T17:30:00');
+  const p = buildSchedule({
+    calendar: cal,
+    capacityConfig: capacityConfig(10),
+    stageQuantities: {
+      DESIGN: 4, METAL_WORKS: 7, CNC: 14, CUTTING: 20, EDGE_BANDING: 20,
+      ASSEMBLY: 10, PAINTING: 4, FINISHING: 10, DELIVERY: 10,
+    },
+    startDate: MONDAY_OPEN,
+    settings: { contingencyDays: 0, difficultyBuffer: { EASY: 0 } },
+    existingUsage: {
+      usage: { [key]: 2 },
+      busyIntervals: { [key]: [{ start: busyStart, end: busyEnd }] },
+    },
+    fillGaps: true,
+  });
+  const by = Object.fromEntries(p.stages.map((s) => [s.stage, s]));
+  // DESIGN uses Monday's free morning instead of waiting for Tuesday.
+  assert.strictEqual(local(by.DESIGN.startDateTime), '03/08/2026, 08:30:00');
+  by.DESIGN.allocations.forEach((a) => {
+    assert.ok(!(a.startDateTime < busyEnd && a.endDateTime > busyStart));
+  });
+  // Every phase starts only after the previous phase's longest stage ends.
+  const phases = [
+    ['DESIGN'], ['METAL_WORKS', 'CNC'], ['CUTTING', 'EDGE_BANDING'],
+    ['ASSEMBLY', 'PAINTING'], ['FINISHING'], ['DELIVERY'],
+  ];
+  for (let i = 1; i < phases.length; i += 1) {
+    const prevEnd = Math.max(...phases[i - 1].map((s) => by[s].endDateTime.getTime()));
+    phases[i].forEach((s) => {
+      assert.ok(by[s].startDateTime.getTime() >= prevEnd, `${s} starts before phase ${i - 1} ends`);
+    });
+  }
+  // Every stage got all of its work.
+  p.stages.filter((s) => s.allocations.length).forEach((s) => {
+    assert.ok(Math.abs(s.actualWorkUnits - s.workUnits) < 0.01, `${s.stage} short`);
+  });
+});

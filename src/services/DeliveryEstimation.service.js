@@ -216,6 +216,8 @@ const calculateDeliveryEstimate = async (calculationData) => {
     startDate: planStart,
     difficulty,
     mode: 'dryRun',
+    // Same free-window filling as createProject, so the estimate matches.
+    fillGaps: true,
   });
 
   const stageResults = {};
