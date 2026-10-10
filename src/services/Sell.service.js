@@ -350,7 +350,10 @@ const createSell = async (sellBody, userId) => {
       quantity: item.quantity,
       unitPrice,
       totalPrice,
-      storeId: item.storeId || mainStore.id, // Default to main store if not provided
+      // A line comes from ONE place: the showroom when one was picked,
+      // otherwise the chosen store (main store by default). Adding the main
+      // store to a showroom line made delivery look in the wrong place.
+      storeId: item.showroomId ? null : item.storeId || mainStore.id,
       showroomId: item.showroomId || null,
     };
   });
@@ -490,7 +493,10 @@ const updateSell = async (sellId, sellBody, userId) => {
         quantity: item.quantity,
         unitPrice,
         totalPrice,
-        storeId: item.storeId || mainStore.id, // Default to main store if not provided
+        // A line comes from ONE place: the showroom when one was picked,
+        // otherwise the chosen store (main store by default). Adding the main
+        // store to a showroom line made delivery look in the wrong place.
+        storeId: item.showroomId ? null : item.storeId || mainStore.id,
         showroomId: item.showroomId || null,
       };
     });
@@ -1169,9 +1175,17 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
             include: {
               item: {
                 include: {
-                  itemStocks: true, // Get all stocks
+                  // All stocks, with their location names for messages
+                  itemStocks: {
+                    include: {
+                      store: { select: { name: true } },
+                      showroom: { select: { name: true } },
+                    },
+                  },
                 },
               },
+              store: { select: { name: true } },
+              showroom: { select: { name: true } },
             },
           },
           customer: true,
@@ -1217,12 +1231,13 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
         }
 
         // Get the location (store or showroom) from the sell item
-        const locationType = sellItem.storeId
-          ? 'store'
-          : sellItem.showroomId
+        const locationType = sellItem.showroomId
           ? 'showroom'
+          : sellItem.storeId
+          ? 'store'
           : null;
-        const locationId = sellItem.storeId || sellItem.showroomId;
+        // Older lines may carry both; the showroom is the one that was picked.
+        const locationId = sellItem.showroomId || sellItem.storeId;
 
         if (!locationType || !locationId) {
           return `Item ${sellItem.item.name} has no location associated. Please check the sell item.`;
@@ -1256,7 +1271,21 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
               ? sellItem.store?.name || locationId
               : sellItem.showroom?.name || locationId;
 
-          return `Insufficient stock for item ${sellItem.item.name} at ${locationType} ${locationName}. Available: ${availableStock}, Requested: ${deliveryItem.quantityDelivered}`;
+          // Say where the item IS in stock, so the user knows to transfer it
+          // (or change the item's delivery location) instead of guessing.
+          const elsewhere = (sellItem.item?.itemStocks || [])
+            .filter((stock) => stock.quantity > 0 && stock !== itemStock)
+            .map(
+              (stock) =>
+                `${stock.store ? 'store' : 'showroom'} ${
+                  stock.store?.name || stock.showroom?.name
+                } (${stock.quantity})`,
+            );
+          const hint = elsewhere.length
+            ? ` In stock at: ${elsewhere.join(', ')}. Transfer it to ${locationName} first, or deliver it from there.`
+            : ' It is not in stock anywhere.';
+
+          return `Insufficient stock for item ${sellItem.item.name} at ${locationType} ${locationName}. Available: ${availableStock}, Requested: ${deliveryItem.quantityDelivered}.${hint}`;
         }
 
         if (deliveryItem.quantityDelivered <= 0) {
@@ -1282,12 +1311,13 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
       }
 
       // Get location from sell item
-      const locationType = sellItem.storeId
-        ? 'store'
-        : sellItem.showroomId
+      const locationType = sellItem.showroomId
         ? 'showroom'
+        : sellItem.storeId
+        ? 'store'
         : null;
-      const locationId = sellItem.storeId || sellItem.showroomId;
+      // Older lines may carry both; the showroom is the one that was picked.
+      const locationId = sellItem.showroomId || sellItem.storeId;
 
       if (!locationType || !locationId) {
         throw new Error(
