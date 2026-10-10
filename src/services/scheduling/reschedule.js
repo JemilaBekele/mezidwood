@@ -1131,10 +1131,15 @@ const rescheduleStageAndDownstream = async (
           .filter((a) => dailyCapacityDate(markerDayKey(a.allocationDate)).getTime() === fromDateCutoff.getTime())
           .reduce((sum, a) => sum + (a.allocatedUnits || 0), 0);
 
+      // Partial past move (units < the dragged cell): move only `units` of the
+      // dragged stage; the parallel peers and the rest of the cell stay put.
+      const draggedCellUnits = cellUnitsOnDay(draggedStage);
+      const isPastPartial = units != null && units > EPS && units < draggedCellUnits - EPS;
+
       const moved = [];
       let pastPlan = null;
-      for (const s of [draggedStage, ...parallelPeers]) {
-        const cu = cellUnitsOnDay(s);
+      for (const s of isPastPartial ? [draggedStage] : [draggedStage, ...parallelPeers]) {
+        const cu = isPastPartial ? round2(units) : cellUnitsOnDay(s);
         if (cu <= EPS) continue;
         // Release exactly that day's cell (units >= cell ⇒ row removed), then
         // re-allocate the same units on the target day (125% + overflow forward).
@@ -1170,13 +1175,16 @@ const rescheduleStageAndDownstream = async (
         byUserId,
         oldDelivery: result ? result.oldDelivery : project.calculatedDelivery,
         newDelivery: result ? result.newDelivery : project.calculatedDelivery,
-        reason: `Cell ${stageName} (+ parallel peers) moved back to ${effStart.toISOString().slice(0, 10)}; downstream untouched`,
+        reason: isPastPartial
+          ? `${round2(units)} unit(s) of ${stageName} moved back to ${effStart.toISOString().slice(0, 10)}; downstream untouched`
+          : `Cell ${stageName} (+ parallel peers) moved back to ${effStart.toISOString().slice(0, 10)}; downstream untouched`,
       });
       return {
         ...result,
         rescheduledStages: moved,
         partialFrom: effectiveFromDate ? effectiveFromDate.toISOString().slice(0, 10) : null,
         draggedPlan: pastPlan,
+        partialUnits: isPastPartial ? units : null,
       };
     }
 
