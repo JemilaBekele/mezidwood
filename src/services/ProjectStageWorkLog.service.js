@@ -4,6 +4,25 @@ const httpStatus = require('http-status');
 const ApiError = require('../utils/ApiError');
 const prisma = require('./prisma');
 const reschedule = require('./scheduling/reschedule');
+const { stageHandoff, prerequisitesOf } = require('./stageHandoff');
+
+const STAGE_SELECT = {
+  id: true,
+  stage: true,
+  workUnits: true,
+  actualWorkUnits: true,
+  finished: true,
+  status: true,
+};
+const stageLabel = (name) =>
+  name === 'CNC'
+    ? 'CNC'
+    : name
+        .toLowerCase()
+        .split('_')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+const fmtUnits = (n) => String(Math.round(n * 10000) / 10000);
 
 /**
  * Midnight of `date`, matching the day granularity `releaseStageCapacity` uses
@@ -149,6 +168,37 @@ const createProjectStageWorkLog = async (workLogData) => {
             )} units. Only ${remaining.toFixed(
               6,
             )} units remaining out of ${plannedWorkUnits} total planned units`,
+          );
+        }
+
+        // ===== HAND-OFF: only log what the earlier stages have passed on =====
+        // e.g. Cutting 10 and Edge Banding 5 done (of the same plan) → Assembly
+        // and Painting may log up to 5 so far.
+        const projectStages = await tx.projectStage.findMany({
+          where: { projectId: projectStage.projectId },
+          select: STAGE_SELECT,
+        });
+        const handoff = stageHandoff(
+          projectStage.stage,
+          projectStages.map((s) =>
+            s.id === projectStageId
+              ? { ...s, actualWorkUnits: totalLoggedUnits }
+              : s,
+          ),
+        );
+        if (exactDoneUnits > handoff.availableUnits + epsilon) {
+          const from = handoff.prerequisites
+            .map((p) => `${stageLabel(p.stage)} ${p.donePercent}% done`)
+            .join(', ');
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `Cannot add ${fmtUnits(exactDoneUnits)} units. Only ${fmtUnits(
+              handoff.availableUnits,
+            )} units have been passed on so far (${from}) — ${fmtUnits(
+              handoff.allowedUnits,
+            )} of ${plannedWorkUnits} are ready for ${stageLabel(
+              projectStage.stage,
+            )}.`,
           );
         }
 
@@ -732,6 +782,36 @@ const deleteProjectStageWorkLog = async (id) => {
               status: 'ACTIVE', // Revert to ACTIVE or IN_PROGRESS based on your logic
             },
           });
+        }
+
+        // ===== HAND-OFF: the next stages may already have used this work =====
+        const projectStages = await tx.projectStage.findMany({
+          where: { projectId: projectStage.projectId },
+          select: STAGE_SELECT,
+        });
+        const overUsed = projectStages
+          .filter((s) =>
+            prerequisitesOf(s.stage, projectStages).some(
+              (p) => p.id === projectStage.id,
+            ),
+          )
+          .map((s) => ({ s, h: stageHandoff(s.stage, projectStages) }))
+          .filter(
+            ({ s, h }) =>
+              (Number(s.actualWorkUnits) || 0) > h.allowedUnits + 1e-6,
+          );
+        if (overUsed.length > 0) {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `Cannot delete this work log — the next stage already used this work (${overUsed
+              .map(
+                ({ s, h }) =>
+                  `${stageLabel(s.stage)} has logged ${fmtUnits(
+                    s.actualWorkUnits,
+                  )}, only ${fmtUnits(h.allowedUnits)} would remain passed on`,
+              )
+              .join('; ')}). Delete their work log first.`,
+          );
         }
 
         return {

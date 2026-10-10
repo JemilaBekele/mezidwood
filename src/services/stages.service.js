@@ -1,5 +1,9 @@
 const prisma = require('./prisma');
 
+// Stages receive work from the stage before them as soon as part of it is
+// done (see stageHandoff.js); Design must still be finished first.
+const { stageHandoff } = require('./stageHandoff');
+
 // Additional helper function to check if design is finished for a project
 const isDesignFinished = async (projectId) => {
   try {
@@ -146,6 +150,10 @@ const getDesignProjects = async (status = 'all') => {
     };
   }
 };
+// TEMPORARY: "My Design" lists every design, not only the ones assigned to
+// the logged-in designer. Set back to false to restore per-designer lists.
+const MY_DESIGN_SHOWS_ALL = true;
+
 const getbyDesignProject = async (status = 'all', currentUserId) => {
   try {
     // Validate currentUserId
@@ -156,7 +164,8 @@ const getbyDesignProject = async (status = 'all', currentUserId) => {
     // Get projects where the current user is assigned as designer
     const projectsWithDesign = await prisma.project.findMany({
       where: {
-        designById: currentUserId, // Only projects where this user is the designer
+        // Only projects where this user is the designer (unless showing all)
+        ...(MY_DESIGN_SHOWS_ALL ? {} : { designById: currentUserId }),
         stages: {
           some: {
             stage: 'DESIGN', // Ensure they have a DESIGN stage
@@ -254,7 +263,8 @@ const getbyDesignProject = async (status = 'all', currentUserId) => {
 
     // Double-check filter - ensure no projects from other designers
     const verifiedProjects = projectsWithDesign.filter(
-      (project) => project.designById === currentUserId,
+      (project) =>
+        MY_DESIGN_SHOWS_ALL || project.designById === currentUserId,
     );
 
     if (verifiedProjects.length !== projectsWithDesign.length) {
@@ -1055,13 +1065,14 @@ const getCuttingProjects = async (status = 'all') => {
         return {
           ...project,
           designFinished,
+          handoff: stageHandoff('CUTTING', project.stages),
         };
       }),
     );
 
     // Only include projects where design is finished
     let eligibleProjects = projectsWithDesignFinished.filter(
-      (p) => p.designFinished === true,
+      (p) => p.designFinished === true && p.handoff.visible,
     );
 
     // Further filter by Cutting status if specified
@@ -1226,13 +1237,14 @@ const getEdgeBandingProjects = async (status = 'all') => {
         return {
           ...project,
           designFinished,
+          handoff: stageHandoff('EDGE_BANDING', project.stages),
         };
       }),
     );
 
     // Only include projects where design is finished
     let eligibleProjects = projectsWithDesignFinished.filter(
-      (p) => p.designFinished === true,
+      (p) => p.designFinished === true && p.handoff.visible,
     );
 
     // Further filter by Edge Banding status if specified
@@ -1417,6 +1429,7 @@ const getAssemblyProjects = async (status = 'all') => {
         return {
           ...project,
           designFinished,
+          handoff: stageHandoff('ASSEMBLY', project.stages),
           allPrerequisitesFinished,
           prerequisiteStatus,
         };
@@ -1424,7 +1437,7 @@ const getAssemblyProjects = async (status = 'all') => {
     );
 
     let eligibleProjects = projectsWithPrerequisitesFinished.filter(
-      (p) => p.designFinished === true && p.allPrerequisitesFinished === true,
+      (p) => p.designFinished === true && p.handoff.visible,
     );
 
     if (status !== 'all') {
@@ -1608,6 +1621,7 @@ const getPaintingProjects = async (status = 'all') => {
         return {
           ...project,
           designFinished,
+          handoff: stageHandoff('PAINTING', project.stages),
           allPrerequisitesFinished,
           prerequisiteStatus,
         };
@@ -1615,7 +1629,7 @@ const getPaintingProjects = async (status = 'all') => {
     );
 
     let eligibleProjects = projectsWithPrerequisitesFinished.filter(
-      (p) => p.designFinished === true && p.allPrerequisitesFinished === true,
+      (p) => p.designFinished === true && p.handoff.visible,
     );
 
     if (status !== 'all') {
@@ -1799,6 +1813,7 @@ const getFinishingProjects = async (status = 'all') => {
         return {
           ...project,
           designFinished,
+          handoff: stageHandoff('FINISHING', project.stages),
           allPrerequisitesFinished,
           prerequisiteStatus,
         };
@@ -1806,7 +1821,7 @@ const getFinishingProjects = async (status = 'all') => {
     );
 
     let eligibleProjects = projectsWithPrerequisitesFinished.filter(
-      (p) => p.designFinished === true && p.allPrerequisitesFinished === true,
+      (p) => p.designFinished === true && p.handoff.visible,
     );
 
     if (status !== 'all') {
@@ -2076,6 +2091,7 @@ const getDeliveryProjects = async (status = 'all') => {
           ...project,
           type: 'project',
           designFinished,
+          handoff: stageHandoff('DELIVERY', project.stages),
           allPrerequisitesFinished,
           prerequisiteStatus,
           paymentStatus: paymentStatus || 'PENDING',
@@ -2098,7 +2114,7 @@ const getDeliveryProjects = async (status = 'all') => {
     );
 
     const eligibleProjects = projectsWithPrerequisitesFinished.filter(
-      (p) => p.designFinished === true && p.allPrerequisitesFinished === true,
+      (p) => p.designFinished === true && p.handoff.visible,
     );
 
     // 4. Process sell deliveries with enhanced status
@@ -2500,6 +2516,7 @@ const getInstallationProjects = async (status = 'all') => {
         return {
           ...project,
           designFinished,
+          handoff: stageHandoff('INSTALLATION', project.stages),
           allPrerequisitesFinished,
           prerequisiteStatus,
         };
@@ -2507,7 +2524,7 @@ const getInstallationProjects = async (status = 'all') => {
     );
 
     let eligibleProjects = projectsWithPrerequisitesFinished.filter(
-      (p) => p.designFinished === true && p.allPrerequisitesFinished === true,
+      (p) => p.designFinished === true && p.handoff.visible,
     );
 
     if (status !== 'all') {
