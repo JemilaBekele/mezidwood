@@ -434,6 +434,8 @@ model PurchaseItem {
   unitOfMeasure   UnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id])
 
   // ✅ Link directly to a single unit of measure\
+  // Position of the line as entered on the purchase (0, 1, 2, ...).
+  lineNo      Int             @default(0)
   quantity    Int
    acceptquantity   Int?
   isfullyaccepted  Boolean         @default(false)

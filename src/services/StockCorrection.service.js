@@ -4,6 +4,24 @@ const { subMonths } = require('date-fns');
 const ApiError = require('../utils/ApiError');
 const prisma = require('./prisma');
 
+/* eslint-disable no-restricted-syntax, no-await-in-loop */
+
+/** Stock rows of exactly the correction's location (its store OR its showroom). */
+const locationWhere = (sc) =>
+  sc.storeId
+    ? { storeId: sc.storeId, showroomId: null }
+    : { storeId: null, showroomId: sc.showroomId };
+
+/** A correction must target exactly one place: a store or a showroom. */
+const assertOneLocation = ({ storeId, showroomId }) => {
+  if (!storeId === !showroomId) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Select either a store or a showroom for the stock correction',
+    );
+  }
+};
+
 // Get StockCorrection by ID
 const getStockCorrectionById = async (id) => {
   try {
@@ -348,23 +366,21 @@ const getAllStockCorrections = async ({ startDate, endDate } = {}) => {
 };
 
 const generateShortCode = async () => {
-  try {
-    const result = await prisma.$queryRaw`
-      SELECT MAX(CAST(SUBSTRING("shortCode" FROM 4) AS INTEGER)) as maxNumber
-      FROM "StockCorrection"
-      WHERE "shortCode" LIKE 'SC-%'
-    `;
-
-    const maxNumber = result[0]?.maxNumber || 0;
-    const nextNumber = maxNumber + 1;
-
-    return `SC-${String(nextNumber).padStart(6, '0')}`;
-  } catch (error) {
-    const timestamp = Date.now();
-    return `SC-EMG-${timestamp.toString().slice(-8)}`;
-  }
+  // Codes are SC-000001, SC-000002, ... (fixed width, so they sort as text).
+  const latest = await prisma.stockCorrection.findFirst({
+    where: {
+      shortCode: { startsWith: 'SC-' },
+      NOT: { shortCode: { startsWith: 'SC-EMG' } },
+    },
+    orderBy: { shortCode: 'desc' },
+    select: { shortCode: true },
+  });
+  const last = latest ? parseInt(latest.shortCode.slice(3), 10) : 0;
+  const nextNumber = (Number.isNaN(last) ? 0 : last) + 1;
+  return `SC-${String(nextNumber).padStart(6, '0')}`;
 };
 
+// Create StockCorrection
 const createStockCorrection = async (stockCorrectionBody, userId) => {
   const shortCode = await generateShortCode();
 
@@ -379,6 +395,11 @@ const createStockCorrection = async (stockCorrectionBody, userId) => {
       'Stock correction must have at least one item',
     );
   }
+
+  assertOneLocation({
+    storeId: restStockCorrectionBody.storeId || null,
+    showroomId: restStockCorrectionBody.showroomId || null,
+  });
 
   // Get ismaterial from body (default to false for items)
   const ismaterial = stockCorrectionBody.ismaterial === true;
@@ -533,6 +554,17 @@ const updateStockCorrection = async (
     );
   }
 
+  assertOneLocation({
+    storeId:
+      restStockCorrectionBody.storeId !== undefined
+        ? restStockCorrectionBody.storeId || null
+        : existingStockCorrection.storeId,
+    showroomId:
+      restStockCorrectionBody.showroomId !== undefined
+        ? restStockCorrectionBody.showroomId || null
+        : existingStockCorrection.showroomId,
+  });
+
   // Get ismaterial from body (default to existing value if not provided)
   const ismaterial =
     stockCorrectionBody.ismaterial !== undefined
@@ -669,33 +701,42 @@ const approveStockCorrection = async (stockCorrectionId, userId) => {
     );
   }
 
+  assertOneLocation(stockCorrection);
+
   const result = await prisma.$transaction(async (tx) => {
     const { ismaterial } = stockCorrection;
 
-    // Check for negative stock BEFORE processing
-    const stockCheckPromises = stockCorrection.items
+    // Check for negative stock BEFORE processing — per material/product, as
+    // the same one may appear on several subtraction lines.
+    const totalOut = new Map();
+    stockCorrection.items
       .filter((item) => item.quantity < 0)
-      .map(async (item) => {
+      .forEach((item) => {
+        const key = ismaterial ? item.materialId : item.itemId;
+        const entry = totalOut.get(key) || { item, quantity: 0 };
+        entry.quantity += Math.abs(item.quantity);
+        totalOut.set(key, entry);
+      });
+
+    const stockCheckPromises = [...totalOut.values()].map(
+      async ({ item, quantity: absoluteQuantity }) => {
         const itemName = ismaterial
           ? item.material?.name || `Material ID: ${item.materialId}`
           : item.item?.name || `Item ID: ${item.itemId}`;
-        const absoluteQuantity = Math.abs(item.quantity);
 
         let inventoryStock;
         if (ismaterial) {
           inventoryStock = await tx.inventoryStock.findFirst({
             where: {
               materialId: item.materialId,
-              storeId: stockCorrection.storeId || undefined,
-              showroomId: stockCorrection.showroomId || undefined,
+              ...locationWhere(stockCorrection),
             },
           });
         } else {
           inventoryStock = await tx.itemStock.findFirst({
             where: {
               itemId: item.itemId,
-              storeId: stockCorrection.storeId || undefined,
-              showroomId: stockCorrection.showroomId || undefined,
+              ...locationWhere(stockCorrection),
             },
           });
         }
@@ -710,7 +751,8 @@ const approveStockCorrection = async (stockCorrectionId, userId) => {
           };
         }
         return null;
-      });
+      },
+    );
 
     const stockCheckResults = await Promise.all(stockCheckPromises);
     const insufficientStockItems = stockCheckResults.filter(
@@ -734,129 +776,125 @@ const approveStockCorrection = async (stockCorrectionId, userId) => {
     }
 
     // Process each item
-    await Promise.all(
-      stockCorrection.items.map(async (item, index) => {
-        const itemName = ismaterial
-          ? item.material?.name || `Material ID: ${item.materialId}`
-          : item.item?.name || `Item ID: ${item.itemId}`;
+    for (const [index, item] of stockCorrection.items.entries()) {
+      const itemName = ismaterial
+        ? item.material?.name || `Material ID: ${item.materialId}`
+        : item.item?.name || `Item ID: ${item.itemId}`;
 
-        const isAddition = item.quantity > 0;
-        const movementType = isAddition ? 'IN' : 'OUT';
-        const absoluteQuantity = Math.abs(item.quantity);
-        const notes = isAddition
-          ? `Stock addition for "${itemName}": ${stockCorrection.reason.toLowerCase()}`
-          : `Stock subtraction for "${itemName}": ${stockCorrection.reason.toLowerCase()}`;
+      const isAddition = item.quantity > 0;
+      const movementType = isAddition ? 'IN' : 'OUT';
+      const absoluteQuantity = Math.abs(item.quantity);
+      const notes = isAddition
+        ? `Stock addition for "${itemName}": ${stockCorrection.reason.toLowerCase()}`
+        : `Stock subtraction for "${itemName}": ${stockCorrection.reason.toLowerCase()}`;
 
-        const now = new Date();
-        const timestamp = now.getTime();
-        const uniqueReference = `${
-          stockCorrection.shortCode || 'SC'
-        }-${timestamp}-${index + 1}`;
+      const now = new Date();
+      const timestamp = now.getTime();
+      const uniqueReference = `${
+        stockCorrection.shortCode || 'SC'
+      }-${timestamp}-${index + 1}`;
 
-        if (ismaterial) {
-          // Handle Material Stock
-          const existingStock = await tx.inventoryStock.findFirst({
-            where: {
-              materialId: item.materialId,
-              storeId: stockCorrection.storeId || undefined,
-              showroomId: stockCorrection.showroomId || undefined,
+      if (ismaterial) {
+        // Handle Material Stock
+        const existingStock = await tx.inventoryStock.findFirst({
+          where: {
+            materialId: item.materialId,
+            ...locationWhere(stockCorrection),
+          },
+        });
+
+        if (existingStock) {
+          await tx.inventoryStock.update({
+            where: { id: existingStock.id },
+            data: {
+              quantity: isAddition
+                ? { increment: absoluteQuantity }
+                : { decrement: absoluteQuantity },
+              status: 'Available',
+              lastUpdated: new Date(),
             },
           });
-
-          if (existingStock) {
-            await tx.inventoryStock.update({
-              where: { id: existingStock.id },
-              data: {
-                quantity: isAddition
-                  ? { increment: absoluteQuantity }
-                  : { decrement: absoluteQuantity },
-                status: 'Available',
-                lastUpdated: new Date(),
-              },
-            });
-          } else if (isAddition) {
-            await tx.inventoryStock.create({
-              data: {
-                materialId: item.materialId,
-                storeId: stockCorrection.storeId || undefined,
-                showroomId: stockCorrection.showroomId || undefined,
-                quantity: absoluteQuantity,
-                status: 'Available',
-                lastUpdated: new Date(),
-              },
-            });
-          } else {
-            throw new ApiError(
-              httpStatus.BAD_REQUEST,
-              `Cannot subtract ${absoluteQuantity} from non-existent stock for "${itemName}"`,
-            );
-          }
-
-          // Create stock ledger entry
-          await tx.stockLedger.create({
+        } else if (isAddition) {
+          await tx.inventoryStock.create({
             data: {
               materialId: item.materialId,
               storeId: stockCorrection.storeId || undefined,
               showroomId: stockCorrection.showroomId || undefined,
-              movementType,
               quantity: absoluteQuantity,
-              reference: uniqueReference,
-              userId,
-              notes,
-              movementDate: now,
+              status: 'Available',
+              lastUpdated: new Date(),
             },
           });
         } else {
-          // Handle Item Stock
-          const existingStock = await tx.itemStock.findFirst({
-            where: {
-              itemId: item.itemId,
-              storeId: stockCorrection.storeId || undefined,
-              showroomId: stockCorrection.showroomId || undefined,
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `Cannot subtract ${absoluteQuantity} from non-existent stock for "${itemName}"`,
+          );
+        }
+
+        // Create stock ledger entry
+        await tx.stockLedger.create({
+          data: {
+            materialId: item.materialId,
+            storeId: stockCorrection.storeId || undefined,
+            showroomId: stockCorrection.showroomId || undefined,
+            movementType,
+            quantity: absoluteQuantity,
+            reference: uniqueReference,
+            userId,
+            notes,
+            movementDate: now,
+          },
+        });
+      } else {
+        // Handle Item Stock
+        const existingStock = await tx.itemStock.findFirst({
+          where: {
+            itemId: item.itemId,
+            ...locationWhere(stockCorrection),
+          },
+        });
+
+        if (existingStock) {
+          await tx.itemStock.update({
+            where: { id: existingStock.id },
+            data: {
+              quantity: isAddition
+                ? { increment: absoluteQuantity }
+                : { decrement: absoluteQuantity },
             },
           });
-
-          if (existingStock) {
-            await tx.itemStock.update({
-              where: { id: existingStock.id },
-              data: {
-                quantity: isAddition
-                  ? { increment: absoluteQuantity }
-                  : { decrement: absoluteQuantity },
-              },
-            });
-          } else if (isAddition) {
-            await tx.itemStock.create({
-              data: {
-                itemId: item.itemId,
-                storeId: stockCorrection.storeId || undefined,
-                showroomId: stockCorrection.showroomId || undefined,
-                quantity: absoluteQuantity,
-              },
-            });
-          } else {
-            throw new ApiError(
-              httpStatus.BAD_REQUEST,
-              `Cannot subtract ${absoluteQuantity} from non-existent stock for "${itemName}"`,
-            );
-          }
-
-          // Create item stock ledger entry
-          await tx.itemStockLedger.create({
+        } else if (isAddition) {
+          await tx.itemStock.create({
             data: {
               itemId: item.itemId,
               storeId: stockCorrection.storeId || undefined,
               showroomId: stockCorrection.showroomId || undefined,
-              movementType,
               quantity: absoluteQuantity,
-              reference: uniqueReference,
-              userId,
-              notes,
             },
           });
+        } else {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `Cannot subtract ${absoluteQuantity} from non-existent stock for "${itemName}"`,
+          );
         }
-      }),
-    );
+
+        // Create item stock ledger entry
+        await tx.itemStockLedger.create({
+          data: {
+            itemId: item.itemId,
+            storeId: stockCorrection.storeId || undefined,
+            showroomId: stockCorrection.showroomId || undefined,
+            movementType,
+            quantity: absoluteQuantity,
+            reference: uniqueReference,
+            userId,
+            notes,
+          },
+        });
+      }
+    }
 
     // Update stock correction status to APPROVED
     const updatedStockCorrection = await tx.stockCorrection.update({
@@ -900,150 +938,175 @@ const deleteStockCorrection = async (id, userId) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Stock correction not found');
   }
 
-  await prisma.$transaction(async (tx) => {
-    // Check if stock correction was approved
-    const existingLedgerEntries = await tx.stockLedger.count({
-      where: {
-        reference: {
-          contains: existingStockCorrection.shortCode,
-        },
-      },
-    });
+  const wasApproved = existingStockCorrection.status === 'APPROVED';
 
-    const wasApproved = existingLedgerEntries > 0;
+  await prisma.$transaction(async (tx) => {
+    // Undoing an addition needs that stock to still be there.
+    if (wasApproved) {
+      const totalIn = new Map();
+      existingStockCorrection.items
+        .filter((item) => item.quantity > 0)
+        .forEach((item) => {
+          const key = existingStockCorrection.ismaterial
+            ? item.materialId
+            : item.itemId;
+          const entry = totalIn.get(key) || { item, quantity: 0 };
+          entry.quantity += item.quantity;
+          totalIn.set(key, entry);
+        });
+      for (const { item, quantity } of totalIn.values()) {
+        const rows = existingStockCorrection.ismaterial
+          ? await tx.inventoryStock.findMany({
+              where: {
+                materialId: item.materialId,
+                ...locationWhere(existingStockCorrection),
+              },
+            })
+          : await tx.itemStock.findMany({
+              where: {
+                itemId: item.itemId,
+                ...locationWhere(existingStockCorrection),
+              },
+            });
+        const available = rows.reduce((t, r) => t + r.quantity, 0);
+        if (available < quantity) {
+          const name = item.material?.name || item.item?.name || 'item';
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `Cannot delete — ${name}: ${quantity} was added by this correction but only ${available} is left (already used). Create a new correction instead.`,
+          );
+        }
+      }
+    }
 
     // REVERSE EVERYTHING if approved
     if (wasApproved) {
-      await Promise.all(
-        existingStockCorrection.items.map(async (item) => {
-          const isAddition = item.quantity > 0;
-          const absoluteQuantity = Math.abs(item.quantity);
-          const isMaterial = existingStockCorrection.ismaterial;
+      for (const item of existingStockCorrection.items) {
+        const isAddition = item.quantity > 0;
+        const absoluteQuantity = Math.abs(item.quantity);
+        const isMaterial = existingStockCorrection.ismaterial;
 
-          if (isMaterial) {
-            // Handle material reversal
-            // 1. Reverse the stock correction
-            const existingInventoryStock = await tx.inventoryStock.findFirst({
-              where: {
-                materialId: item.materialId,
-                storeId: existingStockCorrection.storeId || undefined,
-                showroomId: existingStockCorrection.showroomId || undefined,
-              },
-            });
+        if (isMaterial) {
+          // Handle material reversal
+          // 1. Reverse the stock correction
+          const existingInventoryStock = await tx.inventoryStock.findFirst({
+            where: {
+              materialId: item.materialId,
+              ...locationWhere(existingStockCorrection),
+            },
+          });
 
-            if (existingInventoryStock) {
-              // If it was an addition, subtract it; if it was a subtraction, add it back
-              const newQuantity = isAddition
-                ? existingInventoryStock.quantity - absoluteQuantity
-                : existingInventoryStock.quantity + absoluteQuantity;
+          if (existingInventoryStock) {
+            // If it was an addition, subtract it; if it was a subtraction, add it back
+            const newQuantity = isAddition
+              ? existingInventoryStock.quantity - absoluteQuantity
+              : existingInventoryStock.quantity + absoluteQuantity;
 
-              if (newQuantity <= 0) {
-                await tx.inventoryStock.delete({
-                  where: { id: existingInventoryStock.id },
-                });
-              } else {
-                await tx.inventoryStock.update({
-                  where: { id: existingInventoryStock.id },
-                  data: {
-                    quantity: newQuantity,
-                    status: 'Available',
-                    lastUpdated: new Date(),
-                  },
-                });
-              }
-            } else if (!isAddition) {
-              // If we're trying to reverse a subtraction but stock doesn't exist (shouldn't happen)
-              // Just skip - stock was likely already removed
-              console.warn(
-                `Stock not found for material ${item.materialId} during reversal of subtraction`,
-              );
-            }
-
-            // 2. Create reversal ledger entry
-            const reversalMovementType = isAddition ? 'OUT' : 'IN';
-            await tx.stockLedger.create({
-              data: {
-                materialId: item.materialId,
-                storeId: existingStockCorrection.storeId || undefined,
-                showroomId: existingStockCorrection.showroomId || undefined,
-                movementType: reversalMovementType,
-                quantity: absoluteQuantity,
-                reference: `STOCK-CORRECTION-REVERSAL-${existingStockCorrection.shortCode}`,
-                userId,
-                notes: `Stock correction reversal: ${existingStockCorrection.reason.toLowerCase()}`,
-                movementDate: new Date(),
-              },
-            });
-
-            // 3. Delete original stock ledger entries for this item
-            await tx.stockLedger.deleteMany({
-              where: {
-                reference: {
-                  contains: existingStockCorrection.shortCode,
+            if (newQuantity <= 0) {
+              await tx.inventoryStock.delete({
+                where: { id: existingInventoryStock.id },
+              });
+            } else {
+              await tx.inventoryStock.update({
+                where: { id: existingInventoryStock.id },
+                data: {
+                  quantity: newQuantity,
+                  status: 'Available',
+                  lastUpdated: new Date(),
                 },
-                materialId: item.materialId,
-              },
-            });
-          } else {
-            // Handle item/product reversal
-            const existingItemStock = await tx.itemStock.findFirst({
-              where: {
-                itemId: item.itemId,
-                storeId: existingStockCorrection.storeId || undefined,
-                showroomId: existingStockCorrection.showroomId || undefined,
-              },
-            });
-
-            if (existingItemStock) {
-              const newQuantity = isAddition
-                ? existingItemStock.quantity - absoluteQuantity
-                : existingItemStock.quantity + absoluteQuantity;
-
-              if (newQuantity <= 0) {
-                await tx.itemStock.delete({
-                  where: { id: existingItemStock.id },
-                });
-              } else {
-                await tx.itemStock.update({
-                  where: { id: existingItemStock.id },
-                  data: {
-                    quantity: newQuantity,
-                  },
-                });
-              }
-            } else if (!isAddition) {
-              console.warn(
-                `Item stock not found for item ${item.itemId} during reversal of subtraction`,
-              );
+              });
             }
-
-            // Create reversal item stock ledger entry
-            const reversalMovementType = isAddition ? 'OUT' : 'IN';
-            await tx.itemStockLedger.create({
-              data: {
-                itemId: item.itemId,
-                storeId: existingStockCorrection.storeId || undefined,
-                showroomId: existingStockCorrection.showroomId || undefined,
-                movementType: reversalMovementType,
-                quantity: absoluteQuantity,
-                reference: `STOCK-CORRECTION-REVERSAL-${existingStockCorrection.shortCode}`,
-                userId,
-                notes: `Stock correction reversal: ${existingStockCorrection.reason.toLowerCase()}`,
-              },
-            });
-
-            // Delete original item stock ledger entries for this item
-            await tx.itemStockLedger.deleteMany({
-              where: {
-                reference: {
-                  contains: existingStockCorrection.shortCode,
-                },
-                itemId: item.itemId,
-              },
-            });
+          } else if (!isAddition) {
+            // If we're trying to reverse a subtraction but stock doesn't exist (shouldn't happen)
+            // Just skip - stock was likely already removed
+            console.warn(
+              `Stock not found for material ${item.materialId} during reversal of subtraction`,
+            );
           }
-        }),
-      );
+
+          // 2. Create reversal ledger entry
+          const reversalMovementType = isAddition ? 'OUT' : 'IN';
+          await tx.stockLedger.create({
+            data: {
+              materialId: item.materialId,
+              storeId: existingStockCorrection.storeId || undefined,
+              showroomId: existingStockCorrection.showroomId || undefined,
+              movementType: reversalMovementType,
+              quantity: absoluteQuantity,
+              reference: `STOCK-CORRECTION-REVERSAL-${existingStockCorrection.shortCode}`,
+              userId,
+              notes: `Stock correction reversal: ${existingStockCorrection.reason.toLowerCase()}`,
+              movementDate: new Date(),
+            },
+          });
+
+          // 3. Delete original stock ledger entries for this item
+          await tx.stockLedger.deleteMany({
+            where: {
+              reference: {
+                contains: existingStockCorrection.shortCode,
+              },
+              materialId: item.materialId,
+            },
+          });
+        } else {
+          // Handle item/product reversal
+          const existingItemStock = await tx.itemStock.findFirst({
+            where: {
+              itemId: item.itemId,
+              ...locationWhere(existingStockCorrection),
+            },
+          });
+
+          if (existingItemStock) {
+            const newQuantity = isAddition
+              ? existingItemStock.quantity - absoluteQuantity
+              : existingItemStock.quantity + absoluteQuantity;
+
+            if (newQuantity <= 0) {
+              await tx.itemStock.delete({
+                where: { id: existingItemStock.id },
+              });
+            } else {
+              await tx.itemStock.update({
+                where: { id: existingItemStock.id },
+                data: {
+                  quantity: newQuantity,
+                },
+              });
+            }
+          } else if (!isAddition) {
+            console.warn(
+              `Item stock not found for item ${item.itemId} during reversal of subtraction`,
+            );
+          }
+
+          // Create reversal item stock ledger entry
+          const reversalMovementType = isAddition ? 'OUT' : 'IN';
+          await tx.itemStockLedger.create({
+            data: {
+              itemId: item.itemId,
+              storeId: existingStockCorrection.storeId || undefined,
+              showroomId: existingStockCorrection.showroomId || undefined,
+              movementType: reversalMovementType,
+              quantity: absoluteQuantity,
+              reference: `STOCK-CORRECTION-REVERSAL-${existingStockCorrection.shortCode}`,
+              userId,
+              notes: `Stock correction reversal: ${existingStockCorrection.reason.toLowerCase()}`,
+            },
+          });
+
+          // Delete original item stock ledger entries for this item
+          await tx.itemStockLedger.deleteMany({
+            where: {
+              reference: {
+                contains: existingStockCorrection.shortCode,
+              },
+              itemId: item.itemId,
+            },
+          });
+        }
+      }
 
       // 4. Delete any remaining stock ledger entries
       await tx.stockLedger.deleteMany({

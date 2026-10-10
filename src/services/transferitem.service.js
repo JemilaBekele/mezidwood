@@ -202,6 +202,18 @@ const createTransfer = async (transferBody, userId) => {
     throw new ApiError(httpStatus.BAD_REQUEST, invalidItems[0]);
   }
 
+  // The same material/product on two lines would be checked against the same
+  // starting stock twice — require one line per material/product.
+  const lineKeys = items.map((item) =>
+    transferType === 'material' ? item.materialId : item.itemId,
+  );
+  if (new Set(lineKeys).size !== lineKeys.length) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'The same material or product is listed more than once. Combine it into one line.',
+    );
+  }
+
   // Verify all items exist
   if (transferType === 'material') {
     const materialIds = items.map((item) => item.materialId);
@@ -344,6 +356,22 @@ const createTransfer = async (transferBody, userId) => {
 
 // Update transfer function (stock check removed)
 const updateTransfer = async (transferId, transferBody, userId) => {
+  const existingTransfer = await prisma.transfer.findUnique({
+    where: { id: transferId },
+    select: { status: true },
+  });
+  if (!existingTransfer) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Transfer not found');
+  }
+  // A completed transfer has already moved stock; editing it would make the
+  // transfer and the stock disagree.
+  if (existingTransfer.status !== 'PENDING') {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Cannot edit a ${existingTransfer.status.toLowerCase()} transfer`,
+    );
+  }
+
   // Parse items if it's a string
   const { items: itemsString, ...restTransferBody } = transferBody;
   const items =
@@ -388,6 +416,18 @@ const updateTransfer = async (transferId, transferBody, userId) => {
 
   if (invalidItems.length > 0) {
     throw new ApiError(httpStatus.BAD_REQUEST, invalidItems[0]);
+  }
+
+  // The same material/product on two lines would be checked against the same
+  // starting stock twice — require one line per material/product.
+  const lineKeys = items.map((item) =>
+    transferType === 'material' ? item.materialId : item.itemId,
+  );
+  if (new Set(lineKeys).size !== lineKeys.length) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'The same material or product is listed more than once. Combine it into one line.',
+    );
   }
 
   // Clean up empty string values
@@ -464,20 +504,42 @@ const deleteTransfer = async (id, userId) => {
   }
 
   await prisma.$transaction(async (tx) => {
-    // Check if transfer was completed by checking for ledger entries
-    const existingLedgerEntries = await tx.stockLedger.count({
-      where: {
-        reference: `TRANSFER-${existingTransfer.shortCode}`,
-      },
-    });
+    const wasCompleted = existingTransfer.status === 'COMPLETED';
 
-    const existingItemLedgerEntries = await tx.itemStockLedger.count({
-      where: {
-        reference: `TRANSFER-${existingTransfer.shortCode}`,
-      },
-    });
-
-    const wasCompleted = existingLedgerEntries > 0 || existingItemLedgerEntries > 0;
+    // The stock must still be at the destination to send it back; if some was
+    // already used there, reversing would invent stock at the source.
+    if (wasCompleted) {
+      const destWhere =
+        existingTransfer.destinationType === 'STORE'
+          ? { storeId: existingTransfer.destStoreId, showroomId: null }
+          : { showroomId: existingTransfer.destShowroomId, storeId: null };
+      const shortages = (
+        await Promise.all(
+          existingTransfer.items.map(async (item) => {
+            const rows = item.ismaterial
+              ? await tx.inventoryStock.findMany({
+                  where: { materialId: item.materialId, ...destWhere },
+                })
+              : await tx.itemStock.findMany({
+                  where: { itemId: item.itemId, ...destWhere },
+                });
+            const available = rows.reduce((t, r) => t + r.quantity, 0);
+            const name = item.material?.name || item.item?.name || 'item';
+            return available < item.quantity
+              ? `${name}: ${item.quantity} transferred, only ${available} left at the destination`
+              : null;
+          }),
+        )
+      ).filter(Boolean);
+      if (shortages.length > 0) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Cannot delete this transfer — some of its stock was already used at the destination (${shortages.join(
+            '; ',
+          )}). Use a stock correction instead.`,
+        );
+      }
+    }
 
     // REVERSE EVERYTHING if completed
     if (wasCompleted) {
@@ -657,30 +719,8 @@ const deleteTransfer = async (id, userId) => {
               });
             }
 
-            // 3. Delete original stock ledger entries for this item
-            await tx.stockLedger.deleteMany({
-              where: {
-                reference: `TRANSFER-${existingTransfer.shortCode}`,
-                movementType: 'IN',
-                materialId: item.materialId,
-                OR: [
-                  { storeId: existingTransfer.destStoreId },
-                  { showroomId: existingTransfer.destShowroomId },
-                ],
-              },
-            });
-
-            await tx.stockLedger.deleteMany({
-              where: {
-                reference: `TRANSFER-${existingTransfer.shortCode}`,
-                movementType: 'OUT',
-                materialId: item.materialId,
-                OR: [
-                  { storeId: existingTransfer.sourceStoreId },
-                  { showroomId: existingTransfer.sourceShowroomId },
-                ],
-              },
-            });
+            // The original OUT/IN rows stay; with the reversal rows above
+            // they net to zero and keep the movement history.
 
           } else {
             // Handle product/item reversal
@@ -838,30 +878,8 @@ const deleteTransfer = async (id, userId) => {
               });
             }
 
-            // 3. Delete original item stock ledger entries for this item
-            await tx.itemStockLedger.deleteMany({
-              where: {
-                reference: `TRANSFER-${existingTransfer.shortCode}`,
-                movementType: 'IN',
-                itemId: item.itemId,
-                OR: [
-                  { storeId: existingTransfer.destStoreId },
-                  { showroomId: existingTransfer.destShowroomId },
-                ],
-              },
-            });
-
-            await tx.itemStockLedger.deleteMany({
-              where: {
-                reference: `TRANSFER-${existingTransfer.shortCode}`,
-                movementType: 'OUT',
-                itemId: item.itemId,
-                OR: [
-                  { storeId: existingTransfer.sourceStoreId },
-                  { showroomId: existingTransfer.sourceShowroomId },
-                ],
-              },
-            });
+            // The original OUT/IN rows stay; with the reversal rows above
+            // they net to zero and keep the movement history.
           }
         }),
       );
@@ -940,10 +958,6 @@ const completeTransfer = async (transferId, userId) => {
                   decrement: item.quantity,
                 },
                 lastUpdated: new Date(),
-                // Only update status if quantity becomes zero
-                ...(sourceStock.quantity - item.quantity === 0 && {
-                  status: 'OutOfStock',
-                }),
               },
             });
 
@@ -991,9 +1005,6 @@ const completeTransfer = async (transferId, userId) => {
                   decrement: item.quantity,
                 },
                 lastUpdated: new Date(),
-                ...(sourceStock.quantity - item.quantity === 0 && {
-                  status: 'OutOfStock',
-                }),
               },
             });
 

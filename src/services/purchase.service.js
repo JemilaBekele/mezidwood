@@ -2,6 +2,142 @@ const httpStatus = require('http-status');
 const ApiError = require('../utils/ApiError');
 const prisma = require('./prisma');
 
+/* eslint-disable no-restricted-syntax, no-await-in-loop */
+
+// Purchase lines in the order they were entered on the purchase.
+const ITEM_ORDER = [{ lineNo: 'asc' }, { createdAt: 'asc' }];
+
+/** Units per material that this purchase has put into its store (its ledger IN rows). */
+const purchaseStockIn = async (tx, purchase) => {
+  const rows = await tx.stockLedger.findMany({
+    where: {
+      reference: purchase.invoiceNo,
+      movementType: 'IN',
+      storeId: purchase.storeId,
+    },
+  });
+  return rows.reduce((acc, r) => {
+    acc[r.materialId] = (acc[r.materialId] || 0) + r.quantity;
+    return acc;
+  }, {});
+};
+
+/** Add `quantity` of a material to a store, reusing its existing stock row. */
+const addStoreStock = async (tx, materialId, storeId, quantity) => {
+  const existing = await tx.inventoryStock.findFirst({
+    where: { materialId, storeId, showroomId: null },
+  });
+  if (existing) {
+    await tx.inventoryStock.update({
+      where: { id: existing.id },
+      data: {
+        quantity: { increment: quantity },
+        status: 'Available',
+        lastUpdated: new Date(),
+      },
+    });
+  } else {
+    await tx.inventoryStock.create({
+      data: { materialId, storeId, quantity, status: 'Available' },
+    });
+  }
+};
+
+/**
+ * Bring the store's stock up to what has been RECEIVED on an approved
+ * purchase: each line's accepted quantity, or its ordered quantity when no
+ * receipt was recorded. Only ever adds the difference, so it is safe to call
+ * on approval and again whenever more of a line is accepted later.
+ */
+const syncPurchaseStock = async (tx, purchase, userId) => {
+  const target = {};
+  const unitOf = {};
+  purchase.items.forEach((item) => {
+    target[item.materialId] =
+      (target[item.materialId] || 0) + (item.acceptquantity ?? item.quantity);
+    unitOf[item.materialId] =
+      item.material?.unitOfMeasureId ?? item.unitOfMeasureId ?? null;
+  });
+
+  const already = await purchaseStockIn(tx, purchase);
+  const entries = [];
+  for (const [materialId, qty] of Object.entries(target)) {
+    const add = qty - (already[materialId] || 0);
+    if (add > 0) {
+      await addStoreStock(tx, materialId, purchase.storeId, add);
+      entries.push(
+        await tx.stockLedger.create({
+          data: {
+            materialId,
+            movementType: 'IN',
+            quantity: add,
+            unitId: unitOf[materialId],
+            reference: purchase.invoiceNo,
+            storeId: purchase.storeId,
+            userId,
+            notes: `Purchase acceptance - ${purchase.invoiceNo}`,
+            movementDate: purchase.purchaseDate,
+          },
+        }),
+      );
+    }
+  }
+  return entries;
+};
+
+/**
+ * Take back everything a purchase put into stock. Refuses (and changes
+ * nothing) when part of it was already used or transferred — that stock is
+ * gone, so it must be handled with a stock correction instead.
+ */
+const reversePurchaseStock = async (tx, purchase) => {
+  const added = await purchaseStockIn(tx, purchase);
+  const plan = [];
+  for (const [materialId, qty] of Object.entries(added)) {
+    const rows = await tx.inventoryStock.findMany({
+      where: { materialId, storeId: purchase.storeId, showroomId: null },
+    });
+    const available = rows.reduce((t, r) => t + r.quantity, 0);
+    if (available < qty) {
+      const material = await tx.material.findUnique({
+        where: { id: materialId },
+        select: { name: true },
+      });
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `${material?.name || materialId}: ${qty} came in on purchase ${
+          purchase.invoiceNo
+        } but only ${available} is left in the store — some was already used or transferred. ` +
+          'Use a stock correction instead.',
+      );
+    }
+    plan.push({ rows, qty });
+  }
+
+  for (const { rows, qty } of plan) {
+    let left = qty;
+    for (const row of rows) {
+      if (left <= 0) break;
+      const take = Math.min(row.quantity, left);
+      if (take > 0) {
+        await tx.inventoryStock.update({
+          where: { id: row.id },
+          data: { quantity: { decrement: take }, lastUpdated: new Date() },
+        });
+        left -= take;
+      }
+    }
+  }
+
+  await tx.stockLedger.deleteMany({
+    where: {
+      reference: purchase.invoiceNo,
+      movementType: 'IN',
+      storeId: purchase.storeId,
+    },
+  });
+};
+
 // Get Purchase by ID
 const getPurchaseById = async (id) => {
   const purchase = await prisma.purchase.findUnique({
@@ -13,6 +149,7 @@ const getPurchaseById = async (id) => {
       createdBy: true,
       updatedBy: true,
       items: {
+        orderBy: ITEM_ORDER,
         include: {
           material: true,
           unitOfMeasure: true,
@@ -61,17 +198,30 @@ const acceptPurchaseItem = async (itemId, { acceptquantity }) => {
     // Determine if fully accepted
     const isfullyaccepted = newAcceptedTotal === existingItem.quantity;
 
-    // Update item
-    const updatedItem = await prisma.purchaseItem.update({
-      where: { id: itemId },
-      data: {
-        acceptquantity: newAcceptedTotal,
-        isfullyaccepted,
-      },
-      include: {
-        material: true,
-        unitOfMeasure: true,
-      },
+    // Update item; on an already-approved purchase the newly received units
+    // go into stock right away.
+    const updatedItem = await prisma.$transaction(async (tx) => {
+      const item = await tx.purchaseItem.update({
+        where: { id: itemId },
+        data: {
+          acceptquantity: newAcceptedTotal,
+          isfullyaccepted,
+        },
+        include: {
+          material: true,
+          unitOfMeasure: true,
+        },
+      });
+
+      const purchase = await tx.purchase.findUnique({
+        where: { id: existingItem.purchaseId },
+        include: { items: { include: { material: true } } },
+      });
+      if (purchase?.paymentStatus === 'APPROVED' && purchase.storeId) {
+        await syncPurchaseStock(tx, purchase, purchase.updatedById);
+      }
+
+      return item;
     });
 
     return updatedItem;
@@ -321,7 +471,12 @@ const createPurchase = async (purchaseBody, userId) => {
           store: {
             connect: { id: mainStore.id },
           },
-          paymentStatus: restPurchaseBody.paymentStatus || 'PENDING',
+          // Stock is only added by approving (acceptPurchase), so a purchase
+          // can never be born APPROVED without its stock.
+          paymentStatus:
+            restPurchaseBody.paymentStatus === 'APPROVED'
+              ? 'PENDING'
+              : restPurchaseBody.paymentStatus || 'PENDING',
           notes: restPurchaseBody.notes || '',
           purchaseDate,
           totalProducts,
@@ -331,7 +486,8 @@ const createPurchase = async (purchaseBody, userId) => {
             connect: { id: userId },
           },
           items: {
-            create: validatedItems.map((item) => ({
+            create: validatedItems.map((item, index) => ({
+              lineNo: index,
               material: {
                 connect: { id: item.materialId },
               },
@@ -348,6 +504,7 @@ const createPurchase = async (purchaseBody, userId) => {
         },
         include: {
           items: {
+            orderBy: ITEM_ORDER,
             include: {
               material: {
                 include: {
@@ -443,6 +600,15 @@ const updatePurchase = async (purchaseId, purchaseBody, userId) => {
     );
   }
 
+  // Its stock is already in the store: editing the lines would leave stock
+  // and purchase disagreeing. Set it back to PENDING first (reverses stock).
+  if (existingPurchase.paymentStatus === 'APPROVED') {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'An approved purchase cannot be edited. Change its status back to PENDING first.',
+    );
+  }
+
   if (
     purchaseBody.invoiceNo &&
     purchaseBody.invoiceNo !== existingPurchase.invoiceNo
@@ -487,8 +653,15 @@ const updatePurchase = async (purchaseId, purchaseBody, userId) => {
     }
   });
 
+  const materials = await prisma.material.findMany({
+    where: { id: { in: [...new Set(items.map((item) => item.materialId))] } },
+    select: { id: true, unitOfMeasureId: true },
+  });
+  const unitOf = new Map(materials.map((m) => [m.id, m.unitOfMeasureId]));
+
   const validatedItems = items.map((item) => ({
     ...item,
+    unitOfMeasureId: unitOf.get(item.materialId) || null,
     totalPrice: item.quantity * item.unitPrice,
   }));
 
@@ -527,7 +700,7 @@ const updatePurchase = async (purchaseId, purchaseBody, userId) => {
         bankId: restPurchaseBody.bankId,
         // Always use the main store (ignore any storeId from frontend)
         storeId: mainStore.id,
-        paymentStatus: restPurchaseBody.paymentStatus,
+        // Status changes (and their stock) go through acceptPurchase only.
         notes: restPurchaseBody.notes,
         purchaseDate,
         totalProducts,
@@ -535,8 +708,10 @@ const updatePurchase = async (purchaseId, purchaseBody, userId) => {
         grandTotal,
         updatedById: userId,
         items: {
-          create: validatedItems.map((item) => ({
+          create: validatedItems.map((item, index) => ({
+            lineNo: index,
             materialId: item.materialId,
+            unitOfMeasureId: item.unitOfMeasureId,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             totalPrice: item.totalPrice,
@@ -545,6 +720,7 @@ const updatePurchase = async (purchaseId, purchaseBody, userId) => {
       },
       include: {
         items: {
+          orderBy: ITEM_ORDER,
           include: {
             material: {
               include: {
@@ -575,61 +751,9 @@ const deletePurchase = async (id) => {
   }
 
   await prisma.$transaction(async (tx) => {
-    // Check if purchase was approved
-    const existingLedgerEntries = await tx.stockLedger.count({
-      where: {
-        reference: existingPurchase.invoiceNo,
-        movementType: 'IN',
-      },
-    });
-
-    const wasApproved = existingLedgerEntries > 0;
-
-    // REVERSE EVERYTHING if approved
-    if (wasApproved && existingPurchase.storeId) {
-      // 1. Reverse each item's stock
-      await Promise.all(
-        existingPurchase.items.map(async (item) => {
-          // Get current inventory stock
-          const existingInventoryStock = await tx.inventoryStock.findFirst({
-            where: {
-              materialId: item.materialId,
-              storeId: existingPurchase.storeId,
-            },
-          });
-
-          if (existingInventoryStock) {
-            if (existingInventoryStock.quantity <= item.quantity) {
-              // Delete inventory stock if quantity becomes zero or negative
-              await tx.inventoryStock.delete({
-                where: { id: existingInventoryStock.id },
-              });
-            } else {
-              // Update inventory stock quantity
-              await tx.inventoryStock.update({
-                where: { id: existingInventoryStock.id },
-                data: {
-                  quantity: {
-                    decrement: item.quantity,
-                  },
-                  status: 'Available',
-                  lastUpdated: new Date(),
-                },
-              });
-            }
-          }
-
-          // 3. Delete all IN stock ledger entries for this item
-          await tx.stockLedger.deleteMany({
-            where: {
-              reference: existingPurchase.invoiceNo,
-              movementType: 'IN',
-              materialId: item.materialId,
-              storeId: existingPurchase.storeId,
-            },
-          });
-        }),
-      );
+    // Take back the stock it added (refuses if some was already used).
+    if (existingPurchase.storeId) {
+      await reversePurchaseStock(tx, existingPurchase);
     }
 
     // 4. Delete purchase items
@@ -657,6 +781,7 @@ const acceptPurchase = async (purchaseId, paymentStatus, userId) => {
       where: { id: purchaseId },
       include: {
         items: {
+          orderBy: ITEM_ORDER,
           include: {
             material: {
               include: {
@@ -680,110 +805,40 @@ const acceptPurchase = async (purchaseId, paymentStatus, userId) => {
       );
     }
 
-    const existingLedgerEntries = await prisma.stockLedger.count({
-      where: {
-        reference: purchase.invoiceNo,
-        movementType: 'IN',
-      },
-    });
-
-    if (existingLedgerEntries > 0) {
+    const wasApproved = purchase.paymentStatus === 'APPROVED';
+    if (wasApproved && paymentStatus === 'APPROVED') {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Purchase already accepted');
     }
 
-    const updatedPurchase = await prisma.purchase.update({
-      where: { id: purchaseId },
-      data: {
-        paymentStatus,
-        updatedById: userId,
-      },
-    });
+    return await prisma.$transaction(async (tx) => {
+      // Rejecting / moving an approved purchase back to PENDING takes its
+      // stock back out (refused if some was already used).
+      if (wasApproved) await reversePurchaseStock(tx, purchase);
 
-    if (paymentStatus === 'APPROVED') {
-      const result = await prisma.$transaction(async (tx) => {
-        const materialIds = purchase.items.map((item) => item.materialId);
-        const existingInventoryStocks = await tx.inventoryStock.findMany({
-          where: {
-            storeId: purchase.storeId,
-            materialId: { in: materialIds },
-          },
-        });
-
-        const existingInventoryStockMap = existingInventoryStocks.reduce(
-          (acc, stock) => {
-            acc[stock.materialId] = stock;
-            return acc;
-          },
-          {},
-        );
-
-        const inventoryStockOperations = [];
-        const stockLedgerOperations = [];
-
-        purchase.items.forEach((item) => {
-          const { materialId, quantity } = item;
-
-          const existingInventoryStock = existingInventoryStockMap[materialId];
-          if (existingInventoryStock) {
-            inventoryStockOperations.push(
-              tx.inventoryStock.update({
-                where: { id: existingInventoryStock.id },
-                data: {
-                  quantity: { increment: quantity },
-                  status: 'Available',
-                  lastUpdated: new Date(),
-                },
-              }),
-            );
-          } else {
-            inventoryStockOperations.push(
-              tx.inventoryStock.create({
-                data: {
-                  materialId,
-                  storeId: purchase.storeId,
-                  quantity,
-                  status: 'Available',
-                },
-              }),
-            );
-          }
-
-          stockLedgerOperations.push(
-            tx.stockLedger.create({
-              data: {
-                materialId,
-                movementType: 'IN',
-                quantity,
-                unitId: item.material.unitOfMeasureId,
-                reference: purchase.invoiceNo,
-                storeId: purchase.storeId,
-                userId,
-                notes: `Purchase acceptance - ${purchase.invoiceNo}`,
-                movementDate: purchase.purchaseDate,
-              },
-            }),
-          );
-        });
-
-        const [inventoryStockUpdates, stockLedgerEntries] = await Promise.all([
-          Promise.all(inventoryStockOperations),
-          Promise.all(stockLedgerOperations),
-        ]);
-
-        return {
-          purchase: updatedPurchase,
-          stockLedgerEntries,
-          inventoryStockUpdates,
-        };
+      const updatedPurchase = await tx.purchase.update({
+        where: { id: purchaseId },
+        data: {
+          paymentStatus,
+          updatedById: userId,
+        },
       });
 
-      return result;
-    }
+      if (paymentStatus === 'APPROVED') {
+        const stockLedgerEntries = await syncPurchaseStock(
+          tx,
+          purchase,
+          userId,
+        );
+        return { purchase: updatedPurchase, stockLedgerEntries };
+      }
 
-    return {
-      purchase: updatedPurchase,
-      message: `Payment status updated to ${paymentStatus}. No stock created as purchase is not approved.`,
-    };
+      return {
+        purchase: updatedPurchase,
+        message: wasApproved
+          ? `Payment status updated to ${paymentStatus}. Stock from this purchase was taken back out.`
+          : `Payment status updated to ${paymentStatus}. No stock created as purchase is not approved.`,
+      };
+    });
   } catch (error) {
     if (error.code === 'P2025') {
       throw new ApiError(
