@@ -3,6 +3,8 @@
 const httpStatus = require('http-status');
 const ApiError = require('../utils/ApiError');
 const prisma = require('./prisma');
+const { effectiveDailyMax, dailyCapacityDate } = require('./scheduling/engine');
+const { markerDayKey } = require('./scheduling/calendar');
 
 const CapacityHistoryAction = {
   CREATED: 'CREATED',
@@ -185,6 +187,23 @@ const updateCapacitySlot = async (id, updateBody, userId = null) => {
       where: { id },
       data: cleanedUpdateBody,
     });
+
+    // Booked days store the limit they were written with. Bring today and
+    // future days in line with the new slot, otherwise the calendar/reports
+    // keep measuring them against the old limit (false over/under capacity).
+    // Past days keep the limit they were actually worked under.
+    if (
+      updatedLot.capacity !== existingLot.capacity ||
+      updatedLot.parallelSlots !== existingLot.parallelSlots
+    ) {
+      await tx.dailyStageCapacity.updateMany({
+        where: {
+          stage: updatedLot.stage,
+          date: { gte: dailyCapacityDate(markerDayKey(new Date())) },
+        },
+        data: { maxCapacity: effectiveDailyMax(updatedLot) },
+      });
+    }
 
     // Create history log for update if any changes were made
     await tx.capacityLotHistory.create({
