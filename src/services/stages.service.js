@@ -2013,6 +2013,9 @@ const getDeliveryProjects = async (status = 'all') => {
               select: {
                 id: true,
                 name: true,
+                // Product photos, shown on the delivery card
+                imageUrl: true,
+                itemImages: { select: { imageUrl: true } },
               },
             },
           },
