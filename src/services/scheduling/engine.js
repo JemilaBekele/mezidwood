@@ -266,6 +266,40 @@ const allocateStage = (cal, stage, quantity, startInstant, ctx) => {
 
     // Stack after any work this same stage/team already has booked today.
     const dateKey = cal.dayKey(cur);
+
+    // Manual move (calendar drag): each day's spare UNITS decide, not which
+    // hours are still free. The team works side by side, so the moved work
+    // shares the day's remaining working time with the bookings already there,
+    // up to the day's unit ceiling (125% on a manual reschedule).
+    if (ctx.fillByDay) {
+      const used = ctx.usage[usageKey(stage, dateKey)] || 0;
+      const unitsLeft = Math.max(0, dailyMaxUnits - used);
+      const hoursLeft = cal.remainingHoursInDay(cur);
+      const assign = Math.min(remaining, unitsLeft);
+      if (hoursLeft > EPS && assign > EPS) {
+        const useHours =
+          Math.round(Math.min(hoursLeft, assign / rate) * 3600) / 3600;
+        const endDT = cal.addWorkingHours(cur, useHours);
+        allocations.push({
+          date: dateKey,
+          startDateTime: cur,
+          endDateTime: endDT,
+          units: round2(assign),
+          hours: round2(useHours),
+          shift: DEFAULT_STAGE_SHIFT,
+        });
+        ctx.usage[usageKey(stage, dateKey)] = used + assign;
+        addDelta(ctx.deltas, usageKey(stage, dateKey), assign, useHours);
+        rememberBusyUntil(ctx.busyUntil, usageKey(stage, dateKey), endDT);
+        rememberInterval(ctx.busyIntervals, usageKey(stage, dateKey), cur, endDT);
+        remaining -= assign;
+      }
+      // Whatever does not fit continues on the next working day.
+      cur = cal.nextWorkingStart(cal.endOfWorkingDay(cur));
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+
     let dayStart = cur;
     let windowEnd = null;
     if (ctx.fillGaps) {
@@ -559,6 +593,7 @@ const buildSchedule = ({
   fillGaps = false,
   notBefore = null,
   endBy = null,
+  fillByDay = false,
 }) => {
   const cal = calendar;
   const seeded =
@@ -590,6 +625,8 @@ const buildSchedule = ({
     manualDurations: manualDurations || {},
     fillByUnits,
     fillGaps,
+    // Manual move: days are filled by spare units, not free hours.
+    fillByDay,
   };
 
   const contingencyDays =
@@ -966,6 +1003,7 @@ const scheduleProject = async ({
   excludeStageId = null,
   notBefore = null,
   endBy = null,
+  fillByDay = false,
 }) => {
   const db = tx || prisma;
   const cal = await getCalendar();
@@ -994,6 +1032,7 @@ const scheduleProject = async ({
     fillGaps,
     notBefore,
     endBy,
+    fillByDay,
   });
 
   if (mode === 'commit') {

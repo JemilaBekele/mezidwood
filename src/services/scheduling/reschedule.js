@@ -1103,22 +1103,40 @@ const rescheduleStageAndDownstream = async (
       && now.getTime() > dropOpening.getTime()
       ? now
       : dropOpening;
-    // Never before this project's own earlier phases finish (e.g. ASSEMBLY
-    // waits for its CUTTING), even when the team is free earlier that day.
-    const upstreamEnds = project.stages
-      .filter((s) =>
-        phaseIndexOf(s.stage) >= 0
-        && phaseIndexOf(s.stage) < targetPhase
-        && s.status !== 'CANCELLED'
-        && s.status !== 'COMPLETED'
-        && !s.finished)
+    // Stage sequence, at day level: never on an EARLIER day than this
+    // project's earlier phases (e.g. ASSEMBLY after its EDGE_BANDING). On the
+    // day those phases end it may share the day — work is handed on as it is
+    // done — but it starts no earlier than they start on that day.
+    const upstreamStages = project.stages.filter((s) =>
+      phaseIndexOf(s.stage) >= 0
+      && phaseIndexOf(s.stage) < targetPhase
+      && s.status !== 'CANCELLED'
+      && s.status !== 'COMPLETED'
+      && !s.finished);
+    const upstreamEnds = upstreamStages
       .map((s) => validDateOrNull(s.endDateTime || s.endDate))
       .filter(Boolean)
       .map((d) => d.getTime());
     const upstreamEnd = upstreamEnds.length ? Math.max(...upstreamEnds) : 0;
-    const effStart = upstreamEnd > dropStart.getTime()
-      ? new Date(upstreamEnd)
-      : dropStart;
+    let effStart = dropStart;
+    if (upstreamEnd > 0) {
+      const lastUpstreamDay = dropCal.dayKey(new Date(upstreamEnd));
+      const dropDay = dropCal.dayKey(dropStart);
+      if (dropDay <= lastUpstreamDay) {
+        const startsThatDay = upstreamStages
+          .flatMap((s) => s.projectStageCapacityAllocations || [])
+          .map((a) => validDateOrNull(a.startDateTime))
+          .filter((d) => d && dropCal.dayKey(d) === lastUpstreamDay)
+          .map((d) => d.getTime());
+        const dayFloor = startsThatDay.length
+          ? Math.min(...startsThatDay)
+          : upstreamEnd;
+        const base = dropDay === lastUpstreamDay
+          ? dropStart.getTime()
+          : dropCal.startOfWorkingDay(new Date(upstreamEnd)).getTime();
+        effStart = new Date(Math.max(base, dayFloor));
+      }
+    }
 
     // ── PAST CELL-MOVE: drop to an EARLIER day ──
     // Move ONLY the source-day cell of the dragged stage AND each parallel peer
@@ -1154,6 +1172,7 @@ const rescheduleStageAndDownstream = async (
           tx,
           overCapacityFactor,
           fillGaps: true,
+          fillByDay: true,
         });
         const p = plan.stages.find((x) => x.stage === s.stage);
         if (p) {
@@ -1218,6 +1237,7 @@ const rescheduleStageAndDownstream = async (
         tx,
         overCapacityFactor,
         fillGaps: true,
+        fillByDay: true,
       });
       movedPlan = plan;
       const p = plan.stages.find((s) => s.stage === stageName);
@@ -1283,6 +1303,7 @@ const rescheduleStageAndDownstream = async (
         tx,
         overCapacityFactor,
         fillGaps: true,
+        fillByDay: true,
         // A dragged/parallel stage with a user-fixed time keeps that duration.
         manualDurations: manualDurationsOf(phaseStages),
       });
