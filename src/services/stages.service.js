@@ -150,9 +150,9 @@ const getDesignProjects = async (status = 'all') => {
     };
   }
 };
-// TEMPORARY: "My Design" lists every design, not only the ones assigned to
-// the logged-in designer. Set back to false to restore per-designer lists.
-const MY_DESIGN_SHOWS_ALL = true;
+// "My Design" lists only the designs assigned to the logged-in designer.
+// Set to true to temporarily show every designer's work there.
+const MY_DESIGN_SHOWS_ALL = false;
 
 const getbyDesignProject = async (status = 'all', currentUserId) => {
   try {
