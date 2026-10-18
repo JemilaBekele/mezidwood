@@ -22,8 +22,8 @@ const getTransferById = async (id) => {
       sourceShowroom: true,
       destStore: true,
       destShowroom: true,
-      createdBy: true,
-      updatedBy: true,
+      createdBy: { select: { id: true, name: true, email: true } },
+      updatedBy: { select: { id: true, name: true, email: true } },
       items: {
         include: {
           material: {
@@ -79,6 +79,13 @@ const getAllTransfers = async ({ startDate, endDate, type } = {}) => {
     };
   }
 
+  // Filter by type in SQL instead of loading every transfer first.
+  if (type === 'material') {
+    whereClause.items = { some: { ismaterial: true } };
+  } else if (type === 'product') {
+    whereClause.items = { some: { ismaterial: false } };
+  }
+
   const transfers = await prisma.transfer.findMany({
     where: whereClause,
     orderBy: {
@@ -89,8 +96,8 @@ const getAllTransfers = async ({ startDate, endDate, type } = {}) => {
       sourceShowroom: true,
       destStore: true,
       destShowroom: true,
-      createdBy: true,
-      updatedBy: true,
+      createdBy: { select: { id: true, name: true, email: true } },
+      updatedBy: { select: { id: true, name: true, email: true } },
       items: {
         include: {
           material: true,
@@ -103,21 +110,9 @@ const getAllTransfers = async ({ startDate, endDate, type } = {}) => {
     },
   });
 
-  // Filter by type if specified
-  let filteredTransfers = transfers;
-  if (type === 'material') {
-    filteredTransfers = transfers.filter((t) =>
-      t.items.some((item) => item.ismaterial === true),
-    );
-  } else if (type === 'product') {
-    filteredTransfers = transfers.filter((t) =>
-      t.items.some((item) => item.ismaterial === false),
-    );
-  }
-
   return {
-    transfers: filteredTransfers,
-    count: filteredTransfers.length,
+    transfers,
+    count: transfers.length,
   };
 };
 

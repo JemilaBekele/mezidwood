@@ -4,6 +4,33 @@ const prisma = require('./prisma');
 // done (see stageHandoff.js); Design must still be finished first.
 const { stageHandoff } = require('./stageHandoff');
 
+// Check design completion through multiple indicators, using a project that
+// is already loaded with its scalar fields and its stages.
+//
+// The stage lists below used to call isDesignFinished(project.id) for every
+// project — one extra query each, all fired at once — which drained the
+// connection pool and made unrelated requests time out in production.
+const designFinishedFrom = (project) => {
+  if (!project) return false;
+
+  const designStage = (project.stages || []).find(
+    (stage) => stage.stage === 'DESIGN',
+  );
+
+  const isDesignFinishedViaStatus = project.designStatus === 'FINISHED';
+  const isDesignFinishedViaDate =
+    project.designFinished !== null && project.designFinished !== undefined;
+  const isDesignStageFinished =
+    !!designStage &&
+    (designStage.finished === true || designStage.status === 'COMPLETED');
+
+  return (
+    isDesignFinishedViaStatus ||
+    isDesignFinishedViaDate ||
+    isDesignStageFinished
+  );
+};
+
 // Additional helper function to check if design is finished for a project
 const isDesignFinished = async (projectId) => {
   try {
@@ -18,23 +45,7 @@ const isDesignFinished = async (projectId) => {
       },
     });
 
-    if (!project) return false;
-
-    // Check design completion through multiple indicators
-    const hasDesignStage = project.stages.length > 0;
-    const designStage = project.stages[0];
-
-    const isDesignFinishedViaStatus = project.designStatus === 'FINISHED';
-    const isDesignFinishedViaDate = project.designFinished !== null;
-    const isDesignStageFinished =
-      designStage &&
-      (designStage.finished === true || designStage.status === 'COMPLETED');
-
-    return (
-      isDesignFinishedViaStatus ||
-      isDesignFinishedViaDate ||
-      isDesignStageFinished
-    );
+    return designFinishedFrom(project);
   } catch (error) {
     console.error('Error checking design finished status:', error);
     return false;
@@ -749,7 +760,7 @@ const getMetalWorkProjects = async (status = 'all') => {
     // Filter projects that have design finished
     const projectsWithDesignFinished = await Promise.all(
       projectsWithMetalWork.map(async (project) => {
-        const designFinished = await isDesignFinished(project.id);
+        const designFinished = designFinishedFrom(project);
         return {
           ...project,
           designFinished,
@@ -897,7 +908,7 @@ const getCNCProjects = async (status = 'all') => {
     // Filter projects that have design finished
     const projectsWithDesignFinished = await Promise.all(
       projectsWithCNC.map(async (project) => {
-        const designFinished = await isDesignFinished(project.id);
+        const designFinished = designFinishedFrom(project);
         return {
           ...project,
           designFinished,
@@ -1061,7 +1072,7 @@ const getCuttingProjects = async (status = 'all') => {
     // Filter projects that have design finished
     const projectsWithDesignFinished = await Promise.all(
       projectsWithCutting.map(async (project) => {
-        const designFinished = await isDesignFinished(project.id);
+        const designFinished = designFinishedFrom(project);
         return {
           ...project,
           designFinished,
@@ -1233,7 +1244,7 @@ const getEdgeBandingProjects = async (status = 'all') => {
     // Filter projects that have design finished
     const projectsWithDesignFinished = await Promise.all(
       projectsWithEdgeBanding.map(async (project) => {
-        const designFinished = await isDesignFinished(project.id);
+        const designFinished = designFinishedFrom(project);
         return {
           ...project,
           designFinished,
@@ -1383,8 +1394,8 @@ const getAssemblyProjects = async (status = 'all') => {
           },
         },
 
-        createdBy: true,
-        updatedBy: true,
+        createdBy: { select: { id: true, name: true, email: true } },
+        updatedBy: { select: { id: true, name: true, email: true } },
       },
       orderBy: {
         createdAt: 'desc', // Show newest first
@@ -1400,7 +1411,7 @@ const getAssemblyProjects = async (status = 'all') => {
 
     const projectsWithPrerequisitesFinished = await Promise.all(
       projectsWithAssembly.map(async (project) => {
-        const designFinished = await isDesignFinished(project.id);
+        const designFinished = designFinishedFrom(project);
 
         // Get only the prerequisite stages that actually exist in this project
         const existingPrerequisiteStages = prerequisiteStages.filter(
@@ -1575,8 +1586,8 @@ const getPaintingProjects = async (status = 'all') => {
           },
         },
 
-        createdBy: true,
-        updatedBy: true,
+        createdBy: { select: { id: true, name: true, email: true } },
+        updatedBy: { select: { id: true, name: true, email: true } },
       },
       orderBy: {
         createdAt: 'desc', // Show newest first
@@ -1593,7 +1604,7 @@ const getPaintingProjects = async (status = 'all') => {
 
     const projectsWithPrerequisitesFinished = await Promise.all(
       projectsWithPainting.map(async (project) => {
-        const designFinished = await isDesignFinished(project.id);
+        const designFinished = designFinishedFrom(project);
 
         const existingPrerequisiteStages = prerequisiteStages.filter(
           (stageName) => project.stages.some((s) => s.stage === stageName),
@@ -1768,8 +1779,8 @@ const getFinishingProjects = async (status = 'all') => {
           },
         },
 
-        createdBy: true,
-        updatedBy: true,
+        createdBy: { select: { id: true, name: true, email: true } },
+        updatedBy: { select: { id: true, name: true, email: true } },
       },
       orderBy: {
         createdAt: 'desc', // Show newest first
@@ -1787,7 +1798,7 @@ const getFinishingProjects = async (status = 'all') => {
 
     const projectsWithPrerequisitesFinished = await Promise.all(
       projectsWithFinishing.map(async (project) => {
-        const designFinished = await isDesignFinished(project.id);
+        const designFinished = designFinishedFrom(project);
 
         const existingPrerequisiteStages = prerequisiteStages.filter(
           (stageName) => project.stages.some((s) => s.stage === stageName),
@@ -1962,8 +1973,8 @@ const getDeliveryProjects = async (status = 'all') => {
             },
           },
         },
-        createdBy: true,
-        updatedBy: true,
+        createdBy: { select: { id: true, name: true, email: true } },
+        updatedBy: { select: { id: true, name: true, email: true } },
       },
       orderBy: {
         calculatedDelivery: 'desc',
@@ -2058,7 +2069,7 @@ const getDeliveryProjects = async (status = 'all') => {
 
     const projectsWithPrerequisitesFinished = await Promise.all(
       projectsWithDelivery.map(async (project) => {
-        const designFinished = await isDesignFinished(project.id);
+        const designFinished = designFinishedFrom(project);
 
         const existingPrerequisiteStages = prerequisiteStages.filter(
           (stageName) => project.stages.some((s) => s.stage === stageName),
@@ -2472,8 +2483,8 @@ const getInstallationProjects = async (status = 'all') => {
             },
           },
         },
-        createdBy: true,
-        updatedBy: true,
+        createdBy: { select: { id: true, name: true, email: true } },
+        updatedBy: { select: { id: true, name: true, email: true } },
       },
       orderBy: {
         calculatedDelivery: 'desc',
@@ -2493,7 +2504,7 @@ const getInstallationProjects = async (status = 'all') => {
 
     const projectsWithPrerequisitesFinished = await Promise.all(
       projectsWithInstallation.map(async (project) => {
-        const designFinished = await isDesignFinished(project.id);
+        const designFinished = designFinishedFrom(project);
 
         const existingPrerequisiteStages = prerequisiteStages.filter(
           (stageName) => project.stages.some((s) => s.stage === stageName),

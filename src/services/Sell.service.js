@@ -1119,10 +1119,16 @@ const getSellStatistics = async ({ startDate, endDate } = {}) => {
     lte: endDateObj,
   };
 
+  // Only the columns the totals and counts below read — loading every
+  // payment row here was wasted work.
   const sells = await prisma.sell.findMany({
     where: whereClause,
-    include: {
-      sellPayments: true,
+    select: {
+      grandTotal: true,
+      totalPaid: true,
+      balance: true,
+      saleStatus: true,
+      paymentStatus: true,
     },
   });
 
@@ -1189,7 +1195,7 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
             },
           },
           customer: true,
-          createdBy: true,
+          createdBy: { select: { id: true, name: true, email: true } },
         },
       });
     } catch (prismaError) {
@@ -1467,7 +1473,7 @@ const deliverSaleItems = async (saleId, deliveryItems, userId) => {
             },
           },
           customer: true,
-          createdBy: true,
+          createdBy: { select: { id: true, name: true, email: true } },
         },
       });
     }

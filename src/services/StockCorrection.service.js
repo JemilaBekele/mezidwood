@@ -32,8 +32,8 @@ const getStockCorrectionById = async (id) => {
       where: { id },
       include: {
         purchase: true,
-        createdBy: true,
-        updatedBy: true,
+        createdBy: { select: { id: true, name: true, email: true } },
+        updatedBy: { select: { id: true, name: true, email: true } },
         store: true,
         showroom: true,
         items: {
@@ -299,8 +299,8 @@ const getStockCorrectionsByPurchaseId = async (purchaseId) => {
     },
     include: {
       purchase: true,
-      createdBy: true,
-      updatedBy: true,
+      createdBy: { select: { id: true, name: true, email: true } },
+      updatedBy: { select: { id: true, name: true, email: true } },
       items: {
         include: {
           material: true,

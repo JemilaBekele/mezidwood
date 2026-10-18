@@ -73,6 +73,11 @@ const getAllDailyStageCapacities = async () => {
       date: {
         gte: startDate,
       },
+      // Days without allocations are dropped below anyway — skip them in SQL
+      // so the empty ledger rows are never loaded.
+      projectStageCapacityAllocations: {
+        some: { allocatedUnits: { gt: 0 } },
+      },
     },
     include: {
       projectStageCapacityAllocations: {
@@ -81,8 +86,15 @@ const getAllDailyStageCapacities = async () => {
             include: {
               project: {
                 include: {
-                  invoice: true,
-                  customer: true,
+                  // The calendars only read these fields.
+                  invoice: {
+                    select: {
+                      id: true,
+                      piNumber: true,
+                      customer: { select: { id: true, name: true } },
+                    },
+                  },
+                  customer: { select: { id: true, name: true } },
                 },
               },
             },

@@ -1,5 +1,6 @@
 const fs = require('fs');
-const prismaService = require('./prismaLoader');
+// Reuse the app-wide client so the server keeps a single connection pool.
+const prisma = require('../services/prisma');
 const expressLoader = require('./express');
 const logger = require('../config/logger');
 const subscribers = require('../subscribers');
@@ -7,7 +8,7 @@ const EventEmitter = require('../utils/EventEmitter');
 
 module.exports = async (app) => {
   // Initialize Prisma
-  const prisma = await prismaService.connect();
+  await prisma.$connect();
   logger.info('Prisma MySQL initiated.');
 
   // Make prisma available throughout the app

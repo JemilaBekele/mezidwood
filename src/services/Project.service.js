@@ -1006,7 +1006,8 @@ const getAllProjects = async (filters = {}) => {
       }
     }
 
-    const projects = await prisma.project.findMany({
+    const [projects, total] = await Promise.all([
+      prisma.project.findMany({
       where,
       orderBy: {
         requestedDelivery: {
@@ -1084,9 +1085,9 @@ const getAllProjects = async (filters = {}) => {
           },
         },
       },
-    });
-
-    const total = await prisma.project.count({ where });
+      }),
+      prisma.project.count({ where }),
+    ]);
 
     return {
       projects,

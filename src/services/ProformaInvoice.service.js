@@ -1825,7 +1825,7 @@ const updateProformaInvoice = async (id, updateData, structuredFiles = {}) => {
             banks: {
               include: {
                 bank: true,
-                createdBy: true,
+                createdBy: { select: { id: true, name: true, email: true } },
               },
             },
             attachments: {
@@ -2779,7 +2779,7 @@ const updateProformaInvoiceseco = async (
             banks: {
               include: {
                 bank: true,
-                createdBy: true,
+                createdBy: { select: { id: true, name: true, email: true } },
               },
             },
             attachments: {
@@ -3071,7 +3071,13 @@ const getAllProformaInvoices = async (filters = {}) => {
         banks: {
           include: {
             bank: true,
-            createdBy: true, // Include all bank fields
+            createdBy: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
           },
         },
         preparedBy: {
@@ -3088,55 +3094,16 @@ const getAllProformaInvoices = async (filters = {}) => {
             email: true,
           },
         },
+        // List views only need item names and images. Materials, material
+        // issues, logs and attachments are loaded by getProformaInvoiceById
+        // for the detail page — loading them for every invoice here made
+        // this endpoint time out on production data.
         items: {
           include: {
-            proformaItemMaterials: {
-              include: {
-                material: true,
-                materialIssues: {
-                  // 👈 Include material issues
-                  include: {
-                    issuedBy: {
-                      // 👈 Who issued the material
-                      select: {
-                        id: true,
-                        name: true,
-                        email: true,
-                      },
-                    },
-                    givenTo: {
-                      // 👈 Who received the material
-                      select: {
-                        id: true,
-                        name: true,
-                        email: true,
-                      },
-                    },
-                  },
-                  orderBy: {
-                    issuedAt: 'desc', // 👈 Latest issues first
-                  },
-                },
-              },
-            },
-            item: true, // Include item details (like name) if it's a relation to a product/item table
+            item: true,
             images: true,
           },
         },
-        piLogs: {
-          // 👈 Include all logs for this proforma invoice
-          include: {
-            piuser: {
-              // 👈 Include user who performed the action
-              select: {
-                id: true,
-                name: true,
-                email: true,
-              },
-            },
-          },
-        },
-        attachments: true,
         project: {
           select: {
             id: true,
@@ -3242,7 +3209,7 @@ const getAllProformaInvoicesmy = async (filters = {}, userId) => {
         banks: {
           include: {
             bank: true,
-            createdBy: true,
+            createdBy: { select: { id: true, name: true, email: true } },
           },
         },
         preparedBy: {
@@ -3351,7 +3318,7 @@ const getProformaInvoiceById = async (id) => {
       banks: {
         include: {
           bank: true,
-          createdBy: true, // Include all bank fields
+          createdBy: { select: { id: true, name: true, email: true } },
         },
       },
       preparedBy: {
@@ -3593,7 +3560,7 @@ const addPayment = async (
             banks: {
               include: {
                 bank: true,
-                createdBy: true,
+                createdBy: { select: { id: true, name: true, email: true } },
               },
             },
             attachments: true,
@@ -3631,7 +3598,7 @@ const addPayment = async (
               data: bankData,
               include: {
                 bank: true,
-                createdBy: true,
+                createdBy: { select: { id: true, name: true, email: true } },
               },
             });
 

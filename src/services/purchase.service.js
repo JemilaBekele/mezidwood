@@ -146,8 +146,8 @@ const getPurchaseById = async (id) => {
       supplier: true,
       bank: true,
       store: true, // Added store
-      createdBy: true,
-      updatedBy: true,
+      createdBy: { select: { id: true, name: true, email: true } },
+      updatedBy: { select: { id: true, name: true, email: true } },
       items: {
         orderBy: ITEM_ORDER,
         include: {
@@ -517,7 +517,7 @@ const createPurchase = async (purchaseBody, userId) => {
           supplier: true,
           bank: true,
           store: true,
-          createdBy: true,
+          createdBy: { select: { id: true, name: true, email: true } },
         },
       });
 
@@ -732,8 +732,8 @@ const updatePurchase = async (purchaseId, purchaseBody, userId) => {
         supplier: true,
         bank: true,
         store: true,
-        createdBy: true,
-        updatedBy: true,
+        createdBy: { select: { id: true, name: true, email: true } },
+        updatedBy: { select: { id: true, name: true, email: true } },
       },
     });
 
