@@ -1008,83 +1008,83 @@ const getAllProjects = async (filters = {}) => {
 
     const [projects, total] = await Promise.all([
       prisma.project.findMany({
-      where,
-      orderBy: {
-        requestedDelivery: {
-          sort: 'asc',
-          nulls: 'last',
-        },
-      },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            name: true,
-            phone1: true,
-            phone2: true,
+        where,
+        orderBy: {
+          requestedDelivery: {
+            sort: 'asc',
+            nulls: 'last',
           },
         },
-        designBy: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        invoice: {
-          select: {
-            id: true,
-            piNumber: true,
-            total: true,
-            status: true,
-            items: {
-              select: {
-                id: true,
-                itemname: true,
-                description: true,
-                quantity: true,
-                images: {
-                  select: { id: true, imageUrl: true },
-                },
-              },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              phone1: true,
+              phone2: true,
             },
           },
-        },
-        stages: {
-          orderBy: {
-            stage: 'asc',
+          designBy: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
-          include: {
-            projectStageWorkLogs: {
-              orderBy: {
-                createdAt: 'desc',
-              },
-              include: {
-                doneBy: {
-                  select: {
-                    id: true,
-                    name: true,
-                    email: true,
+          invoice: {
+            select: {
+              id: true,
+              piNumber: true,
+              total: true,
+              status: true,
+              items: {
+                select: {
+                  id: true,
+                  itemname: true,
+                  description: true,
+                  quantity: true,
+                  images: {
+                    select: { id: true, imageUrl: true },
                   },
                 },
               },
             },
           },
-        },
-        createdBy: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
+          stages: {
+            orderBy: {
+              stage: 'asc',
+            },
+            include: {
+              projectStageWorkLogs: {
+                orderBy: {
+                  createdAt: 'desc',
+                },
+                include: {
+                  doneBy: {
+                    select: {
+                      id: true,
+                      name: true,
+                      email: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          createdBy: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+          updatedBy: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
           },
         },
-        updatedBy: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
       }),
       prisma.project.count({ where }),
     ]);

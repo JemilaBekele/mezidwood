@@ -11,14 +11,25 @@ const getClientIpAddress = (req) => {
   return req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress;
 };
 
+// userService returns the full user row (password hash included) because
+// password checks need it. Never send that hash to the client.
+const withoutPassword = (user) => {
+  if (!user) return user;
+  // eslint-disable-next-line no-unused-vars
+  const { password, ...safeUser } = user;
+  return safeUser;
+};
+
 const createUser = catchAsync(async (req, res) => {
   const user = await userService.createUser(req.body);
-  res.status(httpStatus.CREATED).send({ user });
+  res.status(httpStatus.CREATED).send({ user: withoutPassword(user) });
 });
 
 const getUsers = catchAsync(async (req, res) => {
   const result = await userService.getUsers();
-  res.status(httpStatus.OK).send(result);
+  res
+    .status(httpStatus.OK)
+    .send({ ...result, users: result.users.map(withoutPassword) });
 });
 
 const getUser = catchAsync(async (req, res) => {
@@ -26,7 +37,7 @@ const getUser = catchAsync(async (req, res) => {
   if (!user) {
     throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
   }
-  res.status(httpStatus.OK).send({ user });
+  res.status(httpStatus.OK).send({ user: withoutPassword(user) });
 });
 
 const getUsermy = catchAsync(async (req, res) => {
@@ -50,7 +61,7 @@ const getUsermy = catchAsync(async (req, res) => {
 
   res.status(httpStatus.OK).send({
     user: {
-      ...user,
+      ...withoutPassword(user),
       role: sanitizedRole,
       permissions,
     },
@@ -62,7 +73,7 @@ const updateUser = catchAsync(async (req, res) => {
     req.params.userId,
     req.body,
   );
-  res.status(httpStatus.OK).send({ user: updatedUser });
+  res.status(httpStatus.OK).send({ user: withoutPassword(updatedUser) });
 });
 
 const deleteUser = catchAsync(async (req, res) => {
@@ -76,7 +87,7 @@ const changeUserStatus = catchAsync(async (req, res) => {
     req.params.userId,
     status,
   );
-  res.status(httpStatus.OK).send({ user: updatedUser });
+  res.status(httpStatus.OK).send({ user: withoutPassword(updatedUser) });
 });
 
 const getUserByEmail = catchAsync(async (req, res) => {
@@ -85,7 +96,7 @@ const getUserByEmail = catchAsync(async (req, res) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Email is required');
   }
   const user = await userService.getUserByEmail(email);
-  res.status(httpStatus.OK).send({ user });
+  res.status(httpStatus.OK).send({ user: withoutPassword(user) });
 });
 const login = catchAsync(async (req, res) => {
   const { email, password } = req.body;
@@ -135,7 +146,7 @@ const changeUserPassword = async (req, res, next) => {
     res.status(httpStatus.OK).json({
       success: true,
       message: 'Password changed successfully',
-      user: updatedUser,
+      user: withoutPassword(updatedUser),
     });
   } catch (error) {
     next(error);
@@ -152,7 +163,7 @@ const resetPassword = async (req, res, next) => {
     res.status(httpStatus.OK).json({
       status: 'success',
       message: 'Password reset successfully',
-      data: user,
+      data: withoutPassword(user),
     });
   } catch (error) {
     next(error);
